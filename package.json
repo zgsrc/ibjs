@@ -1,0 +1,36 @@
+{
+  "name": "ib-sdk",
+  "version": "0.1.0",
+  "description": "Interactive Brokers SDK framework build atop the native javascript API.",
+  "main": "index.js",
+  "dependencies": {
+    "ib": "^0.1.3",
+    "xml2js": "^0.4.9",
+    "async": "^1.4.0",
+    "sugar": "^1.4.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "node test"
+  },
+  "keywords": [
+    "interactive brokers",
+    "ib",
+    "sdk",
+    "api",
+    "stocks",
+    "options",
+    "futures",
+    "currency",
+    "forex",
+    "trading",
+    "brokerage",
+    "market data",
+    "algorithmic trading",
+    "programmatic trading",
+    "program trading",
+    "trading system"
+  ],
+  "author": "Jonathan Hollinger",
+  "license": "ISC"
+}
