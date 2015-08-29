@@ -2,21 +2,26 @@
 
 Interactive Brokers SDK framework build atop the native javascript API.
 
-## How does it work?
+## Prerequisites
 
 * Get the IB Gateway or IB TWS (Trader Workstation)
 * Login manually or use ib-controller
 * ib-sdk gives you high-level, node-friendly access to the IBAPI
 
-## How do I get it?
+## Installation
 
-From GitHub
+NPM
+
+    npm install ib-sdk
+
+Git
 
     git clone https://github.com/triploc/ib-sdk.git
 
-From NPM
+HTTP
 
-    npm install ib-sdk
+    wget https://github.com/triploc/ib-sdk/archive/master.zip
+    unzip master.zip
 
 ## How do I use it?
 
