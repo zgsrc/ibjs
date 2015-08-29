@@ -50,7 +50,7 @@ Helper methods construct Security objects.
 
     ib.stock("AAPL");
     
-    ib.option("AAPL", "28/08/2015", 76, "Call");
+    ib.option("AAPL", "28/08/2015", 120, "Call");
     
     ib.currency("EUR");
     
