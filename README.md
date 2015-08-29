@@ -43,7 +43,11 @@ Connect to the IB Java process with an authenticated user session.
 
     var ib = require("ib-sdk");
     
-    // Set connection options
+    ib.connect({ host: "localhost", port: 4001 }, function(err, status) {
+        // Connected or error
+    });
+    
+    // Set some options after connection
     ib.connection.options.verbose = true;
 
 Helper methods construct Security objects.
