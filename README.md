@@ -4,7 +4,7 @@ Interactive Brokers SDK framework build atop the [native javascript API](https:/
 
 ## Prerequisites
 
-* Open an [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
+* An [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
 * Install [Java](https://java.com/en/download/).
 * Install the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T).
 
