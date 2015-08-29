@@ -1,12 +1,18 @@
 # Interactive Brokers SDK
 
-Interactive Brokers SDK framework build atop the native javascript API.
+Interactive Brokers SDK framework build atop the [native javascript API](https://github.com/pilwon/node-ib).
 
 ## Prerequisites
 
-* Open an Interactive Brokers trading account.
+* Open an [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
 * Install [Java](https://java.com/en/download/)
 * Install the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T)
+
+## How does it work?
+
+The IB Gateway and TWS software are graphical desktop Java processes that proxy calls to the back-end servers.  There is no IB support for direct connections to their server tier.
+
+The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a binary TCP socket connection from Node.js to a local IB Gateway or TWS instance.
 
 ## How do I get it?
 
@@ -18,16 +24,14 @@ Clone repo with git
 
     git clone https://github.com/triploc/ib-sdk.git
 
-Download over HTTP
+Download over HTTPS
 
     wget https://github.com/triploc/ib-sdk/archive/master.zip
     unzip master.zip
 
 ## How do I use it?
 
-The SDK connects to a local IB Gateway or TWS instance, which it turn connects to IB back-end servers.
-
-Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate this interaction.
+Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.
 
 Once the IB proxy-of-your-choice is running, you can get at it through a node.js process using the SDK like so:
 
@@ -44,7 +48,6 @@ Once the IB proxy-of-your-choice is running, you can get at it through a node.js
             // View the update or look at the ticker.
         });
     });
-
 
 ## License
 
