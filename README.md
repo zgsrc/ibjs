@@ -37,7 +37,9 @@ Download over HTTPS:
 
 ## How do I use it?
 
-Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.
+Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.  To test whether the connection is working, run the test suite.
+
+    npm test
 
 Connect to the IB Java process with an authenticated user session.
 
