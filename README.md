@@ -16,7 +16,7 @@ Interactive Brokers SDK framework build atop the [native javascript API](https:/
 
 ## How does it work?
 
-The IB Gateway and TWS software are graphical desktop Java processes that proxy calls to the back-end servers.  There is no IB support for direct connections to their server tier.
+The IB Gateway and TWS software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without dedicated communication infrastructure, there is no IB support for direct connections to their server tier.
 
 The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a binary TCP socket connection from Node.js to a local IB Gateway or TWS instance.
 
@@ -39,13 +39,61 @@ Download over HTTPS
 
 Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.
 
-Connect and interact with the IB instance.
+Connect to the IB instance.
 
     var ib = require("ib-sdk");
     
-    ib.connection.verbose = true;
+    // Set connection options
+    ib.connection.options.verbose = true;
+
+Helper methods build Security objects.
+
+    ib.stock("AAPL");
     
-    ib.stock("AAPL").ticker(function(err, ticker) {
+    ib.option("AAPL", expiry, strike, right, exchange, currency);
+    
+    ib.currency("EUR", "USD");
+    
+    ib.future(symbol, expiry, currency);
+
+Security objects have methods to access details, fundamentals, and market data.
+
+    // Create a symbol
+    var AAPL = ib.stock("AAPL");
+    
+    // Get basic contract info
+    console.log(AAPL.contract());
+    
+    AAPL.details(function(err, details) {
+        // Details of security
+    });
+    
+    AAPL.fundamentals(function(err, reports) {
+        // Get all fundamental data for symbol
+    });
+    
+    AAPL.report(REPORT, function(err, reports) {
+        // Get specific report for symbol
+    });
+    
+    AAPL.chart({ 
+        endTime: new Date(),
+        duration: "1 d",
+        timeframe: BAR_SIZE,
+        regularTradingHours: true,
+        field: FIELD,
+        dateFormat: 1,
+        locale: TIME_ZONE,
+        realtime: true
+    }, function(err, bars, cancel) {
+        // Get historical bars and real-time updates until cancel is called
+    });
+    
+    AAPL.quote(function(err, quote) {
+        // Get snapshot quote
+    });
+    
+    AAPL.ticker(function(err, ticker) {
         ticker.on("beforeUpdate", function(update) {
             // View the update or look at the ticker.
         });
@@ -53,6 +101,10 @@ Connect and interact with the IB instance.
         ticker.on("afterUpdate", function(update) {
             // View the update or look at the ticker.
         });
+    });
+    
+    AAPL.offers(exchange, function(err, book) {
+        // Level 2 order book from a specific exchange
     });
 
 ## License
