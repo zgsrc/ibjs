@@ -10,10 +10,12 @@ Interactive Brokers SDK framework build atop the native javascript API.
 
 ## How do I get it?
 
-From github
+From GitHub
+
     git clone https://github.com/triploc/ib-sdk.git
 
 From NPM
+
     npm install ib-sdk
 
 ## How do I use it?
