@@ -2,6 +2,12 @@
 
 Interactive Brokers SDK framework build atop the [native javascript API](https://github.com/pilwon/node-ib).
 
+* Build your own trading system.
+* Create custom risk models.
+* Autonomous algorithmic trading.
+* Market data analysis.
+* Manage multiple accounts.
+
 ## Prerequisites
 
 * An [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
