@@ -9,9 +9,12 @@
     "async": "^1.4.0",
     "sugar": "^1.4.1"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "chai": "^3.2.0",
+    "mocha": "^2.2.5"
+  },
   "scripts": {
-    "test": "node test"
+    "test": "mocha"
   },
   "keywords": [
     "interactive brokers",
