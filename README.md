@@ -22,15 +22,15 @@ The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to m
 
 ## How do I get it?
 
-Install with npm
+Install with npm:
 
     npm install ib-sdk
 
-Clone repo with git
+Clone repo with git:
 
     git clone https://github.com/triploc/ib-sdk.git
 
-Download over HTTPS
+Download over HTTPS:
 
     wget https://github.com/triploc/ib-sdk/archive/master.zip
     unzip master.zip
@@ -39,22 +39,22 @@ Download over HTTPS
 
 Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.
 
-Connect to the IB instance.
+Connect to the IB Java process with an authenticated user session.
 
     var ib = require("ib-sdk");
     
     // Set connection options
     ib.connection.options.verbose = true;
 
-Helper methods build Security objects.
+Helper methods construct Security objects.
 
     ib.stock("AAPL");
     
-    ib.option("AAPL", expiry, strike, right, exchange, currency);
+    ib.option("AAPL", "28/08/2015", 76, "Call");
     
-    ib.currency("EUR", "USD");
+    ib.currency("EUR");
     
-    ib.future(symbol, expiry, currency);
+    ib.future("EM", "14/12/2015");
 
 Security objects have methods to access details, fundamentals, and market data.
 
