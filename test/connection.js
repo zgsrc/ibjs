@@ -120,6 +120,46 @@ describe('IB Connection', function() {
         });
     });
     
+    it.skip('can get real-time bars for AAPL', function(done) {
+        connection.bar(contract, { }, function(err, bar, cancel) {
+            expect(err).to.be.null;
+            bar.should.be.an("object");
+            cancel.should.be.a("function");
+            
+            cancel();
+            done();
+        });
+    });
+    
+    it.skip('can get level 2 quotes for AAPL', function(done) {
+        connection.quotes(contract, 10, function(err, book, cancel) {
+            expect(err).to.be.null;
+            book.should.be.an("object");
+            cancel.should.be.a("function");
+            
+            cancel();
+            done();
+        });
+    });
+    
+    it.skip('can set market data type', function(done) {
+        connection.setMarketDataType(0, function(err) {
+            expect(err).to.be.null;
+            done();
+        });
+    });
+    
+    it.skip('can fetch scanners', function(done) {
+        connection.scanners(function(err, scanners) {
+            expect(err).to.be.null;
+            done();
+        });
+    });
+    
+    it.skip('can set server log level', function() {
+        connection.setServerLogLevel(1);
+    });
+    
     after(function(done) {
         connection.disconnect(function() {
             done();
