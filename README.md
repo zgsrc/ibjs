@@ -1,3 +1,5 @@
+[![Logo](./ib-logo.png)](http://interactivebrokers.com/)
+
 # Interactive Brokers SDK
 
 Interactive Brokers SDK framework build atop the [native javascript API](https://github.com/pilwon/node-ib).
@@ -8,6 +10,22 @@ Interactive Brokers SDK framework build atop the [native javascript API](https:/
 * Market data analysis.
 * Manage multiple accounts.
 
+## Why an SDK?
+
+The [native javascript API](https://github.com/pilwon/node-ib) is awesome.  But it works like a duplex socket, meaning requests and responses are decoupled.
+
+    socket.makeRequest();
+    
+    socket.on('response', function(data) {
+        // figure out how this data is related to requests we've previously made
+    });
+
+That is a durable design pattern when responses are less than reliable.  But it makes things awkward and complicated vis-a-vis the standard javascript asynchronous programming model.  The SDK takes care of the event plumbing so that things look more like this:
+
+    connection.request(function(err, data) {
+        // the error or data are directly linked to the request made
+    });
+
 ## Prerequisites
 
 * An [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
@@ -16,7 +34,7 @@ Interactive Brokers SDK framework build atop the [native javascript API](https:/
 
 ## How does it work?
 
-The IB Gateway and TWS software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without dedicated communication infrastructure, there is no IB support for direct connections to their server tier.
+The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without dedicated communication infrastructure, there is no IB support for direct connections to their server tier.
 
 The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a binary TCP socket connection from Node.js to a local IB Gateway or TWS instance.
 
@@ -37,7 +55,7 @@ Download over HTTPS:
 
 ## How do I use it?
 
-Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction. You can run the mocha tests to make sure things work. Outside of market hours, tests on real-time market data calls will fail.
+Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction. You can run the mocha tests to make sure things work. Outside of market hours, tests on real-time market data calls will fail.
 
     npm test
 
@@ -45,9 +63,9 @@ Connect to the IB Java process with an authenticated user session.
 
     var ib = require("ib-sdk");
     
-    ib.connect({ host: "localhost", port: 4001 }, function(err, status) {
-        if (!err && status == "connected") {
-            ib.connection.currentTime(function(err, time) {
+    ib.connect({ host: "localhost", port: 4001 }, function(err, cxn) {
+        if (!err && cxn.status == "connected") {
+            cxn.currentTime(function(err, time) {
                 if (!err && time) {
                     // It's all good. Do what what you need to do.
                 }
@@ -123,7 +141,7 @@ Security objects have methods to access details, fundamentals, and market data.
 
 ## License
 
-Copyright (c) 2015, Jonathan Hollinger
+Copyright (c) 2016, Jonathan Hollinger
 
 Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
 
