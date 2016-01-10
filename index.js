@@ -1,7 +1,7 @@
 require("sugar");
 
 var async = require("async"),
-    IB = require("./lib/connection"),
+    connection = require("./lib/connection"),
     Security = require("./lib/security").Security,
     Accounts = require("./lib/accounts").Accounts,
     Order = require("./lib/order").Order,
@@ -21,13 +21,15 @@ exports.connect = function(options, cb) {
     
     options = options || { verbose: false };
     
-    cxn = IB.connect(options, cb);
+    cxn = connection.connect(options, cb);
     
     exports.connection = cxn;
     
     process.on('beforeExit', function(code) {
         cxn.disconnect();
     });
+    
+    return cxn;
 }
 
 exports.stock = function(symbol, exchange, currency) {

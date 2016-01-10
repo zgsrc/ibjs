@@ -39,16 +39,28 @@ Download over HTTPS:
 
 Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.
 
+You can run the mocha tests to make sure things work. Outside of market hours, tests on real-time market data calls will fail.
+
+    npm test
+
 Connect to the IB Java process with an authenticated user session.
 
     var ib = require("ib-sdk");
     
     ib.connect({ host: "localhost", port: 4001 }, function(err, status) {
-        // Connected or error
+        if (!err && status == "connected") {
+            ib.connection.currentTime(function(err, time) {
+                if (!err && time) {
+                    // It's all good. Do what what you need to do.
+                }
+            });
+        }
     });
     
     // Set some options after connection
     ib.connection.options.verbose = true;
+
+> **NOTE**: IB Gateway or TWS can enter a partially functional state. If connect works but other calls do not, you may need to restart the IB software.
 
 Helper methods construct Security objects.
 

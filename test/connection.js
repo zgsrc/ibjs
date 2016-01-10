@@ -1,6 +1,6 @@
-var chai = require('chai');
+var chai = require('chai'),
+    expect = chai.expect;
 
-var expect = chai.expect;
 chai.should();
 
 describe('IB Connection', function() {
@@ -8,7 +8,8 @@ describe('IB Connection', function() {
         constants = require("../lib/constants"),
         connection = null;
     
-    ib.clientSeed = 100;
+    ib.client = 100;
+    
     it('can connect to IB API interface', function(done) {    
         connection = new ib.Connection();
         connection.connect(function(err, status) {
@@ -34,10 +35,10 @@ describe('IB Connection', function() {
         });
     });
     
-    it('cannot disconnect twice', function(done) {
+    it('can disconnect twice', function(done) {
         connection.disconnect(function(err, status) {
-            expect(err).to.be.ok;
-            status.should.equal("error");
+            expect(err).to.be.null;
+            status.should.equal("disconnected");
             done();
         });
     });
@@ -59,13 +60,13 @@ describe('IB Connection', function() {
     });
     
     var contract = null;
-    it('can create AAPL contract', function() {
+    it('can create contract', function() {
         contract = connection.contract.stock("AAPL");
         contract.should.be.ok;
         contract.symbol.should.equal("AAPL");
     });
     
-    it('can get APPL contract details', function(done) {
+    it('can get contract details', function(done) {
         connection.security(contract, function(err, details) {
             expect(err).to.be.null;
             details.should.be.ok;
@@ -73,7 +74,7 @@ describe('IB Connection', function() {
         });
     });
     
-    it('can get AAPL fundamentals', function(done) {
+    it('can get fundamentals', function(done) {
         connection.fundamentals(contract, constants.REPORT.snapshot, function(err, report, cancel) {
             expect(err).to.be.null;
             report.should.be.an("object");
@@ -84,7 +85,7 @@ describe('IB Connection', function() {
         });
     });
     
-    it('can get AAPL historical pricing', function(done) {
+    it('can get historical pricing', function(done) {
         this.timeout(10000);
         connection.historicals(contract, { }, function(err, bar, cancel) {
             expect(err).to.be.null;
@@ -98,7 +99,7 @@ describe('IB Connection', function() {
         });
     });
     
-    it('can get a quote for AAPL', function(done) {
+    it('can get a quote', function(done) {
         connection.quote(contract, null, function(err, quote, cancel) {
             expect(err).to.be.null;
             quote.should.be.an("object");
@@ -109,7 +110,7 @@ describe('IB Connection', function() {
         });
     });
     
-    it('can get a snapshot quote for AAPL', function(done) {
+    it('can get a snapshot quote', function(done) {
         connection.snapshot(contract, function(err, quote, cancel) {
             expect(err).to.be.null;
             quote.should.be.an("object");
@@ -120,7 +121,7 @@ describe('IB Connection', function() {
         });
     });
     
-    it.skip('can get real-time bars for AAPL', function(done) {
+    it.skip('can get real-time bars', function(done) {
         connection.bar(contract, { }, function(err, bar, cancel) {
             expect(err).to.be.null;
             bar.should.be.an("object");
@@ -131,7 +132,7 @@ describe('IB Connection', function() {
         });
     });
     
-    it.skip('can get level 2 quotes for AAPL', function(done) {
+    it.skip('can get level 2 quotes', function(done) {
         connection.quotes(contract, 10, function(err, book, cancel) {
             expect(err).to.be.null;
             book.should.be.an("object");
