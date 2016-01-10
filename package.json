@@ -1,48 +1,50 @@
 {
-    "name": "ib-sdk",
-    "version": "0.1.0",
-    "description": "Interactive Brokers SDK framework build atop the native javascript API.",
-    "main": "index.js",
-    "dependencies": {
-        "async": "^1.4.0",
-        "colors": "^1.1.2",
-        "ib": "^0.1.3",
-        "moment-timezone": "^0.4.0",
-        "sugar": "^1.4.1",
-        "xml2js": "^0.4.9"
-    },
-    "devDependencies": {
-        "chai": "^3.2.0",
-        "mocha": "^2.2.5"
-    },
-    "scripts": {
-        "test": "mocha",
-        "start": "node console"
-    },
-    "keywords": [
-        "interactive brokers",
-        "ib",
-        "sdk",
-        "api",
-        "stocks",
-        "options",
-        "futures",
-        "currency",
-        "forex",
-        "trading",
-        "brokerage",
-        "market data",
-        "algorithmic trading",
-        "programmatic trading",
-        "program trading",
-        "system trading",
-        "trading system",
-        "market making",
-        "market maker",
-        "day trading",
-        "high frequency trading",
-        "automated trading"
-    ],
-    "author": "Jonathan Hollinger",
-    "license": "ISC"
+  "name": "ib-sdk",
+  "version": "0.1.0",
+  "description": "Interactive Brokers SDK framework build atop the native javascript API.",
+  "main": "index.js",
+  "dependencies": {
+    "async": "^1.5.2",
+    "chai": "^3.4.1",
+    "colors": "^1.1.2",
+    "ib": "^0.1.6",
+    "mocha": "^2.3.4",
+    "moment-timezone": "^0.4.1",
+    "sugar": "^1.4.1",
+    "xml2js": "^0.4.15"
+  },
+  "devDependencies": {
+    "chai": "^3.2.0",
+    "mocha": "^2.2.5"
+  },
+  "scripts": {
+    "test": "mocha",
+    "start": "node console"
+  },
+  "keywords": [
+    "interactive brokers",
+    "ib",
+    "sdk",
+    "api",
+    "stocks",
+    "options",
+    "futures",
+    "currency",
+    "forex",
+    "trading",
+    "brokerage",
+    "market data",
+    "algorithmic trading",
+    "programmatic trading",
+    "program trading",
+    "system trading",
+    "trading system",
+    "market making",
+    "market maker",
+    "day trading",
+    "high frequency trading",
+    "automated trading"
+  ],
+  "author": "Jonathan Hollinger",
+  "license": "ISC"
 }

@@ -87,15 +87,10 @@ describe('IB Connection', function() {
     
     it('can get historical pricing', function(done) {
         this.timeout(10000);
-        connection.historicals(contract, { }, function(err, bar, cancel) {
+        connection.historicals(contract, { }, function(err, bar) {
             expect(err).to.be.null;
-            bar.should.be.an("object");
-            cancel.should.be.a("function");
-            
-            if (bar.date.startsWith("finished")) {
-                cancel();
-                done();
-            }
+            bar.should.be.an("array");
+            done();
         });
     });
     

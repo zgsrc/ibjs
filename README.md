@@ -37,9 +37,7 @@ Download over HTTPS:
 
 ## How do I use it?
 
-Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.
-
-You can run the mocha tests to make sure things work. Outside of market hours, tests on real-time market data calls will fail.
+Login to the Gateway or TWS software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction. You can run the mocha tests to make sure things work. Outside of market hours, tests on real-time market data calls will fail.
 
     npm test
 
@@ -60,7 +58,7 @@ Connect to the IB Java process with an authenticated user session.
     // Set some options after connection
     ib.connection.options.verbose = true;
 
-> **NOTE**: IB Gateway or TWS can enter a partially functional state. If connect works but other calls do not, you may need to restart the IB software.
+> **NOTE**: IB Gateway or TWS can enter a partially functional state with respect to API connections. If connect works but other calls do not, you may need to restart the IB software.
 
 Helper methods construct Security objects.
 
