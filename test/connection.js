@@ -1,3 +1,5 @@
+require("sugar");
+
 var chai = require('chai'),
     expect = chai.expect;
 
@@ -59,6 +61,14 @@ describe('IB Connection', function() {
         });
     });
     
+    it('can still fetch the current server time', function(done) {
+        connection.currentTime(function(err, time) {
+            expect(err).to.be.null;
+            time.should.be.a("number");
+            done();
+        });
+    });
+    
     var contract = null;
     it('can create contract', function() {
         contract = connection.contract.stock("AAPL");
@@ -113,7 +123,7 @@ describe('IB Connection', function() {
         });
     });
     
-    it.skip('can get real-time bars', function(done) {
+    it('can get real-time bars', function(done) {
         connection.bar(contract, { }, function(err, bar, cancel) {
             expect(err).to.be.null;
             bar.should.be.an("object");
@@ -125,7 +135,7 @@ describe('IB Connection', function() {
     });
     
     it.skip('can get level 2 quotes', function(done) {
-        connection.quotes(contract, 10, function(err, book, cancel) {
+        connection.quotes(connection.contract.stock("SPY", "ISLAND"), 10, function(err, book, cancel) {
             expect(err).to.be.null;
             book.should.be.an("object");
             cancel.should.be.a("function");
@@ -135,22 +145,40 @@ describe('IB Connection', function() {
         });
     });
     
-    it.skip('can set market data type', function(done) {
-        connection.setMarketDataType(0, function(err) {
-            expect(err).to.be.null;
-            done();
-        });
+    it('can set market data type', function() {
+        connection.setMarketDataType(0);
     });
     
-    it.skip('can fetch scanners', function(done) {
+    it('can fetch scanners', function(done) {
         connection.scanners(function(err, scanners) {
             expect(err).to.be.null;
             done();
         });
     });
     
-    it.skip('can set server log level', function() {
+    it('can set server log level', function() {
         connection.setServerLogLevel(1);
+    });
+    
+    it('can get account summary information', function(done) {
+        connection.summary(function(err, data, cancel) {
+            expect(err).to.be.null;
+            data.should.be.an("array");
+            cancel();
+            done();
+        });
+    });
+    
+    it('can get trade executions', function(done) {
+        connection.executions(function(err, data) {
+            expect(err).to.be.null;
+            data.should.be.an("array");
+            done();
+        });
+    });
+    
+    it('should have no remaining callbacks registered', function() {
+        Object.keys(connection.callbacks).length.should.equal(0);
     });
     
     after(function(done) {
