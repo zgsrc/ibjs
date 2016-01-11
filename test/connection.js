@@ -75,12 +75,9 @@ describe('IB Connection', function() {
     });
     
     it('can get fundamentals', function(done) {
-        connection.fundamentals(contract, constants.REPORT.snapshot, function(err, report, cancel) {
+        connection.fundamentals(contract, constants.REPORT.snapshot, function(err, report) {
             expect(err).to.be.null;
             report.should.be.an("object");
-            cancel.should.be.a("function");
-            
-            cancel();
             done();
         });
     });
