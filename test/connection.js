@@ -77,7 +77,7 @@ describe('IB Connection', function() {
     });
     
     it('can get contract details', function(done) {
-        connection.security(contract, function(err, details) {
+        connection.details(contract, function(err, details) {
             expect(err).to.be.null;
             details.should.be.ok;
             done();
@@ -101,8 +101,8 @@ describe('IB Connection', function() {
         });
     });
     
-    it('can get a quote', function(done) {
-        connection.quote(contract, null, function(err, quote, cancel) {
+    it('can get a ticker quote', function(done) {
+        connection.ticker(contract, null, function(err, quote, cancel) {
             expect(err).to.be.null;
             quote.should.be.an("object");
             cancel.should.be.a("function");
@@ -135,7 +135,7 @@ describe('IB Connection', function() {
     });
     
     it.skip('can get level 2 quotes', function(done) {
-        connection.quotes(connection.contract.stock("SPY", "ISLAND"), 10, function(err, book, cancel) {
+        connection.marketDepth(connection.contract.stock("SPY", "ISLAND"), 10, function(err, book, cancel) {
             expect(err).to.be.null;
             book.should.be.an("object");
             cancel.should.be.a("function");
@@ -149,8 +149,8 @@ describe('IB Connection', function() {
         connection.setMarketDataType(0);
     });
     
-    it('can fetch scanners', function(done) {
-        connection.scanners(function(err, scanners) {
+    it('can fetch scanner parameters', function(done) {
+        connection.scannerParameters(function(err, scanners) {
             expect(err).to.be.null;
             done();
         });
