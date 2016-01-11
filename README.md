@@ -26,19 +26,19 @@ That is a durable design pattern when responses are less than reliable.  But it 
         // the error or data are directly linked to the request made
     });
 
-## Prerequisites
-
-* An [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
-* Install [Java](https://java.com/en/download/).
-* Install the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T).
-
 ## How does it work?
 
 The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without dedicated communication infrastructure, there is no IB support for direct connections to their server tier.
 
 The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a binary TCP socket connection from Node.js to a local IB Gateway or TWS instance.
 
-## How do I get it?
+## Prerequisites
+
+* An [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
+* Install [Java](https://java.com/en/download/).
+* Install the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T).
+
+## Installation
 
 Install with npm:
 
@@ -76,7 +76,7 @@ Connect to the IB Java process with an authenticated user session.
     // Set some options after connection
     ib.connection.options.verbose = true;
 
-> **NOTE**: IB Gateway or TWS can enter a partially functional state with respect to API connections. If connect works but other calls do not, you may need to restart the IB software.
+> **NOTE**: IB Gateway or TWS can enter a partially functional state with respect to API connections.  If connect works but other calls do not, you may need to restart the IB software.
 
 Helper methods construct Security objects.
 
