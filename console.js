@@ -23,6 +23,14 @@ function run(args, cb) {
     }
 }
 
+function write(cb) {
+    return function(err, data) {
+        if (err) console.log(err);
+        else console.log(data);
+        cb();
+    };
+}
+
 var ib = require("./index");
 var commands = {
     connect: function(args, cb) {
@@ -39,10 +47,6 @@ var commands = {
             cb();
         });
     },
-    account: function(args, cb) {
-        var accounts = ib.accounts();
-        cb();
-    },
     stock: function(args, cb) {
         var stock = ib.stock(args[0]);
         if (args[1]) {
@@ -51,11 +55,19 @@ var commands = {
                 cb();        
             }
             else if (args[1] == "details") {
-                stock.details(function(err, details) {
-                    if (err) console.log(err);
-                    else console.log(details);
-                    cb();
-                });
+                stock.details(write(cb));
+            }
+            else if (args[1] == "report") {
+                stock.report(args[2], write(cb));
+            }
+            else if (args[1] == "fundamentals") {
+                stock.fundamentals(write(cb));
+            }
+            else if (args[1] == "chart") {
+                stock.chart(write(cb));
+            }
+            else if (args[1] == "quote") {
+                stock.quote(write(cb));
             }
             else {
                 console.log("Unrecognized subcommand.".red);

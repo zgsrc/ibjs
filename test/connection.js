@@ -124,23 +124,31 @@ describe('IB Connection', function() {
     });
     
     it('can get real-time bars', function(done) {
+        this.timeout(10000);
         connection.bar(contract, { }, function(err, bar, cancel) {
-            expect(err).to.be.null;
-            bar.should.be.an("object");
-            cancel.should.be.a("function");
+            if (err) expect(err).to.be.an("error");
+            else {
+                expect(err).to.be.null;
+                bar.should.be.an("object");
+                cancel.should.be.a("function");
+                cancel();
+            }
             
-            cancel();
             done();
         });
     });
     
     it.skip('can get level 2 quotes', function(done) {
+        this.timeout(10000);
         connection.marketDepth(connection.contract.stock("SPY", "ISLAND"), 10, function(err, book, cancel) {
-            expect(err).to.be.null;
-            book.should.be.an("object");
-            cancel.should.be.a("function");
+            if (err) expect(err).to.be.an("error");
+            else {
+                expect(err).to.be.null;
+                book.should.be.an("object");
+                cancel.should.be.a("function");
+                cancel();
+            }
             
-            cancel();
             done();
         });
     });
@@ -152,6 +160,7 @@ describe('IB Connection', function() {
     it('can fetch scanner parameters', function(done) {
         connection.scannerParameters(function(err, scanners) {
             expect(err).to.be.null;
+            expect(scanners).to.be.an("object");
             done();
         });
     });
@@ -172,7 +181,7 @@ describe('IB Connection', function() {
     it('can get trade executions', function(done) {
         connection.executions(function(err, data) {
             expect(err).to.be.null;
-            data.should.be.an("array");
+            data ? data.should.be.an("array") : null;
             done();
         });
     });
