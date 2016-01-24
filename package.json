@@ -7,11 +7,11 @@
     "async": "^1.5.2",
     "chai": "^3.4.1",
     "colors": "^1.1.2",
+    "fast-xml2js": "^1.0.6",
     "ib": "^0.1.7",
     "mocha": "^2.3.4",
     "moment-timezone": "^0.4.1",
-    "sugar": "^1.4.1",
-    "xml2js": "^0.4.16"
+    "sugar": "^1.4.1"
   },
   "devDependencies": {
     "chai": "^3.2.0",
@@ -47,8 +47,8 @@
   ],
   "author": "Jonathan Hollinger",
   "license": "ISC",
-  "repository" : { 
-    "type" : "git", 
-    "url" : "https://github.com/triploc/ib-sdk.git"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/triploc/ib-sdk.git"
   }
 }
