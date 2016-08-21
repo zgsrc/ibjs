@@ -53,7 +53,7 @@ describe('IB Connection', function() {
         });
     });
     
-    it('can connect twice', function(done) {
+    it('connect is idempotent', function(done) {
         connection.connect(function(err, status) {
             expect(err).to.be.null;
             status.should.equal("connected");
@@ -138,7 +138,7 @@ describe('IB Connection', function() {
         });
     });
     
-    it.skip('can get level 2 quotes', function(done) {
+    it('can get level 2 quotes', function(done) {
         this.timeout(10000);
         connection.marketDepth(connection.contract.stock("SPY", "ISLAND"), 10, function(err, book, cancel) {
             if (err) expect(err).to.be.an("error");
