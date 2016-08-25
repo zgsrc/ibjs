@@ -2,7 +2,7 @@
 
 # Interactive Brokers SDK
 
-Interactive Brokers SDK is a framework build atop the [native javascript API](https://github.com/pilwon/node-ib).  Its purpose is to provide straightforward programmatic access to your portfolio and market data subscriptions.
+Interactive Brokers SDK is a framework build atop the [native javascript API](https://github.com/pilwon/node-ib).  Straightforward programmatic access to your portfolio and market data subscriptions.
 
 ## Prerequisites
 
@@ -27,16 +27,18 @@ Download over HTTPS:
 
 ## Getting Started
 
-Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.  You can run the mocha tests to make sure things work.  Outside of market hours, tests on realtime market data calls will fail.
+Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.
+
+You can run the mocha tests to make sure things work.  Outside of market hours, tests on realtime market data calls will fail.
 
     npm test
 
-Connect to the IB Java process with an authenticated user session.
+The API and SDK expect to connect to an authenticated user session.  Connect to the IB process like so:
 
 ```javascript
 var sdk = require("ib-sdk");
 
-sdk.connect({ host: "localhost", port: 4001 }, function(err, cxn) {
+sdk.connect({ host: "localhost", port: 4001 }, (err, cxn) => {
     if (err) console.log(err);
     else {
         // Use high-level interface rather than cxn directly
@@ -44,9 +46,29 @@ sdk.connect({ host: "localhost", port: 4001 }, function(err, cxn) {
 
         // Set some options after connection
         cxn.options.verbose = true;
+        
+        // Do stuff
+        var AAPL = ib.stock("AAPL");
+        AAPL.ticker((err, ticker) => {
+            ticker.on("update", update => {
+                if (ticker.last < 110.00) {
+                    AAPL.buy(100, (err, order) => {
+                        if (order.status == "COMPLETE") {
+                            console.log("Filled!");
+                        }
+                    });
+                }
+            });
+        })
     }
 });
-```    
+```
+
+Play around using the console.  The default port is 4001, but you can override it.
+
+    npm start [port]
+    
+The console has an `ib` variable that is an `sdk.Interface` object like one constructed in the code above.
 
 > **NOTE**: IB Gateway or TWS can enter a partially functional state with respect to API connections.  If connect works but other calls do not, you may need to restart the IB software.
     

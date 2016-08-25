@@ -1,9 +1,15 @@
-const repl = require('repl'),
+"use strict";
+
+require("sugar");
+
+const repl = require("repl"),
       colors = require("colors"),
       sdk = require("./index");
 
+let port = process.argv[2] || 4001;
+
 console.log("Connecting...".gray);
-sdk.connect(function(err, cxn) {
+sdk.connect({ port: port }, function(err, cxn) {
     if (err) {
         console.log(("Error: " + err.message).red);
     }
