@@ -1,14 +1,14 @@
 {
   "name": "ib-sdk",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Interactive Brokers SDK framework build atop the native javascript API.",
   "main": "index.js",
   "dependencies": {
     "async": "^1.5.2",
     "colors": "^1.1.2",
-    "fast-xml2js": "^1.0.7",
-    "ib": "^0.1.11",
-    "sugar": "^1.5.0"
+    "ib": "^0.1.12",
+    "sugar": "^1.5.0",
+    "xml2js": "^0.4.17"
   },
   "devDependencies": {
     "chai": "^3.2.0",
@@ -16,7 +16,7 @@
   },
   "scripts": {
     "test": "mocha",
-    "start": "node console"
+    "start": "node index.js"
   },
   "keywords": [
     "interactive brokers",
@@ -36,8 +36,6 @@
     "program trading",
     "system trading",
     "trading system",
-    "market making",
-    "market maker",
     "day trading",
     "high frequency trading",
     "automated trading"
