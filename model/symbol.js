@@ -141,9 +141,9 @@ class Symbol extends Events {
                     else if (Object.isString(options.bars)) {
                         this.bars[options.bars] = security.bars[options.bars]();
                         this.bars[options.bars]
-                                    .on("error", err => this.emit("error", err))
-                                    .on("warning", msg => this.emit("warning", msg))
-                                    .on("message", msg => this.emit("message", msg));
+                            .on("error", err => this.emit("error", err))
+                            .on("warning", msg => this.emit("warning", msg))
+                            .on("message", msg => this.emit("message", msg));
                         
                         this.bars[options.bars].load();
                     }

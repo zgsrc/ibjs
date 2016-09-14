@@ -27,51 +27,38 @@ Download over HTTPS:
 
 ## Getting Started
 
-Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.
+Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.  The API and SDK expect to connect to an authenticated user session.  The IB software must be configured to accept API connections.  The SDK connects over `tcp://localhost:4001` by default.
 
-You can run the mocha tests to make sure things work.  Outside of market hours, tests on realtime market data calls will fail.
+Kick the tires and make sure sure things work by running the terminal interface from the SDK directory:
 
-    npm test
+    npm start terminal [port]
+    
+The terminal will give you a default `environment` through the `ib` variable.  Use `define` as an alias to `ib.define` and `$` as an alias to `ib.symbols` for ease.
 
-The API and SDK expect to connect to an authenticated user session.  Connect to the IB process like so:
+    > define("AAPL")
+    undefined
+    > $.AAPL
+    [all the things]
+
+Connect to the IB process like so:
 
 ```javascript
-var sdk = require("ib-sdk");
+let sdk = require("ib-sdk"),
+    session = sdk.connect({ host: "localhost", port: 4001 });
 
-sdk.connect({ host: "localhost", port: 4001 }, (err, cxn) => {
-    if (err) console.log(err);
-    else {
-        // Use high-level interface rather than cxn directly
-        var ib = new sdk.Interface(cxn);
-
-        // Set some options after connection
-        cxn.options.verbose = true;
-        
-        // Do stuff
-        var AAPL = ib.stock("AAPL");
-        AAPL.ticker((err, ticker) => {
-            ticker.on("update", update => {
-                if (ticker.last < 110.00) {
-                    AAPL.buy(100, (err, order) => {
-                        if (order.status == "COMPLETE") {
-                            console.log("Filled!");
-                        }
-                    });
-                }
-            });
-        })
-    }
+session.service.socket.on("connected", () => {
+    let ib = session.environment().on("badState", () => {
+        console.log("IB API unresponsive!!! Try restarting IB software and reconnecting.");
+    });
+    
+    ib.define("AAPL");
 });
 ```
 
-Play around using the console.  The default port is 4001, but you can override it.
-
-    npm start [port]
-    
-The console has an `ib` variable that is an `sdk.Interface` object like one constructed in the code above.
-
 > **NOTE**: IB Gateway or TWS can enter a partially functional state with respect to API connections.  If connect works but other calls do not, you may need to restart the IB software.
-    
+
+# Miscellaneous
+
 ## How does it work?
 
 The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without dedicated communication infrastructure, there is no IB support for direct connections to their server tier.
@@ -104,73 +91,6 @@ The second thing the SDK does is plop that `Connection` inside an object model t
 2) Integrates realtime updates into a single composite model
 
 Finally, the SDK provides a toolkit to help get done what needs doing.
-
-# SDK High-Level Interface
-
-Helper methods construct Security objects.
-
-```javascript
-ib.stock("AAPL");
-
-ib.option("AAPL", "28/08/2015", 120, "Call");
-
-ib.currency("EUR");
-
-ib.future("EM", "14/12/2015");
-```
-
-Security objects have methods to access details, fundamentals, and market data.
-
-```javascript
-// Create a symbol
-var AAPL = ib.stock("AAPL");
-
-// Get basic contract info
-console.log(AAPL.contract());
-
-AAPL.details(function(err, details) {
-    // Details of security
-});
-
-AAPL.fundamentals(function(err, reports) {
-    // Get all fundamental data for symbol
-});
-
-AAPL.report(REPORT, function(err, reports) {
-    // Get specific report for symbol
-});
-
-AAPL.chart({ 
-    endTime: new Date(),
-    duration: "1 d",
-    timeframe: BAR_SIZE,
-    regularTradingHours: true,
-    field: FIELD,
-    dateFormat: 1,
-    locale: TIME_ZONE,
-    realtime: true
-}, function(err, bars, cancel) {
-    // Get historical bars and real-time updates until cancel is called
-});
-
-AAPL.quote(function(err, quote) {
-    // Get snapshot quote
-});
-
-AAPL.ticker(function(err, ticker) {
-    ticker.on("beforeUpdate", function(update) {
-        // View the update or look at the ticker.
-    });
-
-    ticker.on("afterUpdate", function(update) {
-        // View the update or look at the ticker.
-    });
-});
-
-AAPL.offers(exchange, function(err, book) {
-    // Level 2 order book from a specific exchange
-});
-```
 
 ## License
 
