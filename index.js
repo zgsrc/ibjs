@@ -54,7 +54,7 @@ const terminal = exports.terminal = session => {
         });
         
         cmd.context.ib = env;
-        cmd.context.define = (desc, opt) => env.define(desc, opt);
+        cmd.context.watch = (desc, opt) => env.watch(desc, opt);
         cmd.context.$ = env.symbols;
         
         cmd.on("exit", () => {

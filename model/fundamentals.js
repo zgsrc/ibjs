@@ -2,14 +2,48 @@
 
 const async = require("async");
 
+const REPORT = {
+    snapshot: "ReportSnapshot",
+    financials: "ReportsFinSummary",
+    ratios: "ReportRatios",
+    statements: "ReportsFinStatements",
+    consensus: "RESC",
+    calendar: "CalendarReport"
+};
+
 class Fundamentals {
     
     constructor(security) {
         this.security = security;
+        this.REPORT_TYPES = REPORT;
+    }
+    
+    loadSnapshot(cb) {
+        this.load("snapshot", cb);
+    }
+    
+    loadFinancials(cb) {
+        this.load("financials", cb);
+    }
+    
+    loadRatios(cb) {
+        this.load("ratios", cb);
+    }
+    
+    loadStatements(cb) {
+        this.load("statements", cb);
+    }
+    
+    loadConsensus(cb) {
+        this.load("consensus", cb);
+    }
+    
+    loadCalendar(cb) {
+        this.load("calendar", cb);
     }
     
     load(type, cb) {
-        this.security.service.fundamentalData(this.security.summary, Fundamentals.REPORT[type])
+        this.security.service.fundamentalData(this.security.summary, REPORT[type])
             .on("data", (data, cancel) => {
                 this[type] = data;
                 if (cb) {
@@ -43,7 +77,7 @@ class Fundamentals {
     loadAll(cb) {
         let msg = "";
         async.forEachSeries(
-            Object.keys(Fundamentals.REPORT).exclude("ratios"), /* Ratios not working */
+            Object.keys(REPORT).exclude("ratios"), /* Ratios not working */
             (type, cb) => this.load(type, err => {
                 if (err) msg += err.message + " ";
                 cb();
@@ -53,14 +87,5 @@ class Fundamentals {
     }
     
 }
-
-Fundamentals.REPORT = {
-    snapshot: "ReportSnapshot",
-    financials: "ReportsFinSummary",
-    ratios: "ReportRatios",
-    statements: "ReportsFinStatements",
-    consensus: "RESC",
-    calendar: "CalendarReport"
-};
 
 module.exports = Fundamentals;

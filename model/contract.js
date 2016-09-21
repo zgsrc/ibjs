@@ -21,6 +21,7 @@ const SECURITY_TYPE = {
     forward: "FOP",
     forwards: "FOP",
     cash: "CASH",
+    currency: "CASH",
     bag: "BAG",
     news: "NEWS"
 };

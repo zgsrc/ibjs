@@ -72,15 +72,15 @@ class Environment extends Events {
         if (options.symbols) {
             options.symbols.each(security => {
                 if (security) {
-                    if (Array.isArray(security)) this.define(...security);
-                    else if (Object.isObject(security)) this.define(security.description, security.options);
-                    else this.define(security);
+                    if (Array.isArray(security)) this.watch(...security);
+                    else if (Object.isObject(security)) this.watch(security.description, security.options);
+                    else this.watch(security);
                 }
             });
         }
     }
     
-    define(description, options) {
+    watch(description, options) {
         this.session.security(description, (err, security) => {
             if (err) {
                 this.emit("error", err);
