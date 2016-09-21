@@ -149,26 +149,26 @@ The SDK lets you specify financial instruments in a readable string format.
 
 So for example, a stock might look like:
 
-> IBM
-> IBM stock
-> IBM stock in MXN on BMV
+* IBM
+* IBM stock
+* IBM stock in MXN on BMV
 
 Futures:
 
-> Jan16 CL futures
-> Jan16 CL futures in USD on NYMEX
+* Jan16 CL futures
+* Jan16 CL futures in USD on NYMEX
 
 Options:
 
-> Sep16'17 AAPL puts at 110
+* Sep16'17 AAPL puts at 110
 
 Currencies:
 
-> USD.EUR currency
+* USD.EUR currency
 
 Indices:
 
-> INDU index
+* INDU index
 
 ## Data Model
 
