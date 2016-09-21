@@ -2,7 +2,8 @@
 
 const repl = require("repl"),
       colors = require("colors"),
-      IB = require('ib');
+      fs = require("fs"),
+      IB = require("ib");
 
 const Service = exports.Service = require("./service/service"),
       Dispatch = exports.Dispatch = require("./service/dispatch"),

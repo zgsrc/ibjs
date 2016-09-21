@@ -170,6 +170,8 @@ Indices:
 
 * INDU index
 
+> **NOTE**: This capability does not serve as a security search.  Use the [IB contract search](https://pennies.interactivebrokers.com/cstools/contract_info) for that.
+
 ## Data Model
 
 The data model puts an object-oriented interface around most of the low-level API capabilities, handling complicated `Service` method calls and assembling streaming responses into a comprehensive dataset.
