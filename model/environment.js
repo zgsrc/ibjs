@@ -38,7 +38,11 @@ class Environment extends Events {
         
         if (options.accounts) {
             this.accounts = this.session.accounts();
-            this.accounts.on("error", err => this.emit("error", err));
+            if (Array.isArray(options.accounts)) {
+                this.accounts.tags = options.accounts;
+            }
+            
+            this.accounts.on("error", err => this.emit("error", err)).stream();
             badStateWatcher(this.accounts);
         }
         
@@ -49,7 +53,7 @@ class Environment extends Events {
         }
         
         if (options.executions) {
-            this.executions = this.session.executions();
+            this.executions = this.session.executions(Object.isObject(options.executions) ? options.executions : null);
             this.executions.on("error", err => this.emit("error", err));
             badStateWatcher(this.executions);
         }

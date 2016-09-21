@@ -72,14 +72,15 @@ session.service.socket.on("connected", () => {
     
     // custom environment
     ib = session.environment({ 
-        system: true,
-        accounts: true,
-        positions: true,
-        executions: true,
-        orders: "all",
+        system: true, // boolean
+        accounts: true, // boolean | [ "TAG1", "TAG2" ]
+        positions: true, // boolean
+        executions: true, // boolean | { filter }
+        orders: "all", // boolean | "all"
         symbols: [
             "SPX index",
-            "GOOGL"
+            [ "GOOGL", { } ],
+            { description: "GOOGL", options: { } }
         ]
     });
     
@@ -111,12 +112,12 @@ Create a `Symbol` using the `watch` method with an optional configuration.  The 
 ```javascript
 ib.watch("AAPL", {
     name: "Apple",
-    fundamentals: "all",
-    quote: "streaming",
-    depth: "all",
-    rows: 10,
+    fundamentals: "all", // "all" | [ "snapshot", "summary", ] | "ratios"
+    quote: "streaming", // boolean | "snapshot" | [ fields ]
+    depth: "all", // "all" | [ "NYSE", "ARCA" ] | "CBOE"
+    rows: 10, // default = 10
     bars: {
-        ONE_SECOND: false,
+        ONE_SECOND: false, // boolean | positive integer
         FIVE_SECONDS: false,
         FIFTEEN_SECONDS: false,
         THIRTY_SECONDS: false,
@@ -254,25 +255,25 @@ service.positions()
 // service requests
 service.system();
 service.currentTime();
-service.contractDetails();
-service.fundamentalData();
-service.historicalData();
-service.realTimeBars();
-service.mktData();
-service.mktDepth();
+service.contractDetails(contract);
+service.fundamentalData(contract, reportType);
+service.historicalData(contract, endDateTime, durationStr, barSizeSetting, whatToShow, useRTH, formatDate);
+service.realTimeBars(contract, barSize, whatToShow, useRTH);
+service.mktData(contract, genericTickList, snapshot);
+service.mktDepth(contract, numRows);
 service.scannerParameters();
-service.scannerSubscription();
-service.accountSummary();
-service.accountUpdates();
-service.executions();
+service.scannerSubscription(subscription);
+service.accountSummary(group, tags);
+service.accountUpdates(subscribe, acctCode);
+service.executions(filter);
 service.commissions();
 service.openOrders();
 service.allOpenOrders();
 service.positions();
-service.orderids();
-service.placeOrder();
-service.exerciseOptions();
-service.newsBulletins();
+service.orderIds(numIds);
+service.placeOrder(contract, order);
+service.exerciseOptions(contract, exerciseAction, exerciseQuantity, account, override);
+service.newsBulletins(allMsgs);
 serivce.queryDisplayGroups();
 service.subscribeToGroupEvents();
 serivce.updateDisplayGroup();
@@ -280,20 +281,24 @@ serivce.updateDisplayGroup();
 
 `Service` instances also supports a mechanism to relay streaming responses to proxy instances of the SDK, enabling a distributed/networked system architecture.  The `relay` method takes a `EventEmitter` compatible (i.e. implements `emit` and `on`) object and relays `data`, `error`, and `end` events.  A `Proxy` is a `Service`-compatible object that can be instantiated remotely and use a similar `EventEmitter` compatible transport (e.g. [socket.io](http://socket.io/)) to communicate with a `Relay` server.
 
-Server
+__Server__
 ```javascript
 let app = require('http').createServer(handler),
-    io = require('socket.io')(app).on('connection', socket => sdk.server({
-        host: "localhost", port: 4001
-    }, socket));
-
-app.listen(8080);
+    session = sdk.connect({ host: "localhost", port: 4001 }),
+    io = require('socket.io')(app);
+    
+session.service.socket.on("connected", () => {
+    session.service.relay(io);
+    app.listen(8080);
+}).connect();
 ```
 
-Client
+__Client__
 ```javascript
 var io = require('socket.io-client')('http://localhost:8080'),
-    session = sdk.client(io);
+    session = sdk.proxy(io);
+    
+session.service.relay(socket);
 ```
 
 ## License

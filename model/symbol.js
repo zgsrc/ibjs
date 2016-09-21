@@ -77,7 +77,11 @@ class Symbol extends Events {
                         .on("warning", msg => this.emit("warning", msg))
                         .on("message", msg => this.emit("message", msg));
                     
-                    if (options.quote == "streaming") {
+                    if (Array.isArray(options.quote)) {
+                        this.quote.fields = options.quote;
+                    }
+                    
+                    if (options.quote != "snapshot") {
                         this.quote.stream();
                     }
                     
@@ -121,7 +125,7 @@ class Symbol extends Events {
                                     .on("warning", msg => this.emit("warning", msg))
                                     .on("message", msg => this.emit("message", msg));
                                 
-                                this.bars[size].load();
+                                this.bars[size].load(options.bars[size]);
                             }
                         );
                     }
@@ -134,7 +138,7 @@ class Symbol extends Events {
                                     .on("warning", msg => this.emit("warning", msg))
                                     .on("message", msg => this.emit("message", msg));
                                 
-                                this.bars[size].load();
+                                this.bars[size].load(options.bars[size]);
                             }
                         );
                     }
@@ -145,7 +149,7 @@ class Symbol extends Events {
                             .on("warning", msg => this.emit("warning", msg))
                             .on("message", msg => this.emit("message", msg));
                         
-                        this.bars[options.bars].load();
+                        this.bars[options.bars].load(options.bars[size]);
                     }
                     
                     this.bars.cancel = () => {

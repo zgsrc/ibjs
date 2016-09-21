@@ -22,10 +22,21 @@ class Bars extends Events {
         this.series = [ ];
     }
     
-    load(cb) {
+    load(periods, cb) {
+        if (cb == null && Object.isFunction(periods)) {
+            cb = periods;
+            periods = 1;
+        }
+        
         this.history(err => {
             if (!err) this.stream();
-            if (cb) cb(err);
+            
+            if (periods > 1) {
+                async.forEach((1).upto(periods).exclude(1), (i, cb) => this.history(cb), err => cb ? cb(err) : null);
+            }
+            else if (cb) {
+                cb(err);
+            }
         });
     }
     

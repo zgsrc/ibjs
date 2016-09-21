@@ -9,18 +9,22 @@ const Service = exports.Service = require("./service/service"),
       Session = exports.Session = require("./model/session"),
       Proxy = exports.Proxy = require("./service/proxy");
 
-const client = exports.client = 0;
+const id = exports.id = 0;
       
 const connect = exports.connect = options => {
     options = options || { };
 
     let ib = options.ib || new IB({
-        clientId: options.client || exports.client++,
+        clientId: options.id || exports.id++,
         host: options.host || "127.0.0.1",
         port: options.port || 4001
     });
     
     return new Session(new Service(ib, options.dispatch || new Dispatch()));
+};
+
+const proxy = exports.proxy = (socket, dispatch) => {
+    return new Session(new Proxy(socket), dispatch);
 };
 
 const terminal = exports.terminal = session => {
@@ -68,9 +72,3 @@ const terminal = exports.terminal = session => {
 if (process.argv[2] && process.argv[2] == "terminal") {
     terminal(connect({ port: process.argv[3] || 4001 }));
 }
-
-/*
-const proxy = exports.proxy = (socket, dispatch) => {
-    return new Session(new Proxy(socket, dispatch));
-};
-*/
