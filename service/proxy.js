@@ -10,14 +10,17 @@ class Proxy {
         dispatch = dispatch || new Dispatch();
         
         socket.on("connected", msg => {
+            console.log(`Connected at ${msg.time}.`);
             dispatch.connected();
         }).on("disconnected", msg => {
+            console.log(`Disconnected at ${msg.time}.`);
             dispatch.disconnected();
         }).on("data", msg => {
             dispatch.data(msg.ref, msg.data);
         }).on("end", msg => {
             dispatch.end(msg.ref);
         }).on("error", msg => {
+            console.log("ERROR!!! " + msg);
             dispatch.error(msg.ref, msg.error);
         });
         
@@ -26,6 +29,8 @@ class Proxy {
         this.dispatch = dispatch;
         
         this.relay = socket => relay(this, socket);
+        
+        this.system = request("system", null, socket, dispatch);
         
         this.currentTime = request("currentTime", 2000, socket, dispatch);
         
@@ -76,16 +81,16 @@ class Proxy {
 }
 
 function request(fn, timeout, socket, dispatch) {
-    return () => {
-        let args = arguments;
+    return function() {
+        let args = Array.create(arguments);
         return dispatch.instance(
             fn, 
             req => {
                 socket.emit("request", {
-                    fn: "currentTime",
+                    fn: fn,
                     args: args,
                     ref: req.id
-                })
+                });
             }, 
             req => {
                 socket.emit("cancel", { 
@@ -94,7 +99,7 @@ function request(fn, timeout, socket, dispatch) {
             }, 
             timeout
         );
-    }
+    };
 }
 
 module.exports = Proxy;

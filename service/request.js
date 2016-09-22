@@ -96,7 +96,7 @@ class Request extends Events {
         });
         
         this.on("error", error => { 
-            destination.emit("error", { id: id, error: error, ref: ref }); 
+            destination.emit("error", { id: id, error: error.stack || error.message || error, ref: ref }); 
         });
         
         return this;
