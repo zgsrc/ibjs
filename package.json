@@ -17,7 +17,7 @@
   "scripts": {
     "test": "mocha",
     "start": "node index.js",
-    "browserify": "browserify browserify.js -o browser.js"
+    "browserify": "browserify ./browser/browserify.js -o ./browser/ib.js"
   },
   "keywords": [
     "interactive brokers",
