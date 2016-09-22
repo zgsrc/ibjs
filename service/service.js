@@ -22,6 +22,14 @@ class Service {
         
         this.relay = socket => relay(this, socket);
         
+        this.autoOpenOrders = autoBind => {
+            this.socket.reqAutoOpenOrders(autoBind || false);
+        };
+        
+        this.globalCancel = () => {
+            this.socket.reqGlobalCancel();
+        };
+        
         this.system = () => {
             return dispatch.singleton(
                 `system()`,

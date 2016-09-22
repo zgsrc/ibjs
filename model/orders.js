@@ -26,11 +26,11 @@ class Orders extends Events {
     }
     
     autoOpenOrders(autoBind) {
-        this.service.socket.reqAutoOpenOrders(autoBind || false);
+        this.service.autoOpenOrders(autoBind);
     }
     
     cancelAllOrders() {
-        this.service.socket.reqGlobalCancel();
+        this.service.globalCancel();
     }
     
 }

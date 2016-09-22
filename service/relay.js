@@ -2,6 +2,11 @@
 
 function relay(service, socket) {
     let map = { };
+    
+    socket.on("command", command => {
+        service[command.fn](...command.args);
+    });
+    
     socket.on("request", request => {
         request.args = request.args || [ ];
         let req = service[request.fn](...request.args);
@@ -10,14 +15,27 @@ function relay(service, socket) {
     }).on("cancel", request => {
         service.dispatch.cancel(map[request.ref]);
         delete map[request.ref];
-    })
-
-    service.socket.on("connected", () => {
-        socket.emit("connected", { time: Date.create() });    
-    }).on("disconnected", () => {
-        socket.emit("disconnected", { time: Date.create() });
     });
 
+    let onConnected = () => socket.emit("connected", { time: Date.create() }),
+        onDisconnected = () => socket.emit("disconnected", { time: Date.create() });
+    
+    service.socket
+        .on("connected", onConnected)
+        .on("disconnected", onDisconnected);
+
+    socket.on("disconnect", () => { 
+        Object.values(map).each(id => service.dispatch.cancel(id));
+        map = null;
+        
+        service.socket.removeListener("connected", onConnected);
+        service.socket.removeListener("disconnected", onDisconnected);
+    });
+    
+    socket.on("error", err => {
+        console.log(err);
+    });
+    
     socket.emit("connected", { time: Date.create() });
 }
 

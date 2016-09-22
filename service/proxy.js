@@ -20,7 +20,7 @@ class Proxy {
         }).on("end", msg => {
             dispatch.end(msg.ref);
         }).on("error", msg => {
-            console.log("ERROR!!! " + msg);
+            console.log("ERROR!!! " + msg.error.message);
             dispatch.error(msg.ref, msg.error);
         });
         
@@ -29,6 +29,20 @@ class Proxy {
         this.dispatch = dispatch;
         
         this.relay = socket => relay(this, socket);
+        
+        this.autoOpenOrders = autoBind => {
+            socket.emit("command", {
+                fn: "autoOpenOrders",
+                args: [ autoBind ]
+            });
+        };
+        
+        this.globalCancel = () => {
+            socket.emit("command", {
+                fn: "globalCancel",
+                args: [ ]
+            });
+        };
         
         this.system = request("system", null, socket, dispatch);
         
