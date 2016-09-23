@@ -13,10 +13,17 @@ class Positions extends Events {
         
         this.cancel = () => request.cancel();
         
+        this.accounts = { };
+        
         request.on("data", data => {
+            if (!this.accounts[data.account]) {
+                this.accounts[data.account] = { };    
+            }
             
-        }).on("end", () => {
-            
+            this.accounts[data.account][data.contract.conId] = data;
+            this.emit("update", data);
+        }).on("end", cancel => {
+            this.emit("load");
         }).on("error", err => {
             this.emit("error", err);
         }).send();
