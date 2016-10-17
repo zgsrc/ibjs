@@ -28,7 +28,29 @@ const proxy = exports.proxy = (socket, dispatch) => {
     return new Session(new Proxy(socket), dispatch);
 };
 
-const terminal = exports.terminal = session => {
+const start = exports.start = (options, cb) => {
+    if (Object.isFunction(options) && cb == null) {
+        cb = options;
+        options = null;
+    }
+    
+    let session = connect(options);
+    
+    let timeout = setTimeout(() => {
+        if (cb) {
+            cb(new Error("Connection timeout. Make sure TWS or IB Gateway is running and you are logged in. Then check IB software is configured to accept API connections over the correct port."), session);
+        }
+    }, 2500);
+    
+    session.service.socket.on("connected", () => {
+        clearTimeout(timeout);
+        cb(null, session);
+    }).connect();
+    
+    return session;
+};
+
+const terminal = exports.terminal = (session, config) => {
     let timeout = setTimeout(() => {
         console.log("Connection timeout.".red);
         console.log("Make sure TWS or IB Gateway is running and you are logged in. Then check IB software is configured to accept API connections over the correct port.".gray);
@@ -47,7 +69,7 @@ const terminal = exports.terminal = session => {
         console.log("Use the 'ib' variable to access the environment. Type .exit to quit.".gray);
         
         let cmd = repl.start('> '),
-            env = session.environment();
+            env = session.environment(config);
         
         env.on("error", err => {
             console.log(err.message.red);
@@ -71,5 +93,10 @@ const terminal = exports.terminal = session => {
 };
 
 if (process.argv[2] && process.argv[2] == "terminal") {
-    terminal(connect({ port: process.argv[3] || 4001 }));
+    let config = null;
+    if (process.argv[4] && process.argv[4].length) {
+        config = JSON.parse(fs.readFileSync(process.argv[4]).toString());
+    }
+    
+    terminal(connect({ port: process.argv[3] || 4001 }), config);
 }

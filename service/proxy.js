@@ -10,17 +10,14 @@ class Proxy {
         dispatch = dispatch || new Dispatch();
         
         socket.on("connected", msg => {
-            console.log(`Connected at ${msg.time}.`);
             dispatch.connected();
         }).on("disconnected", msg => {
-            console.log(`Disconnected at ${msg.time}.`);
             dispatch.disconnected();
         }).on("data", msg => {
             dispatch.data(msg.ref, msg.data);
         }).on("end", msg => {
             dispatch.end(msg.ref);
         }).on("error", msg => {
-            console.log("ERROR!!! " + msg.error.message);
             dispatch.error(msg.ref, msg.error);
         });
         

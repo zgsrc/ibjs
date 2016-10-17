@@ -51,6 +51,7 @@ class Bars extends Events {
             this.dateFormat
         );
         
+        let length = this.series.length;
         req.on("data", record => {
             record.date = Date.create(record.date);
             record.timestamp = record.date.getTime();
@@ -60,9 +61,12 @@ class Bars extends Events {
             this.emit("error", err);
             if (cb) cb(err);
         }).on("end", () => {
+            let newRecords = this.series.from(length).map("timestamp"),
+                range = [ newRecords.min(), newRecords.max() ];
+            
             this.series = this.series.unique().sortBy("timestamp");
             this.cursor = this.series.first().date;
-            this.emit("load");
+            this.emit("load", range);
             if (cb) cb();
         }).send();
     }
@@ -80,6 +84,7 @@ class Bars extends Events {
             data.timestamp = data.date.getTime();
             this.series.push(data);
             this.emit("update", data);
+            this.emit("afterUpdate");
         }).on("error", (err, cancel) => {
             if (err.timeout) {
                 cancel();
@@ -94,7 +99,37 @@ class Bars extends Events {
     }
     
     cancel() {
+        return false;
+    }
+    
+    lookup(timestamp) { 
+        let idx = this.series.findIndex(i => i.timestamp > timestamp);
+        if (idx > 0) return this.series[idx - 1];
+        else return null;
+    }
+    
+    study(name, length, calculator) {
+        for (let i = 0; i < this.series.length; i++) {
+            this.series[i][name] = calculator(this.series.from(i).to(length));
+        }
         
+        this.on("load", timestamps => {
+            let start = this.series.findIndex(i => i.timestamp <= timestamps.min()),
+                end = this.series.findIndex(i => i.timestamp > timestamps.max());
+            
+            if (start < 0) start = 0;
+            if (end < 0) end = this.series.length - 1;
+            
+            start.upto(end).each(i => {
+                let window = this.series.from(i).to(length);
+                this.series[i + length - 1][name] = calculator(window);
+            });
+        });
+        
+        this.on("update", data => {
+            let window = this.series.from(-length);
+            data[name] = calculator(window);
+        });
     }
     
 }
@@ -226,6 +261,5 @@ class BarSizes {
     }
     
 }
-
 
 module.exports = BarSizes;

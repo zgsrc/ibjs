@@ -3,8 +3,6 @@ var Session = require("../model/session"),
     Proxy = require("../service/proxy");
 
 window.connect = socket => new Session(new Proxy(socket));
-
-console.log("ib.js loaded");
 },{"../model/session":14,"../service/proxy":20}],2:[function(require,module,exports){
 "use strict";
 
@@ -1095,10 +1093,17 @@ class Positions extends Events {
         
         this.cancel = () => request.cancel();
         
+        this.accounts = { };
+        
         request.on("data", data => {
+            if (!this.accounts[data.account]) {
+                this.accounts[data.account] = { };    
+            }
             
-        }).on("end", () => {
-            
+            this.accounts[data.account][data.contract.conId] = data;
+            this.emit("update", data);
+        }).on("end", cancel => {
+            this.emit("load");
         }).on("error", err => {
             this.emit("error", err);
         }).send();
@@ -1526,7 +1531,20 @@ class System extends Events {
         
         this.service = service;
         
+        this.marketDataConnections = { };
+        
         this.service.system().on("data", data => {
+            if (data.code >= 2103 || data.code <= 2106) {
+                let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
+                name = name.split(":");
+                
+                let status = name[0];
+                name = name[1];
+                
+                this.marketDataConnections[name] = status;
+                this.emit("marketDataConnectionChange", name, status);
+            }
+            
             this.emit("message", data);
         });
     }
@@ -13388,17 +13406,14 @@ class Proxy {
         dispatch = dispatch || new Dispatch();
         
         socket.on("connected", msg => {
-            console.log(`Connected at ${msg.time}.`);
             dispatch.connected();
         }).on("disconnected", msg => {
-            console.log(`Disconnected at ${msg.time}.`);
             dispatch.disconnected();
         }).on("data", msg => {
             dispatch.data(msg.ref, msg.data);
         }).on("end", msg => {
             dispatch.end(msg.ref);
         }).on("error", msg => {
-            console.log("ERROR!!! " + msg.error.message);
             dispatch.error(msg.ref, msg.error);
         });
         
@@ -13502,7 +13517,7 @@ function relay(service, socket) {
     let map = { };
     
     socket.on("command", command => {
-        service[command.fn](...comand.args);
+        service[command.fn](...command.args);
     });
     
     socket.on("request", request => {
