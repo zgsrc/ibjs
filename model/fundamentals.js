@@ -1,6 +1,7 @@
 "use strict";
 
-const async = require("async");
+const async = require("async"),
+      Events = require("events");
 
 const REPORT = {
     snapshot: "ReportSnapshot",
@@ -11,9 +12,10 @@ const REPORT = {
     calendar: "CalendarReport"
 };
 
-class Fundamentals {
+class Fundamentals extends Events {
     
     constructor(security) {
+        super();
         this.security = security;
         this.REPORT_TYPES = REPORT;
     }
@@ -50,6 +52,7 @@ class Fundamentals {
                     cb(null, data);
                 }
             
+                this.emit("update");
                 cancel();
             }).on("end", cancel => {
                 if (cb) {
@@ -70,7 +73,10 @@ class Fundamentals {
         async.forEachSeries(
             types,
             (type, cb) => this.load(type, cb), 
-            err => cb ? cb(err) : null
+            err => {
+                cb ? cb(err) : null;
+                this.emit("load");
+            }
         );
     }
     
@@ -82,8 +88,15 @@ class Fundamentals {
                 if (err) msg += err.message + " ";
                 cb();
             }), 
-            err => cb ? cb(msg.length ? new Error(msg.trim()) : null) : null
+            err => {
+                cb ? cb(msg.length ? new Error(msg.trim()) : null) : null;
+                this.emit("load");
+            }
         );
+    }
+    
+    cancel() {
+        return false();
     }
     
 }

@@ -83,16 +83,17 @@ class Order extends Events {
         return this;
     }
     
-    stop(trigger, limit) {
-        if (limit) {
-            this.ticket.type = "STP LMT";
-            this.ticket.auxPrice = trigger;
-            this.ticket.lmtPrice = limit;
-        }
-        else {
-            this.ticket.type = "STP";
-            this.ticket.auxPrice = trigger;
-        }
+    stop(trigger) {
+        this.ticket.type = "STP";
+        this.ticket.auxPrice = trigger;
+            
+        return this;
+    }
+    
+    stopLimit(trigger, limit) {
+        this.ticket.type = "STP LMT";
+        this.ticket.auxPrice = trigger;
+        this.ticket.lmtPrice = limit;
             
         return this;
     }
@@ -154,7 +155,7 @@ class Order extends Events {
     }
     
     transmit() {
-        this.ticket.trasmit = true;
+        this.ticket.transmit = true;
         this.open();
     }
     

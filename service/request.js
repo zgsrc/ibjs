@@ -35,6 +35,8 @@ class Request extends Events {
                 cancel(this);
                 delete this.dispatch.requests[this.id];
                 this.emit("close");
+                
+                this.cancel = () => { };
             };
         }
         else {
@@ -46,6 +48,8 @@ class Request extends Events {
                 
                 delete this.dispatch.requests[this.id];
                 this.emit("close");
+                
+                this.cancel = () => { };
             };
         }
         

@@ -36,7 +36,7 @@ const TAGS = {
 
 class Accounts extends Events {
     
-    constructor(service, group, tags) {
+    constructor(service) {
         super();
         
         this.service = service;
@@ -45,11 +45,14 @@ class Accounts extends Events {
         this.positions = { };
         
         this.TAGS = TAGS;
-        this.group = group || "All"
         this.tags = Object.values(TAGS).join(',');
+        this.group = "All";
     }
     
-    stream() {
+    stream(tags, group) {
+        if (tags) this.tags = tags;
+        if (group)  this.group = group;
+        
         this.service.accountSummary(this.group, this.tags).on("data", datum => {
             if (datum.account && datum.tag) {
                 var id = datum.account;
@@ -77,7 +80,8 @@ class Accounts extends Events {
 
             let updates = [ ];
             this.cancel = () => { 
-                updates.map("cancel"); 
+                updates.map("cancel");
+                return true;
             };
 
             Object.keys(this.summary).each(id => {
@@ -114,13 +118,15 @@ class Accounts extends Events {
                     this.emit("error", err);
                 }).send());
             });
+            
+            this.emit("load");
         }).on("error", err => {
             this.emit("error", err);
         }).send();
     }
     
     cancel() {
-        
+        return false;
     }
     
 }

@@ -6,7 +6,7 @@ const Events = require("events"),
       Fundamentals = require("./fundamentals"),
       Quote = require("./quote"),
       OrderBook = require("./orderbook"),
-      Bars = require("./bars"),
+      Charts = require("./charts"),
       Order = require("./order"),
       Symbol = require("./symbol");
 
@@ -16,9 +16,6 @@ class Security extends Events {
         super();
         
         this.service = service;
-        
-        this.bars = new Bars(this);
-        
         Object.merge(this, contract);
     }
     
@@ -30,8 +27,12 @@ class Security extends Events {
         return new Quote(this);
     }
     
-    depth() {
+    level2() {
         return new OrderBook(this);
+    }
+    
+    charts() {
+        return new Charts(this);
     }
     
     order(defaults) {

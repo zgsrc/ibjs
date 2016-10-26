@@ -7,13 +7,17 @@ class Positions extends Events {
     constructor(service) {
         super();
         
-        let request = service.positions();
-        
         this.service = service;
-        
-        this.cancel = () => request.cancel();
-        
         this.accounts = { };
+    }
+    
+    stream() {
+        let request = this.service.positions();
+        
+        this.cancel = () => {
+            request.cancel();
+            return true;
+        }
         
         request.on("data", data => {
             if (!this.accounts[data.account]) {
@@ -27,6 +31,10 @@ class Positions extends Events {
         }).on("error", err => {
             this.emit("error", err);
         }).send();
+    }
+    
+    cancel() {
+        return false;
     }
     
 }

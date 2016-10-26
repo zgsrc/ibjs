@@ -10,7 +10,9 @@ class System extends Events {
         this.service = service;
         
         this.marketDataConnections = { };
-        
+    }
+    
+    stream() {
         this.service.system().on("data", data => {
             if (data.code >= 2103 || data.code <= 2106) {
                 let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
@@ -23,8 +25,25 @@ class System extends Events {
                 this.emit("marketDataConnectionChange", name, status);
             }
             
-            this.emit("message", data);
+            this.emit("update", data);
         });
+        
+        let req = this.service.newsBulletins(true);
+        this.cancel = () => {
+            req.cancel();
+            return true;
+        };
+        
+        req.on("data", data => {
+            console.log(data);
+            this.emit("update", data);
+        }).on("error", err => {
+            this.emit("error", err);
+        });
+    }
+    
+    cancel() {
+        return false;
     }
     
 }

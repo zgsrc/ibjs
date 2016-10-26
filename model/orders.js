@@ -7,19 +7,20 @@ class Orders extends Events {
     constructor(service, all) {
         super();
         
-        let request = all ? service.allOpenOrders() : service.openOrders();
-        
         this.service = service;
+        this.all = { };
+    }
+    
+    stream(all) {
+        let request = all ? this.service.allOpenOrders() : this.service.openOrders();
         
         this.cancel = () => request.cancel();
-        
-        this.all = { };
         
         let me = this;
         request.on("data", data => {
             me.all[data.orderId] = data;
         }).on("end", () => {
-            me.emit("updated");
+            me.emit("load");
         }).on("error", err => {
             me.emit("error", err);
         }).send();
@@ -31,6 +32,10 @@ class Orders extends Events {
     
     cancelAllOrders() {
         this.service.globalCancel();
+    }
+    
+    cancel() {
+        return false;
     }
     
 }

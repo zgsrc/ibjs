@@ -16,52 +16,73 @@ class OrderBook extends Events {
         this.offers = { };
     }
     
-    open(exchange, rows) {
-        if (this.exchanges.indexOf(exchange) < 0) {
-            let copy = Object.clone(this.security.summary);
-            copy.exchange = exchange;
-
-            this.exchanges.push(exchange);
-            this.bids[exchange] = { };
-            this.offers[exchange] = { };
-
-            let req = this.security.service.mktDepth(copy, rows || 5)
-
-            req.on("data", datum => {
-                this.emit("beforeUpdate", datum);
-
-                if (datum.side == 1) {
-                    this.bids[exchange][datum.position] = datum;
-                }
-                else {
-                    this.offers[exchange][datum.position] = datum;
-                }
-
-                this.emit("update", datum);
-            })
-            .on("error", (err, cancel) => {
-                this.emit("warning", this.security.summary.localSymbol + " on " + exchange + " failed.");
-                this.requests.remove(req);
-                this.exchanges.remove(exchange);
-                delete this.bids[exchange];
-                delete this.offers[exchange];
-                cancel();
-            }).send();
-
-            this.requests.push(req);
-            
-            return true;
+    stream(exchanges, rows) {
+        if (!Array.isArray(exchanges)) {
+            exchanges = [ exchanges ];
         }
-        else return false;
+        
+        let exchangeList = Object.clone(exchanges);
+        
+        exchanges.each(exchange => {
+            if (this.exchanges.indexOf(exchange) < 0) {
+                let copy = Object.clone(this.security.summary);
+                copy.exchange = exchange;
+
+                this.exchanges.push(exchange);
+                this.bids[exchange] = { };
+                this.offers[exchange] = { };
+
+                let req = this.security.service.mktDepth(copy, rows || 5)
+
+                req.on("data", datum => {
+                    if (datum.side == 1) {
+                        this.bids[exchange][datum.position] = datum;
+                    }
+                    else {
+                        this.offers[exchange][datum.position] = datum;
+                    }
+                    
+                    exchangeList.remove(exchange);
+                    this.emit("update", datum);
+                }).on("error", (err, cancel) => {
+                    exchangeList.remove(exchange);
+                    this.emit("warning", this.security.summary.localSymbol + " on " + exchange + " failed.");
+                    this.requests.remove(req);
+                    this.exchanges.remove(exchange);
+                    delete this.bids[exchange];
+                    delete this.offers[exchange];
+                    cancel();
+                }).send();
+
+                this.requests.push(req);
+            }
+        });
+        
+        let watcher = setInterval(() => {            
+            if (exchangeList.length == 0) {
+                clearInterval(watcher);
+                this.loaded = true;
+                this.emit("load");
+            }
+        }, 100);
+        
+        setTimeout(() => {
+            if (!this.loaded) {
+                this.loaded = true;
+                
+                let err = new Error("Level 2 data timeout loading data.");
+                err.timeout = true;
+                
+                clearInterval(watcher);
+                
+                this.emit("error", err);
+                this.emit("load", err);
+            }
+        }, 15000);
     }
     
-    openAll(exchanges, rows) {
-        exchanges.each(ex => this.open(ex, rows));
-    }
-    
-    openAllValidExchanges(rows) {
-        let valid = this.security.validExchanges.split(',');
-        valid.each(exchange => this.open(exchange, rows));
+    streamAllValidExchanges(rows) {
+        this.stream(this.security.validExchanges.split(','), rows);
     }
     
     close(exchange) {

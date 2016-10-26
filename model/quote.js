@@ -57,7 +57,7 @@ class Quote extends Events {
         return this;
     }
     
-    option() {
+    options() {
         this.fields.add([ TICKS.optionVolume, TICKS.optionOpenInterest ]);
         return this;
     }
@@ -83,7 +83,7 @@ class Quote extends Events {
                 if (cb) cb(err);
                 cancel();
             }).on("end", cancel => {
-                this.emit("updated");
+                this.emit("load");
                 if (cb) cb(null, this);
                 cancel();
             }).send();
@@ -95,7 +95,6 @@ class Quote extends Events {
                 datum = parseQuotePart(datum);
                 
                 let oldValue = this[datum.key];
-                this.emit("beforeUpdate", { key: datum.key, newValue: datum.value, oldValue: oldValue });
                 this[datum.key] = datum.value;
                 this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
             })
@@ -103,11 +102,14 @@ class Quote extends Events {
                 this.emit("error", err);
             }).send();
         
-        this.cancel = () => req.cancel();
+        this.cancel = () => {
+            req.cancel();
+            return true;
+        };
     }
     
     cancel() {
-
+        return false;
     }
     
 }

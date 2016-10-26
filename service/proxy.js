@@ -21,6 +21,8 @@ class Proxy {
             dispatch.error(msg.ref, msg.error);
         });
         
+        this.isProxy = true;
+        
         this.socket = socket;
         
         this.dispatch = dispatch;

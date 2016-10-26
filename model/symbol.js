@@ -3,168 +3,110 @@
 require("sugar");
 
 const async = require("async"),
-      Events = require("events");
+      Events = require("events"),
+      defaults = require("./config")().symbols;
 
 class Symbol extends Events {
     
     constructor(security, options) {
         super();
-
-        options = options || {
-            fundamentals: "all",
-            quote: "streaming",
-            depth: "all",
-            rows: 10,
-            bars: {
-                ONE_SECOND: false,
-                FIVE_SECONDS: false,
-                FIFTEEN_SECONDS: false,
-                THIRTY_SECONDS: false,
-                ONE_MINUTE: false,
-                TWO_MINUTES: false,
-                THREE_MINUTES: false,
-                FIVE_MINUTES: true,
-                FIFTEEN_MINUTES: false,
-                THIRTY_MINUTES: false,
-                ONE_HOUR: false,
-                TWO_HOURS: false,
-                FOUR_HOURS: false,
-                EIGHT_HOURS: false,
-                ONE_DAY: false,
-            }
-        };
+        
+        options = Object.merge(Object.clone(defaults), options || { });
         
         this.security = security;
         
         this.name = options.name || security.summary.localSymbol;
-
-        this.order = defaults => security.order(defaults);
         
-        this.cancel = () => {
-            if (this.quote) this.quote.cancel();
-            if (this.depth) this.depth.cancel();
-            if (this.bars) this.bars.cancel();
-            this.emit("close");
-        };
+        let errors = [ ],
+            errorHandler = err => {
+                if (this.loaded) this.emit("error", err);
+                else errors.push(err);
+            };
+        
+        (this.fundamentals = security.fundamentals())
+            .on("error", errorHandler)
+            .on("warning", msg => this.emit("warning", msg));
+        
+        (this.quote = security.quote())
+            .on("error", errorHandler)
+            .on("warning", msg => this.emit("warning", msg));
+        
+        (this.level2 = security.level2())
+            .on("error", errorHandler)
+            .on("warning", msg => this.emit("warning", msg));
+        
+        (this.charts = security.charts())
+            .on("error", errorHandler)
+            .on("warning", msg => this.emit("warning", msg));
 
-        async.parallel([
+        async.series([
             cb => {
                 if (options.fundamentals) {
-                    this.fundamentals = security.fundamentals();
-                    if (options.fundamentals == "all") {
-                        this.fundamentals.loadAll(cb);
-                    }
-                    else if (Array.isArray(options.fundamentals)) {
-                        this.fundamentals.loadSome(options.fundamentals, cb);
-                    }
-                    else if (Object.isString(options.fundamentals)) {
-                        this.fundamentals.load(options.fundamentals, cb);
-                    }
-                    else {
-                        cb();
-                    }
+                    if (options.fundamentals == "all") this.fundamentals.loadAll(cb);
+                    else if (Array.isArray(options.fundamentals)) this.fundamentals.loadSome(options.fundamentals, cb);
+                    else if (Object.isString(options.fundamentals)) this.fundamentals.load(options.fundamentals, cb);
+                    else cb();
                 }
-                else {
-                    cb();
-                }
+                else cb();
             },
             cb => {
                 if (options.quote) {
-                    this.quote = security.quote();
-                    
-                    this.quote
-                        .on("error", err => this.emit("error", err))
-                        .on("warning", msg => this.emit("warning", msg))
-                        .on("message", msg => this.emit("message", msg));
-                    
-                    if (Array.isArray(options.quote)) {
-                        this.quote.fields = options.quote;
-                    }
-                    
-                    if (options.quote != "snapshot") {
-                        this.quote.stream();
-                    }
-                    
+                    if (Array.isArray(options.quote)) this.quote.fields = options.quote;
                     this.quote.refresh(cb);
+                    if (options.quote != "snapshot") this.quote.stream();
                 }
                 else cb();
             },
             cb => {
-                if (options.depth) {
-                    this.depth = security.depth();
-                    
-                    this.depth
-                        .on("error", err => this.emit("error", err))
-                        .on("warning", msg => this.emit("warning", msg))
-                        .on("message", msg => this.emit("message", msg));
-                    
-                    if (options.depth == "all") {
-                        this.depth.openAllValidExchanges(options.rows || 10);
-                    }
-                    else if (Array.isArray(options.depth)) {
-                        this.depth.openAll(options.depth, options.rows || 10);
-                    }
-                    else if (Object.isString(options.depth)) {
-                        this.depth.open(options.depth, options.rows || 10);
-                    }
-                    
-                    cb();
+                if (options.level2) {
+                    if (options.level2.markets == "all") this.level2.streamAllValidExchanges(options.level2.rows || 10);
+                    else this.level2.stream(options.level2.markets, options.level2.rows || 10);
+                    this.level2.once("load", cb);
                 }
                 else cb();
             },
             cb => {
-                if (options.bars) {
-                    this.bars = { };
-                    
-                    if (Array.isArray(options.bars)) {
-                        options.bars.each(
-                            size => {
-                                this.bars[size] = security.bars[size]();
-                                this.bars[size]
-                                    .on("error", err => this.emit("error", err))
-                                    .on("warning", msg => this.emit("warning", msg))
-                                    .on("message", msg => this.emit("message", msg));
-                                
-                                this.bars[size].load(options.bars[size]);
+                if (options.charts) {
+                    let sizes = Object.keys(options.charts).filter(k => options.charts[k]);
+                    async.forEachSeries(sizes, (size, cb) => {
+                        let periods = options.charts[k];
+                        this.charts[size].history(err => {
+                            if (!err && periods > 1) {
+                                async.forEach(
+                                    (1).upto(periods).exclude(1), 
+                                    (i, cb) => this.charts[size].history(cb), 
+                                    cb
+                                );
                             }
-                        );
-                    }
-                    else if (Object.isObject(options.bars)) {
-                        Object.keys(options.bars).filter(k => options.bars[k]).each(
-                            size => {
-                                this.bars[size] = security.bars[size]();
-                                this.bars[size]
-                                    .on("error", err => this.emit("error", err))
-                                    .on("warning", msg => this.emit("warning", msg))
-                                    .on("message", msg => this.emit("message", msg));
-                                
-                                this.bars[size].load(options.bars[size]);
-                            }
-                        );
-                    }
-                    else if (Object.isString(options.bars)) {
-                        this.bars[options.bars] = security.bars[options.bars]();
-                        this.bars[options.bars]
-                            .on("error", err => this.emit("error", err))
-                            .on("warning", msg => this.emit("warning", msg))
-                            .on("message", msg => this.emit("message", msg));
+                            else cb(err);
+                        });
                         
-                        this.bars[options.bars].load(options.bars[size]);
-                    }
-                    
-                    this.bars.cancel = () => {
-                        Object.values(this.bars).cancel();
-                        this.bars = { };
-                    }
-                    
-                    cb();
+                        this.charts[size].stream();
+                    }, cb);
                 }
                 else cb();
             }
         ], err => {
-            if (err) this.emit("error", err);
-            this.emit("ready");
+            this.loaded = true;
+            if (err) {
+                err = new Error("Errors encountered during " + this.name + " symbol load.");
+                err.errors = errors;
+            }
+            
+            this.emit("load", err);
         });
+    }
+    
+    order(defaults) {
+        return security.order(defaults);
+    }
+    
+    cancel() {
+        this.fundamentals.cancel();
+        this.quote.cancel();
+        this.depth.cancel();
+        this.charts.cancel();
+        this.emit("close");
     }
     
 }

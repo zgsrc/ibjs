@@ -4,32 +4,25 @@
 
 Interactive Brokers SDK is a framework build atop the [native javascript API](https://github.com/pilwon/node-ib).  Straightforward programmatic access to your portfolio and market data subscriptions.
 
-## Prerequisites
+## Installation
+
+    npm install ib-sdk
+
+### Prerequisites
 
 * An [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
 * Install [Java](https://java.com/en/download/).
 * Install the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T).
 
-## Installation
+The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without dedicated communication infrastructure, there is no IB support for direct connections to their server tier.
 
-Install with npm:
+The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a TCP socket connection from Node.js to an IB Gateway or TWS instance.
 
-    npm install ib-sdk
-
-Clone repo with git:
-
-    git clone https://github.com/triploc/ib-sdk.git
-
-Download over HTTPS:
-
-    wget https://github.com/triploc/ib-sdk/archive/master.zip
-    unzip master.zip
-
-## Getting Started
+## Kick The Tires
 
 Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software manually or use [ib-controller](https://github.com/ib-controller/ib-controller) to automate UI interaction.  The API and SDK expect to connect to an authenticated user session.  The IB software must be configured to accept API connections.  The SDK connects over `tcp://localhost:4001` by default.
 
-Kick the tires and make sure sure things work by running the terminal interface from the SDK directory:
+Make sure sure things work by running the terminal interface from the SDK directory:
 
     npm start terminal [port]
     
@@ -40,110 +33,153 @@ The terminal will give you a default `environment` through the `ib` variable.  U
     > $.AAPL
     [all the things]
 
-> **NOTE**: IB Gateway or TWS can enter a partially functional state with respect to API connections.  If connect works but other calls do not, you may need to restart the IB software.
+> **NOTE**: IB Gateway or TWS can enter a "bad state" with respect to API connections.  If connect works but other calls do not, you may need to restart the IB software.
 
-## How does it work?
+## Get Started
 
-The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without dedicated communication infrastructure, there is no IB support for direct connections to their server tier.
+An `Environment` is a realtime object model of your brokerage account(s).  The default configuration subscribes to system notices, account information, open positions, pending orders, and trade history.  All realtime objects share an interface and pattern of behavior.
 
-The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a TCP socket connection from Node.js to an IB Gateway or TWS instance.
-
-# Design Paradigm
-
-The SDK seeks to be both easy to use and highly configurable.  To achieve this, it implements:
-
-* a high-level trading environment
-* an object model
-* request-response management
-
-## High-Level Trading Environment
-
-The trading environment is about getting setup quickly and focusing on the high-value algorithmic work.
-
-Most use cases require a boilerplate dataset like balance information, positions, orders, and trades.  The SDK provides an `Environment` class which is conceptually like a full TWS graphical experience, wherein you have a predefined set of data "windows".
+* `update` event signals a single data point has changed
+* `error` event signals an asynchronous error was encountered
+* `cancel` method closes the underlying data subscription and takes the object offline
 
 ```javascript
-let sdk = require("ib-sdk"),
-    session = sdk.connect({ host: "localhost", port: 4001 });
+"use strict";
 
-session.service.socket.on("connected", () => {
-    // default environment
-    let ib = session.environment();
-    
-    // custom environment
-    ib = session.environment({ 
-        system: true, // boolean
-        accounts: true, // boolean | [ "TAG1", "TAG2" ]
-        positions: true, // boolean
-        executions: true, // boolean | { filter }
-        orders: "all", // boolean | "all"
-        symbols: [
-            "SPX index",
-            [ "GOOGL", { } ],
-            { description: "GOOGL", options: { } }
-        ]
-    });
-    
-    // bad state detection on environment, see note below
-    ib.on("badState", () => {
-        console.log("IB API unresponsive!!! Try restarting IB software and reconnecting.");
-    })
-    
-    // environment in a loaded and ready state
-    ib.on("load", () => {
+const sdk = require("ib-sdk");
+
+sdk.environment("./config.json", (err, ib) => {
+    if (err) {
+        console.log("Connection error: " + err.message);
+    }
+    else {
         let system = ib.system,
             accounts = ib.accounts,
             positions = ib.positions,
-            trades = ib.executions,
             orders = ib.orders,
+            trades = ib.executions,
             $ = ib.symbols;
-          
-        ib.watch("INDU indux");
-    });
-});
-```
-
-### Symbols
-
-An `Environment` manages a collection of `Symbol` objects containing contract details, fundamental and market data.  It also serves as a hard reference from which to create an `Order` ticket.  
-
-Create a `Symbol` using the `watch` method with an optional configuration.  The `Environment` will register the `Symbol` in the `symbols` member variable.
-
-```javascript
-ib.watch("AAPL", {
-    name: "Apple",
-    fundamentals: "all", // "all" | [ "snapshot", "summary", ] | "ratios"
-    quote: "streaming", // boolean | "snapshot" | [ fields ]
-    depth: "all", // "all" | [ "NYSE", "ARCA" ] | "CBOE"
-    rows: 10, // default = 10
-    bars: {
-        ONE_SECOND: false, // boolean | positive integer
-        FIVE_SECONDS: false,
-        FIFTEEN_SECONDS: false,
-        THIRTY_SECONDS: false,
-        ONE_MINUTE: false,
-        TWO_MINUTES: false,
-        THREE_MINUTES: false,
-        FIVE_MINUTES: true,
-        FIFTEEN_MINUTES: false,
-        THIRTY_MINUTES: false,
-        ONE_HOUR: false,
-        TWO_HOURS: false,
-        FOUR_HOURS: false,
-        EIGHT_HOURS: false,
-        ONE_DAY: false,
+            
+        // monitor updates
+        accounts.on("update", data => {  });
+        
+        // handle specific errors
+        accounts.on("error", err => accounts.cancel());
+    
+        // catch all errors
+        ib.on("error", err => console.log(err));
+        
+        // cleanup before exit
+        ib.exit(0, () => console.log("Disconnected"));
     }
 });
-
-let apple = ib.symbols.Apple,
-    fundamentals = apple.fundamentals,
-    quote = apple.quote,
-    depth = apple.depth,
-    bars = apple.bars.FIVE_MINUTES,
-    order = apple.order();
 ```
 
-The SDK lets you specify financial instruments in a readable string format.
+### Configuration
+
+The first parameter to the `sdk.environment(config, cb)` method may be either:
+
+* a string, in which case it is assumed to be a path to a JSON file
+* or an object, in which case it is interpretted literally
+
+```javascript
+{
+    "connection": {
+        "host": "localhost",
+        "port": 4001,
+        "timeout": 1000
+    },
+    "environment": {
+    
+        /* Subscribe to system notifications and connectivity status updates. */
+        "system": true,
+
+        /* Subscribe to realtime account balance and position values.
+           - Boolean value subscribes to all account info.
+           - An array of tags (i.e. [ "TAG1", "TAG2" ]) subscribes to select values.  (Print Environment.accounts.TAGS variable for a list of tags.) */
+        "accounts": true,
+
+        /* Subscribe to basic position info across accounts. */
+        "positions": true,
+
+        /* Subscribe to trade history, past and ongoing trades. 
+           - Boolean value loads today's trades.
+           - A filter object adjusts the scope of trades. */
+        "executions": true,
+
+        /* Subscribe to pending orders.
+           - "all" subscribes to all orders placed in IB.
+           - "local" subscribes only to orders placed through this process. */
+        "orders": "all",
+
+        /* Watchlist of securities. */
+        "symbols": {
+        
+            /* Defines the market data subscriptions that are opened by default.  If omitted, uses defaults below. */
+            "defaults": {
+
+                /* Download fundamental data.
+                   - The "all" option fetches all available fundamental data.
+                   - Any other string fetches the fundamental report by that name.
+                   - An array of strings fetch all reports in the array.  (Print Symbol.fundamentals.REPORT_TYPES variable for a list of reports.) */
+                "fundamentals": "all",
+
+                /* Subscribe to quote data.
+                   - Boolean value opens a streaming quote of price and volume data.
+                   - The "snapshot" string fetches a snapshot of quote data without initializing a streaming subscription.
+                   - An array of strings registers specific streaming quote fields.  (Print Symbol.quote.TICK_TYPES variable for a list of fields.) */
+                "quote": true,
+                
+                /* Subscribe to level 2 data.
+                   - The "all" string subscribes to level 2 data from all valid exchanges.
+                   - An array of strings subscribes to specific market data centers. */
+                "depth": {
+                    "markets": "all",
+                    "rows": 10
+                },
+                
+                /* Subscribes to a bar chart data.  Must use one of the bar sizes below.
+                   - Boolean loads one history period and subscribes to realtime updates
+                   - Positive integer loads that many historical periods and subscribes to realtime updates */
+                "bars": {
+                    "ONE_SECOND": false,
+                    "FIVE_SECONDS": false,
+                    "FIFTEEN_SECONDS": false,
+                    "THIRTY_SECONDS": false,
+                    "ONE_MINUTE": false,
+                    "TWO_MINUTES": false,
+                    "THREE_MINUTES": false,
+                    "FIVE_MINUTES": true,
+                    "FIFTEEN_MINUTES": false,
+                    "THIRTY_MINUTES": false,
+                    "ONE_HOUR": false,
+                    "TWO_HOURS": false,
+                    "FOUR_HOURS": false,
+                    "EIGHT_HOURS": false,
+                    "ONE_DAY": false
+                }
+                
+            },
+            
+            /* A list of symbols to load.  An array or object can be used to override default options specified above. */
+            "securities": [
+                "GOOGL",
+                [ "GOOGL", { /* Override defaults */ } ],
+                { 
+                    "description": "GOOGL", 
+                    "options": { /* Override defaults */ }
+                }
+            ]
+            
+        }
+        
+    }
+}
+```
+
+### [Symbols](#symbols)
+
+The SDK lets you specify financial instruments in a readable symbol format.
 
     [date]? [symbol] [side/type]? (in [currency])? (on [exchange])? (at [strike])?
 
@@ -172,34 +208,277 @@ Indices:
 
 > **NOTE**: This capability does not serve as a security search.  Use the [IB contract search](https://pennies.interactivebrokers.com/cstools/contract_info) for that.
 
-## Data Model
-
-The data model puts an object-oriented interface around most of the low-level API capabilities, handling complicated `Service` method calls and assembling streaming responses into a comprehensive dataset.
-
-The primary interface for the data model is the `Session` class, a builder object that instantiates components of the data model using a `Service`.
+An `Environment` manages a watchlist of `Symbol` objects in the `symbols` member variable.  Create a `Symbol` using the `Environment.watch(symbol, options)` method with a variable name and an optional configuration object.
 
 ```javascript
-let session = sdk.connect({ 
-    host: "localhost", 
-    port: 4001
+// Will register the symbol using the local symbol name.
+ib.watch("AAPL");
+ib.symbols.AAPL !== null;
+
+// Will register the symbol using the supplied name.
+ib.watch("AAPL", "Apple");
+ib.watch("AAPL", { name: "Apple" });
+ib.symbols.Apple !== null;
+```
+
+When a `Symbol` is declared, a set of market data subscriptions (e.g. fundamentals, quotes, level 2 data) will be opened (depending on the options supplied and the environment symbol defaults).
+
+```javascript
+let apple = ib.symbols.Apple;
+
+let fundamentals = apple.fundamentals,
+    quote = apple.quote,
+    level2 = apple.depth,
+    barChart = apple.bars;
+```
+
+Even if the symbol configuration does not subscribe to certain market data facets, they are instantiated and can still be used programmatically.
+
+### Fundamentals
+
+```javascript
+let fundamentals = apple.fundamentals;
+
+// Report specific methods
+fundamentals.loadSnapshot((err, report) => { });
+fundamentals.loadFinancials((err, report) => { });
+fundamentals.loadRatios((err, report) => { });
+fundamentals.loadStatements((err, report) => { });
+fundamentals.loadConsensus((err, report) => { });
+fundamentals.loadCalendar((err, report) => { });
+
+// Load some or all reports
+let reportTypes = fundamentals.REPORT_TYPES;
+fundamentals.load("snapshot", (err, report) => { });
+fundamentals.loadSome([ "snapshot", "financials" ], err => { });
+fundamentals.loadAll(err => { });
+
+// Access reports by name directly on object
+let report = fundamentals.snapshot;
+```
+
+### Quotes
+
+```javascript
+// Generic quote data
+let quote = apple.quote;
+
+quote.pricing()
+    .fundamentals()
+    .volatility()
+    .options()
+    .short()
+    .news();
+    
+quote.refresh(err => { /* snapshot quote */ });
+
+quote.stream();
+quote.cancel();
+```
+
+### Level 2 Price Data
+
+```javascript
+// Level 2 data 
+let depth = apple.depth;
+
+depth.open("NYSE", 10);
+depth.openAll([ "NYSE", "ARCA" ], 10);
+depth.openAllValidExchanges(10);
+
+depth.close("NYSE");
+depth.cancel();
+```
+
+### Bar Charts
+
+```javascript
+let bars = apple.bars.FIVE_MINUTES;
+
+// Load "n" periods of history and stream
+bars.load(3, err => { });
+
+// Load 1 period of history
+bars.history(err => { });
+
+// Open streaming bars
+bars.stream();
+
+// Close streaming bars
+bars.cancel();
+
+// Get bar for specific time
+bars.lookup((new Date()).getTime());
+
+// Setup bar study
+let studies = bars.studies;
+bars.study("SMA", 20, studies.SMA);
+```
+
+### [Orders](#orders)
+
+An `Order` can be initiated from a `Symbol` (or `Security`) and has chainable methods to build and transmit an order.
+
+```javascript
+let order = ib.symbols.Apple.order();
+
+order.sell(100)
+     .show(10)
+     .limit(100.50)
+     .goodUntilCancelled()
+     .transmit();
+```
+
+Quantity and market side can be set with an appropriate method.  Display size can be set an extra parameter or with the separate `show` method.
+
+```javascript
+order.buy(100).show(10);
+order.buy(100, 10);
+order.trade(100, 10);
+
+order.sell(100).show(10);
+order.sell(100, 10);
+order.trade(-100, -10);
+```
+
+Order type is set with an appropriate method or manually.
+
+```javascript
+order.market();
+order.marketWithProtection();
+order.marketThenLimit();
+order.limit(100.50);
+
+order.stop(100.50);
+order.stopLimit(100.50, 100.48);
+order.stopWithProtection(100.50);
+```
+
+Time in force is presumed to be "DAY" unless otherwise specified.  Timeframe can be set with appropriate methods.
+
+```javascript
+order.goodToday()
+order.immediateOrCancel();
+order.goodUntilCancelled().outsideRegularTradingHours();
+```
+
+Order transmission can be performed in a single transaction or in parts.
+
+```javascript
+// Will suppress certain IB warnings for large trades
+order.overridePercentageConstraints();
+
+// Will open the order without transmitting it.
+order.open();
+
+// Will open the order and trasmit it.
+order.transmit();
+```
+
+Once an order is opened, it flows to the `Orders` object.
+
+```javascript
+let orders = ib.orders.all;
+
+ib.orders.on("update", order => { 
+    order.cancel();
 });
+```
 
-session.service.socket.on("connected", () => {
-    // session ready for use
-}).connect();
+As the order is being executed, `Positions` will update.
 
-// or do it yourself with an existing service
-session = sdk.Session(service);
+```javascript
+for (account in ib.positions.accounts) {
+    let accountPositions = positions.accounts[account];
+    for (id in accountPositions) {
+        let position = accountPositions[id];
+    }
+}
+```
 
-// exposes aspects of the data model
+After an order is executed or cancelled, it flows to the `Executions` object, which is a trade history.
+
+```javascript
+let trades = ib.executions.trades;
+
+ib.executions.on("update", trade => {
+    console.log(trade);
+});
+```
+
+## Accounts
+
+The `Accounts` class provides access to complete balance, margin, and positions information for all accounts to which that the authenticated session has access.  
+
+First, a subscription to a summary of accounts is opened, which populates the `Accounts.summary` object.  Then, for each account in the summary, a subscription to account updates is opened, which populate the `Account.details` and `Account.positions` variables.
+
+```javascript
+let accounts = ib.accounts,
+    summary = accounts.summary,
+    details = accounts.details,
+    positions = accounts.positions;
+```
+
+## System
+
+The `System` class emits all system messages using the `update` event.
+
+Messages relating to market data server connectivity are parsed and posted to the `System.marketDataConnections` member variable.  Changes to connectivity trigger the `marketDataConnectionChange` event.
+
+```javascript
+let connectivity = ib.system.marketDataConnections;
+
+ib.system.on("marketDataConnectionChange", (name, status) => {
+    connectivity[name] === status;
+});
+```
+
+# Advanced Use
+
+The `Environment` is a good way to get setup quickly and focus on ultimate programming tasks.  Certain use cases benefit from a more light-weight or customized configuration.
+
+## Session
+
+Login to IB software and connect using the `connect` method with proper host and port parameters.  This method handles actual connection logic and timeouts.
+
+```javascript
+const sdk = require("ib-sdk");
+
+sdk.connect({ host: "localhost", port: 4001 }, (err, session) => {
+    if (err) {
+        console.log("Connection error: " + err.message);
+    }
+    else {
+        // default environment
+        let ib = session.environment();
+
+        // bad state detection on environment, see note in section above
+        ib.on("badState", () => {
+            console.log("IB API unresponsive!!! Try restarting IB software and reconnecting.");
+        }).on("load", () => {
+                 
+        }).on("error", err => {
+            console.log(err);
+        });
+    }
+});
+```
+
+After connecting to the IB software, a `Session` object is returned with methods to create realtime objects or entire environments.  The `Environment` class will detect an initial sequence of timeouts, indicating a bad state in the IB software (see note in previous section).  The `badState` event handling in the code example above handles this exception.
+
+```javascript
 let system = session.system(),
     accounts = session.accounts(),
     positions = session.positions(),
     orders = session.orders([all]),
     executions = session.executions(),
     news = session.news([flags]);
+```
 
-session.security(contractDescription, (err, security) => { 
+A `Session` can also create `Security` objects with methods to initiate market data subscriptions.  Similar to how an `Environment` uses a `Session` and a configuration to assemble a realtime object model, a `Symbol` uses a `Security` and a configuration to assemble and manage market data subscriptions.
+
+```javascript
+session.security("AAPL stock", (err, security) => { 
     let fundamentals = security.fundamentals(),
         quote = security.quote(),
         depth = security.depth(),
@@ -208,7 +487,30 @@ session.security(contractDescription, (err, security) => {
 });
 ```
 
-## Request-Response Abstraction
+The `session` method or `Session` class can be used directly for advanced use or when supplying an existing socket connection to IB.  In this case, connection and any timeout logic need to be written manually.
+
+```javascript
+let IB = require("node-ib");
+
+let session = new sdk.Session({
+    socket: new IB({ host: 'localhost', port: 4001 })
+});
+
+// alternatively
+session = sdk.session({ host: 'localhost', port: 4001 });
+
+// connection and timeout logic
+let timeout = setTimeout(() => {
+    throw new Error("Connection timeout!");
+}, 5000);
+
+session.service.socket.on("connected", () => {
+    cancelTimeout(timeout);
+    // session ready for use
+}).connect();
+```
+
+## Service
 
 The low-level native javascript API is directly encapsulated by the `Service` class, which makes streaming API reponses more reliable and cogent.
 
@@ -281,6 +583,8 @@ service.subscribeToGroupEvents();
 serivce.updateDisplayGroup();
 ```
 
+## Remoting
+
 `Service` instances also supports a mechanism to relay streaming responses to proxy instances of the SDK, enabling a distributed/networked system architecture.  The `relay` method takes a `EventEmitter` compatible (i.e. implements `emit` and `on`) object and relays `data`, `error`, and `end` events.  A `Proxy` is a `Service`-compatible object that can be instantiated remotely and use a similar `EventEmitter` compatible transport (e.g. [socket.io](http://socket.io/)) to communicate with a `Relay` server.
 
 __Server__
@@ -301,6 +605,24 @@ var io = require('socket.io-client')('http://localhost:8080'),
     session = sdk.proxy(io);
     
 session.service.relay(socket);
+```
+
+## Terminal
+
+The terminal uses the `REPL` package to expose an `Environment` to the command line.
+
+Starting the terminal is as easy as running the `npm start` command with the `terminal [port]` parameter.
+
+    npm start terminal [port]
+    
+Or running the index.js file directly.
+    
+    node index.js terminal [port]
+
+Programmatically, a terminal can be created like so:
+
+```javascript
+sdk.terminal(sdk.session({ port: 4001 }));
 ```
 
 ## License

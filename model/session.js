@@ -37,16 +37,12 @@ class Session extends Events {
         return new Positions(this.service);
     }
     
-    orders(all) {
-        return new Orders(this.service, all);
+    orders() {
+        return new Orders(this.service);
     }
     
     executions() {
         return new Executions(this.service);
-    }
-    
-    news(flags) {
-        return new News(this.service, flags);
     }
     
     security(description, cb) {

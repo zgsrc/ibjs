@@ -16,6 +16,8 @@ class Service {
         
         attach(ib, dispatch);
         
+        this.isProxy = false;
+        
         this.socket = ib;
         
         this.dispatch = dispatch;
@@ -94,7 +96,7 @@ class Service {
         
         this.exerciseOptions = instance("exerciseOptions", "cancelOrder", 5000, ib, dispatch);
         
-        this.newsBulletins = singleton("news", "reqNewsBulletins", "cancelNewsBulletins", 5000, ib, dispatch);
+        this.newsBulletins = singleton("news", "reqNewsBulletins", "cancelNewsBulletins", null, ib, dispatch);
         
         this.queryDisplayGroups = instance("queryDisplayGroups", null, 5000, ib, dispatch);
         
