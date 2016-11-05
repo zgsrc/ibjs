@@ -1,9 +1,14 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 var Session = require("../model/session"),
-    Proxy = require("../service/proxy");
+    Proxy = require("../service/proxy"),
+    config = require("../model/config");
 
-window.connect = socket => new Session(new Proxy(socket));
-},{"../model/session":14,"../service/proxy":20}],2:[function(require,module,exports){
+window.session = function(socket) {
+    return new Session(new Proxy(socket));
+};
+
+window.config = config;
+},{"../model/config":4,"../model/session":15,"../service/proxy":22}],2:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -42,7 +47,7 @@ const TAGS = {
 
 class Accounts extends Events {
     
-    constructor(service, group, tags) {
+    constructor(service) {
         super();
         
         this.service = service;
@@ -51,11 +56,14 @@ class Accounts extends Events {
         this.positions = { };
         
         this.TAGS = TAGS;
-        this.group = group || "All"
         this.tags = Object.values(TAGS).join(',');
+        this.group = "All";
     }
     
-    stream() {
+    stream(tags, group) {
+        if (tags) this.tags = tags;
+        if (group)  this.group = group;
+        
         this.service.accountSummary(this.group, this.tags).on("data", datum => {
             if (datum.account && datum.tag) {
                 var id = datum.account;
@@ -83,7 +91,8 @@ class Accounts extends Events {
 
             let updates = [ ];
             this.cancel = () => { 
-                updates.map("cancel"); 
+                updates.map("cancel");
+                return true;
             };
 
             Object.keys(this.summary).each(id => {
@@ -120,13 +129,15 @@ class Accounts extends Events {
                     this.emit("error", err);
                 }).send());
             });
+            
+            this.emit("load");
         }).on("error", err => {
             this.emit("error", err);
         }).send();
     }
     
     cancel() {
-        
+        return false;
     }
     
 }
@@ -134,13 +145,14 @@ class Accounts extends Events {
 
 
 module.exports = Accounts;
-},{"events":24}],3:[function(require,module,exports){
+},{"events":26}],3:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
 const async = require("async"),
-      Events = require("events");
+      Events = require("events"),
+      studies = require("./studies");
 
 class Bars extends Events {
     
@@ -159,24 +171,6 @@ class Bars extends Events {
         this.series = [ ];
     }
     
-    load(periods, cb) {
-        if (cb == null && Object.isFunction(periods)) {
-            cb = periods;
-            periods = 1;
-        }
-        
-        this.history(err => {
-            if (!err) this.stream();
-            
-            if (periods > 1) {
-                async.forEach((1).upto(periods).exclude(1), (i, cb) => this.history(cb), err => cb ? cb(err) : null);
-            }
-            else if (cb) {
-                cb(err);
-            }
-        });
-    }
-    
     history(cb) {
         let req = this.security.service.historicalData(
             this.security.summary, 
@@ -188,6 +182,7 @@ class Bars extends Events {
             this.dateFormat
         );
         
+        let length = this.series.length;
         req.on("data", record => {
             record.date = Date.create(record.date);
             record.timestamp = record.date.getTime();
@@ -197,9 +192,12 @@ class Bars extends Events {
             this.emit("error", err);
             if (cb) cb(err);
         }).on("end", () => {
+            let newRecords = this.series.from(length).map("timestamp"),
+                range = [ newRecords.min(), newRecords.max() ];
+            
             this.series = this.series.unique().sortBy("timestamp");
             this.cursor = this.series.first().date;
-            this.emit("load");
+            this.emit("load", range);
             if (cb) cb();
         }).send();
     }
@@ -217,6 +215,7 @@ class Bars extends Events {
             data.timestamp = data.date.getTime();
             this.series.push(data);
             this.emit("update", data);
+            this.emit("afterUpdate");
         }).on("error", (err, cancel) => {
             if (err.timeout) {
                 cancel();
@@ -227,146 +226,367 @@ class Bars extends Events {
         
         this.cancel = () => {
             req.cancel();
+            return true;
         };
     }
     
     cancel() {
+        return false;
+    }
+    
+    lookup(timestamp) { 
+        let idx = this.series.findIndex(i => i.timestamp > timestamp);
+        if (idx > 0) return this.series[idx - 1];
+        else return null;
+    }
+    
+    study(name, length, calculator) {
+        if (Object.isString(calculator)) {
+            calculator = studies[calculator];
+        }
         
+        for (let i = 0; i < this.series.length; i++) {
+            this.series[i][name] = calculator(this.series.from(i).to(length));
+        }
+        
+        this.on("load", timestamps => {
+            let start = this.series.findIndex(i => i.timestamp <= timestamps.min()),
+                end = this.series.findIndex(i => i.timestamp > timestamps.max());
+            
+            if (start < 0) start = 0;
+            if (end < 0) end = this.series.length - 1;
+            
+            start.upto(end).each(i => {
+                let window = this.series.from(i).to(length);
+                this.series[i + length - 1][name] = calculator(window);
+            });
+        });
+        
+        this.on("update", data => {
+            let window = this.series.from(-length);
+            data[name] = calculator(window);
+        });
     }
     
 }
 
-class BarSizes {
+class Charts extends Events {
     
     constructor(security) {
+        super();
+        
         this.security = security;
-    }
     
-    ONE_SECOND() { 
-        return new Bars(this.security, {
+        this.ONE_SECOND = new Bars(this.security, {
             text: "1 sec",
             integer: 1,
             duration: "1800 S"
         });
-    }
-    
-    FIVE_SECONDS() { 
-        return new Bars(this.security, {
+
+        this.ONE_SECOND
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+        
+        this.FIVE_SECONDS = new Bars(this.security, {
             text: "5 secs",
             integer: 5,
             duration: "3600 S"
-        })
-    }
-            
-    FIFTEEN_SECONDS() { 
-        return new Bars(this.security, {
+        });
+        
+        this.FIVE_SECONDS
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+        
+        this.TEN_SECONDS = new Bars(this.security, {
+            text: "10 secs",
+            integer: 10,
+            duration: "7200 S"
+        });
+        
+        this.TEN_SECONDS
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.FIFTEEN_SECONDS = new Bars(this.security, {
             text: "15 secs",
             integer: 15,
             duration: "10800 S"
-        })
-    }
-            
-    THIRTY_SECONDS() { 
-        return new Bars(this.security, {
+        });
+        
+        this.FIFTEEN_SECONDS
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.THIRTY_SECONDS = new Bars(this.security, {
             text: "30 secs",
             integer: 30,
             duration: "1 D"
-        })
-    }
-            
-    ONE_MINUTE() { 
-        return new Bars(this.security, {
+        });
+        
+        this.THIRTY_SECONDS
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.ONE_MINUTE = new Bars(this.security, {
             text: "1 min",
             integer: 60,
             duration: "2 D"
-        })
-    }
-            
-    TWO_MINUTES() { 
-        return new Bars(this.security, {
+        });
+        
+        this.ONE_MINUTE
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.TWO_MINUTES = new Bars(this.security, {
             text: "2 mins",
             integer: 120,
             duration: "3 D"
-        })
-    }
-            
-    THREE_MINUTES() { 
-        return new Bars(this.security, {
+        });
+        
+        this.TWO_MINUTES
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.THREE_MINUTES = new Bars(this.security, {
             text: "3 mins",
             integer: 180,
             duration: "4 D"
-        })
-    }
-            
-    FIVE_MINUTES() { 
-        return new Bars(this.security, {
+        });
+        
+        this.THREE_MINUTES
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.FIVE_MINUTES = new Bars(this.security, {
             text: "5 mins",
             integer: 300,
             duration: "1 W"
-        })
-    }
-            
-    FIFTEEN_MINUTES()  { 
-        return new Bars(this.security, {
+        });
+        
+        this.FIVE_MINUTES
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.FIFTEEN_MINUTES = new Bars(this.security, {
             text: "15 mins",
             integer: 900,
             duration: "2 W"
-        })
-    }
-            
-    THIRTY_MINUTES() { 
-        return new Bars(this.security, {
+        });
+        
+        this.FIFTEEN_MINUTES
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.THIRTY_MINUTES = new Bars(this.security, {
             text: "30 mins",
             integer: 1800,
             duration: "1 M"
-        })
-    }
-            
-    ONE_HOUR() { 
-        return new Bars(this.security, {
+        });
+        
+        this.THIRTY_MINUTES
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.ONE_HOUR = new Bars(this.security, {
             text: "1 hour",
             integer: 3600,
             duration: "2 M"
-        })
-    }
-            
-    TWO_HOURS() { 
-        return new Bars(this.security, {
+        });
+        
+        this.ONE_HOUR
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.TWO_HOURS = new Bars(this.security, {
             text: "2 hour",
             integer: 7200,
             duration: "2 M"
-        })
-    }
-            
-    FOUR_HOURS() { 
-        return new Bars(this.security, {
+        });
+        
+        this.TWO_HOURS
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.FOUR_HOURS = new Bars(this.security, {
             text: "4 hour",
             integer: 14400,
             duration: "4 M"
-        })
-    }
-            
-    EIGHT_HOURS() { 
-        return new Bars(this.security, {
+        });
+        
+        this.FOUR_HOURS
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.EIGHT_HOURS = new Bars(this.security, {
             text: "4 hour",
             integer: 28800,
             duration: "8 M"
-        })
-    }
-            
-    ONE_DAY() { 
-        return new Bars(this.security, {
+        });
+        
+        this.EIGHT_HOURS
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+
+        this.ONE_DAY = new Bars(this.security, {
             text: "1 day",
             integer: 3600 * 24,
             duration: "1 Y"
-        })
+        });
+        
+        this.ONE_DAY
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
+    }
+    
+    cancel() {
+        this.ONE_SECOND.cancel();
+        this.FIVE_SECONDS.cancel();
+        this.TEN_SECONDS.cancel();
+        this.FIFTEEN_SECONDS.cancel();
+        this.THIRTY_SECONDS.cancel();
+        this.ONE_MINUTE.cancel();
+        this.TWO_MINUTES.cancel();
+        this.THREE_MINUTES.cancel();
+        this.FIVE_MINUTES.cancel();
+        this.TEN_MINUTES.cancel();
+        this.FIFTEEN_MINUTES.cancel();
+        this.THIRTY_MINUTES.cancel();
+        this.ONE_HOUR.cancel();
+        this.TWO_HOURS.cancel();
+        this.FOUR_HOURS.cancel();
+        this.EIGHT_HOURS.cancel();
+        this.ONE_DAY.cancel();
     }
     
 }
 
+module.exports = Charts;
+},{"./studies":16,"async":19,"events":26,"sugar":20}],4:[function(require,module,exports){
+"use strict";
 
-module.exports = BarSizes;
-},{"async":17,"events":24,"sugar":18}],4:[function(require,module,exports){
+module.exports = () => {
+    
+    return {
+        
+        /* Settings for socket connection to IB software. */
+        "connection": {
+            
+            /* Timeout when connecting */
+            "timeout": 1000,
+            
+            /* Host name of IB software */
+            "host": "localhost",
+            
+            /* Socket port to connect to IB software. */
+            "port": 4001
+            
+        },
+        
+        /* Environment configuration. */
+        "environment": {
+            
+            /* Load timeout in milliseconds */
+            "timeout": 30000,
+            
+            /* Subscribe to system notifications and connectivity status updates. */
+            "system": true,
+
+            /* Subscribe to realtime account balance and position values.
+               - Boolean value subscribes to all account info.
+               - An array of tags (i.e. [ "TAG1", "TAG2" ]) subscribes to select values.  (Print Environment.accounts.TAGS variable for a list of tags.) */
+            "accounts": true,
+
+            /* Subscribe to basic position info across accounts. */
+            "positions": true,
+
+            /* Subscribe to trade history, past and ongoing trades. 
+               - Boolean value loads today's trades.
+               - A filter object adjusts the scope of trades. */
+            "executions": true,
+
+            /* Subscribe to pending orders.
+               - "all" subscribes to all orders placed in IB.
+               - "local" subscribes only to orders placed through this process. */
+            "orders": "all",
+
+            /* Watchlist of securities. */
+            "symbols": [
+                //"GOOGL",
+                //[ "AAPL", { /* Override defaults */ } ],
+                //{ 
+                //    "description": "IBM", 
+                //    "options": { /* Override defaults */ }
+                //}
+            ]
+
+        },
+                
+        /* Market data subscriptions that are opened by default. */
+        "symbol": {
+
+            /* Download fundamental data.
+               - The "all" option fetches all available fundamental data.
+               - Any other string fetches the fundamental report by that name.
+               - An array of strings fetch all reports in the array.  (Print Symbol.fundamentals.REPORT_TYPES variable for a list of reports.) */
+            "fundamentals": "all",
+
+            /* Subscribe to quote data.
+               - Boolean value opens a streaming quote of price and volume data.
+               - The "snapshot" string fetches a snapshot of quote data without initializing a streaming subscription.
+               - An array of strings registers specific streaming quote fields.  (Print Symbol.quote.TICK_TYPES variable for a list of fields.) */
+            "quote": true,
+
+            /* Subscribe to level 2 data.
+               - The "all" string subscribes to level 2 data from all valid exchanges.
+               - An array of strings subscribes to specific market data centers. */
+            "level2": {
+                "markets": "all",
+                "rows": 10
+            },
+
+            /* Subscribes to a bar chart data.  Must use one of the bar sizes below.
+               - Boolean loads one history period and subscribes to realtime updates
+               - Positive integer loads that many historical periods and subscribes to realtime updates */
+            "bars": {
+                "ONE_SECOND": false,
+                "FIVE_SECONDS": false,
+                "FIFTEEN_SECONDS": false,
+                "THIRTY_SECONDS": false,
+                "ONE_MINUTE": false,
+                "TWO_MINUTES": false,
+                "THREE_MINUTES": false,
+                "FIVE_MINUTES": true,
+                "FIFTEEN_MINUTES": false,
+                "THIRTY_MINUTES": false,
+                "ONE_HOUR": false,
+                "TWO_HOURS": false,
+                "FOUR_HOURS": false,
+                "EIGHT_HOURS": false,
+                "ONE_DAY": false
+            }
+
+        }        
+        
+    };
+    
+};
+},{}],5:[function(require,module,exports){
 "use strict";
 
 const CURRENCIES = [
@@ -476,122 +696,206 @@ function parse(definition) {
 }        
 
 module.exports = parse;
-},{}],5:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 "use strict";
 
 const Events = require("events"),
-      async = require("async");
+      async = require("async"),
+      config = require("./config");
 
 class Environment extends Events {
     
-    constructor(session, options) {
+    constructor(session, options, symbolDefaults) {
+        
         super();
         
-        options = options || { 
-            system: true,
-            accounts: true,
-            positions: true,
-            executions: true,
-            orders: "all"
-        };
+        this.defaults = config();
+        this.defaults.environment = options = options || this.defaults.environment;
+        this.defaults.symbol = symbolDefaults || this.defaults.symbol;
         
         this.session = session;
         
-        let badState = 0,
-            badStateHandler = err => {
-                if (err.timeout) {
-                    badState--;
-                    if (badState == 0) this.emit("badState");
-                }
-            },
-            badStateWatcher = obj => {
-                badState++;
-                obj.once("error", badStateHandler);
-                setTimeout(() => obj.removeListener("error", badStateHandler), 15000);
-            };
+        let loadCount = 0,
+            loadTimeouts = 0,
+            loadErrors = 0,
+            loadSuccess = 0,
+            loadErrorsList = [ ];
         
-        if (options.system) {
-            this.system = this.session.system();
-            this.system.on("message", data => this.emit("message", data));
+        let errorHandler = err => {
+            if (err.timeout) loadTimeouts++;
+            else loadErrors++;
+
+            if (loadCount == loadTimeouts) {
+                let bs = new Error("IB API unresponsive. Try restarting IB software and reconnecting.");
+                bs.badState = true;
+                bs.errors = loadErrorsList;
+                
+                this.loaded = true;
+                this.emit("load", bs, this);
+            }
+            else if (loadCount == loadTimeouts + loadErrors + loadSuccess) {
+                let le = new Error("Errors encountered during initial load.");
+                le.errors = loadErrorsList;
+                
+                this.loaded = true;
+                this.emit("load", le, this);
+            }
+        };
+        
+        let loadHandler = err => {
+            if (err) {
+                errorHandler(err);
+                return;
+            }
+            else loadSuccess++;
+
+            if (loadCount == loadSuccess) {
+                this.loaded = true;
+                this.emit("load", null, this);
+            }
+            else if (loadCount == loadTimeouts + loadErrors + loadSuccess) {
+                let le = new Error("Errors encountered during initial load.");
+                le.errors = loadErrorsList;
+                
+                this.loaded = true;
+                this.emit("load", le, this);
+            }
+        };
+
+        let loadTimer = setTimeout(() => {
+            if (!this.loaded) {
+                let to = new Error("Environment load time out.");
+                to.timeout = true;
+                this.emit("load", to, this);
+            }
+        }, options.timeout || 30000);
+        
+        let load = obj => {
+            loadCount++;
+            obj.once("error", errorHandler)
+               .once("load", loadHandler);
+            
+            setTimeout(() => obj.removeListener("error", errorHandler), options.timeout || 30000);
+            setTimeout(() => obj.removeListener("load", loadHandler), options.timeout || 30000);
+        };
+        
+        let emitError = err => {
+            if (this.loaded) this.emit("error", err);
+            else loadErrorsList.push(err);
         }
         
+        this.system = this.session.system();    
+        this.system
+            .on("error", emitError)
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", { type: "system", data: data }));
+        
+        if (options.system) {
+            this.system.stream();
+        }
+        
+        this.accounts = this.session.accounts();    
+        this.accounts
+            .on("error", emitError)
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", { type: "accounts", data: data }));
+        
         if (options.accounts) {
-            this.accounts = this.session.accounts();
             if (Array.isArray(options.accounts)) {
                 this.accounts.tags = options.accounts;
             }
             
-            this.accounts.on("error", err => this.emit("error", err)).stream();
-            badStateWatcher(this.accounts);
+            load(this.accounts);
+            this.accounts.stream();
         }
+        
+        this.positions = this.session.positions();    
+        this.positions
+            .on("error", emitError)
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", { type: "positions", data: data }));
         
         if (options.positions) {
-            this.positions = this.session.positions();
-            this.positions.on("error", err => this.emit("error", err));
-            badStateWatcher(this.positions);
+            load(this.positions);
+            this.positions.stream();
         }
+        
+        this.executions = this.session.executions(Object.isObject(options.executions) ? options.executions : null);
+        this.executions
+            .on("error", emitError)
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", { type: "executions", data: data }));
         
         if (options.executions) {
-            this.executions = this.session.executions(Object.isObject(options.executions) ? options.executions : null);
-            this.executions.on("error", err => this.emit("error", err));
-            badStateWatcher(this.executions);
+            load(this.executions);
+            this.executions.stream();
         }
         
+        this.orders = this.session.orders();    
+        this.orders
+            .on("error", emitError)
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", { type: "orders", data: data }));
+
         if (options.orders) {
-            if (options.orders == "all") {
-                this.orders = this.session.orders(true);
-                this.orders.autoOpenOrders(true);
-            }
-            else {
-                this.orders = this.session.orders(false);
-                this.orders.autoOpenOrders(false);
-            }
-            
-            this.orders.on("error", err => this.emit("error", err));
-            badStateWatcher(this.orders);
+            load(this.orders);
+            this.orders.autoOpenOrders(options.orders == "all");
+            this.orders.stream(options.orders == "all");
         }
         
         this.symbols = { };
-        if (options.symbols) {
+        if (options.symbols && options.symbols.length) {
+            let symbolLoad = (err, symbol) => {
+                if (err) errorHandler(err);
+                else symbol.on("load", loadHandler);
+            };
+            
             options.symbols.each(security => {
-                if (security) {
-                    if (Array.isArray(security)) this.watch(...security);
-                    else if (Object.isObject(security)) this.watch(security.description, security.options);
-                    else this.watch(security);
-                }
+                loadCount++;
+                if (Array.isArray(security)) this.watch(security[0], security[1], symbolLoad);
+                else if (Object.isObject(security)) this.watch(security.description, security.options, symbolLoad);
+                else this.watch(security, null, symbolLoad);
             });
         }
     }
     
-    watch(description, options) {
+    watch(description, options, cb) {
+        options = Object.merge(Object.clone(this.defaults.symbol), options || { });
         this.session.security(description, (err, security) => {
             if (err) {
                 this.emit("error", err);
+                if (cb) cb(err);
             }
             else {
                 let symbol = security.symbol(options);
+                if (symbol.name) this.symbols[symbol.name] = symbol;
                 
-                if (symbol.name) {
-                    this.symbols[symbol.name] = symbol;
-                }
+                symbol.on("close", () => delete this.symbols[symbol.name])
+                      .on("error", err => this.emit("error", err))
+                      .on("warning", msg => this.emit("warning", msg));
                 
-                symbol.on("close", () => {
-                    if (symbol.name) {
-                        delete this.symbols[symbol.name];
-                    }
-                });
-                
-                symbol.on("error", err => this.emit("error", err));
-                
-                symbol.once("ready", () => this.emit("symbol", symbol));
+                if (cb) cb(null, symbol);
             }
         });
+    }
+    
+    close(cb) {
+        let socket = this.session.socket;
+        if (socket && !socket.isProxy) {
+            if (socket.disconnect && Object.isFunction(socket.disconnect)) {
+                this.session.socket.once("disconnected", () => {
+                    if (cb) cb();
+                }).disconnect();
+            }
+            else if (cb) cb();
+        }
+        else if (cb) cb();
     }
     
 }
 
 module.exports = Environment;
-},{"async":17,"events":24}],6:[function(require,module,exports){
+},{"./config":4,"async":19,"events":26}],7:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -601,22 +905,23 @@ class Executions extends Events {
     constructor(service, options) {
         super();
         
+        this.service = service;
+        this.filter = { };
+        this.trades = { };
+    }
+    
+    stream(options) {
         options = options || { };
         
-        this.service = service;
+        if (options.account) this.filter.acctCode = options.account;
+        if (options.client) this.filter.clientId = options.client;
+        if (options.exchange) this.filter.exchange = options.exchange;
+        if (options.secType) this.filter.secType = options.secType;
+        if (options.side) this.filter.side = options.side;
+        if (options.symbol) this.filter.symbol = options.symbol;
+        if (options.time) this.filter.time = options.time;
         
-        this.filter = { };
-        if (options.account) filter.acctCode = options.account;
-        if (options.client) filter.clientId = options.client;
-        if (options.exchange) filter.exchange = options.exchange;
-        if (options.secType) filter.secType = options.secType;
-        if (options.side) filter.side = options.side;
-        if (options.symbol) filter.symbol = options.symbol;
-        if (options.time) filter.time = options.time;
-        
-        this.trades = { };
-        
-        let request = service.executions(this.filter);
+        let request = this.service.executions(this.filter);
         request.on("data", data => {
             if (!this.trades[data.exec.permId]) {
                 this.trades[data.exec.permId] = { };
@@ -627,19 +932,27 @@ class Executions extends Events {
         }).on("error", err => {
             this.emit("error", err);
         }).on("end", () => {
-            this.emit("updated");
+            this.emit("load");
         }).send();
         
-        this.cancel = () => request.cancel();
+        this.cancel = () => {
+            request.cancel();
+            return true;
+        };
+    }
+    
+    cancel() {
+        return false;
     }
     
 }
 
 module.exports = Executions;
-},{"events":24}],7:[function(require,module,exports){
+},{"events":26}],8:[function(require,module,exports){
 "use strict";
 
-const async = require("async");
+const async = require("async"),
+      Events = require("events");
 
 const REPORT = {
     snapshot: "ReportSnapshot",
@@ -650,9 +963,10 @@ const REPORT = {
     calendar: "CalendarReport"
 };
 
-class Fundamentals {
+class Fundamentals extends Events {
     
     constructor(security) {
+        super();
         this.security = security;
         this.REPORT_TYPES = REPORT;
     }
@@ -689,6 +1003,7 @@ class Fundamentals {
                     cb(null, data);
                 }
             
+                this.emit("update");
                 cancel();
             }).on("end", cancel => {
                 if (cb) {
@@ -709,7 +1024,10 @@ class Fundamentals {
         async.forEachSeries(
             types,
             (type, cb) => this.load(type, cb), 
-            err => cb ? cb(err) : null
+            err => {
+                cb ? cb(err) : null;
+                this.emit("load");
+            }
         );
     }
     
@@ -721,14 +1039,21 @@ class Fundamentals {
                 if (err) msg += err.message + " ";
                 cb();
             }), 
-            err => cb ? cb(msg.length ? new Error(msg.trim()) : null) : null
+            err => {
+                cb ? cb(msg.length ? new Error(msg.trim()) : null) : null;
+                this.emit("load");
+            }
         );
+    }
+    
+    cancel() {
+        return false();
     }
     
 }
 
 module.exports = Fundamentals;
-},{"async":17}],8:[function(require,module,exports){
+},{"async":19,"events":26}],9:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -814,16 +1139,17 @@ class Order extends Events {
         return this;
     }
     
-    stop(trigger, limit) {
-        if (limit) {
-            this.ticket.type = "STP LMT";
-            this.ticket.auxPrice = trigger;
-            this.ticket.lmtPrice = limit;
-        }
-        else {
-            this.ticket.type = "STP";
-            this.ticket.auxPrice = trigger;
-        }
+    stop(trigger) {
+        this.ticket.type = "STP";
+        this.ticket.auxPrice = trigger;
+            
+        return this;
+    }
+    
+    stopLimit(trigger, limit) {
+        this.ticket.type = "STP LMT";
+        this.ticket.auxPrice = trigger;
+        this.ticket.lmtPrice = limit;
             
         return this;
     }
@@ -885,7 +1211,7 @@ class Order extends Events {
     }
     
     transmit() {
-        this.ticket.trasmit = true;
+        this.ticket.transmit = true;
         this.open();
     }
     
@@ -952,7 +1278,7 @@ Order.TIME_IN_FORCE = {
 };
 
 module.exports = Order;
-},{"events":24}],9:[function(require,module,exports){
+},{"events":26}],10:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -971,52 +1297,73 @@ class OrderBook extends Events {
         this.offers = { };
     }
     
-    open(exchange, rows) {
-        if (this.exchanges.indexOf(exchange) < 0) {
-            let copy = Object.clone(this.security.summary);
-            copy.exchange = exchange;
-
-            this.exchanges.push(exchange);
-            this.bids[exchange] = { };
-            this.offers[exchange] = { };
-
-            let req = this.security.service.mktDepth(copy, rows || 5)
-
-            req.on("data", datum => {
-                this.emit("beforeUpdate", datum);
-
-                if (datum.side == 1) {
-                    this.bids[exchange][datum.position] = datum;
-                }
-                else {
-                    this.offers[exchange][datum.position] = datum;
-                }
-
-                this.emit("update", datum);
-            })
-            .on("error", (err, cancel) => {
-                this.emit("warning", this.security.summary.localSymbol + " on " + exchange + " failed.");
-                this.requests.remove(req);
-                this.exchanges.remove(exchange);
-                delete this.bids[exchange];
-                delete this.offers[exchange];
-                cancel();
-            }).send();
-
-            this.requests.push(req);
-            
-            return true;
+    stream(exchanges, rows) {
+        if (!Array.isArray(exchanges)) {
+            exchanges = [ exchanges ];
         }
-        else return false;
+        
+        let exchangeList = Object.clone(exchanges);
+        
+        exchanges.each(exchange => {
+            if (this.exchanges.indexOf(exchange) < 0) {
+                let copy = Object.clone(this.security.summary);
+                copy.exchange = exchange;
+
+                this.exchanges.push(exchange);
+                this.bids[exchange] = { };
+                this.offers[exchange] = { };
+
+                let req = this.security.service.mktDepth(copy, rows || 5)
+
+                req.on("data", datum => {
+                    if (datum.side == 1) {
+                        this.bids[exchange][datum.position] = datum;
+                    }
+                    else {
+                        this.offers[exchange][datum.position] = datum;
+                    }
+                    
+                    exchangeList.remove(exchange);
+                    this.emit("update", datum);
+                }).on("error", (err, cancel) => {
+                    exchangeList.remove(exchange);
+                    this.emit("warning", this.security.summary.localSymbol + " on " + exchange + " failed.");
+                    this.requests.remove(req);
+                    this.exchanges.remove(exchange);
+                    delete this.bids[exchange];
+                    delete this.offers[exchange];
+                    cancel();
+                }).send();
+
+                this.requests.push(req);
+            }
+        });
+        
+        let watcher = setInterval(() => {            
+            if (exchangeList.length == 0) {
+                clearInterval(watcher);
+                this.loaded = true;
+                this.emit("load");
+            }
+        }, 100);
+        
+        setTimeout(() => {
+            if (!this.loaded) {
+                this.loaded = true;
+                
+                let err = new Error("Level 2 data timeout loading data.");
+                err.timeout = true;
+                
+                clearInterval(watcher);
+                
+                this.emit("error", err);
+                this.emit("load", err);
+            }
+        }, 15000);
     }
     
-    openAll(exchanges, rows) {
-        exchanges.each(ex => this.open(ex, rows));
-    }
-    
-    openAllValidExchanges(rows) {
-        let valid = this.security.validExchanges.split(',');
-        valid.each(exchange => this.open(exchange, rows));
+    streamAllValidExchanges(rows) {
+        this.stream(this.security.validExchanges.split(','), rows);
     }
     
     close(exchange) {
@@ -1038,7 +1385,7 @@ class OrderBook extends Events {
 }
 
 module.exports = OrderBook;
-},{"events":24,"sugar":18}],10:[function(require,module,exports){
+},{"events":26,"sugar":20}],11:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -1048,19 +1395,20 @@ class Orders extends Events {
     constructor(service, all) {
         super();
         
-        let request = all ? service.allOpenOrders() : service.openOrders();
-        
         this.service = service;
+        this.all = { };
+    }
+    
+    stream(all) {
+        let request = all ? this.service.allOpenOrders() : this.service.openOrders();
         
         this.cancel = () => request.cancel();
-        
-        this.all = { };
         
         let me = this;
         request.on("data", data => {
             me.all[data.orderId] = data;
         }).on("end", () => {
-            me.emit("updated");
+            me.emit("load");
         }).on("error", err => {
             me.emit("error", err);
         }).send();
@@ -1074,10 +1422,14 @@ class Orders extends Events {
         this.service.globalCancel();
     }
     
+    cancel() {
+        return false;
+    }
+    
 }
 
 module.exports = Orders;
-},{"events":24}],11:[function(require,module,exports){
+},{"events":26}],12:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -1087,13 +1439,17 @@ class Positions extends Events {
     constructor(service) {
         super();
         
-        let request = service.positions();
-        
         this.service = service;
-        
-        this.cancel = () => request.cancel();
-        
         this.accounts = { };
+    }
+    
+    stream() {
+        let request = this.service.positions();
+        
+        this.cancel = () => {
+            request.cancel();
+            return true;
+        }
         
         request.on("data", data => {
             if (!this.accounts[data.account]) {
@@ -1109,10 +1465,14 @@ class Positions extends Events {
         }).send();
     }
     
+    cancel() {
+        return false;
+    }
+    
 }
 
 module.exports = Positions;
-},{"events":24}],12:[function(require,module,exports){
+},{"events":26}],13:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1172,7 +1532,7 @@ class Quote extends Events {
         return this;
     }
     
-    option() {
+    options() {
         this.fields.add([ TICKS.optionVolume, TICKS.optionOpenInterest ]);
         return this;
     }
@@ -1198,7 +1558,7 @@ class Quote extends Events {
                 if (cb) cb(err);
                 cancel();
             }).on("end", cancel => {
-                this.emit("updated");
+                this.emit("load");
                 if (cb) cb(null, this);
                 cancel();
             }).send();
@@ -1210,7 +1570,6 @@ class Quote extends Events {
                 datum = parseQuotePart(datum);
                 
                 let oldValue = this[datum.key];
-                this.emit("beforeUpdate", { key: datum.key, newValue: datum.value, oldValue: oldValue });
                 this[datum.key] = datum.value;
                 this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
             })
@@ -1218,17 +1577,20 @@ class Quote extends Events {
                 this.emit("error", err);
             }).send();
         
-        this.cancel = () => req.cancel();
+        this.cancel = () => {
+            req.cancel();
+            return true;
+        };
     }
     
     cancel() {
-
+        return false;
     }
     
 }
 
 module.exports = Quote;
-},{"events":24,"sugar":18}],13:[function(require,module,exports){
+},{"events":26,"sugar":20}],14:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1237,7 +1599,7 @@ const Events = require("events"),
       Fundamentals = require("./fundamentals"),
       Quote = require("./quote"),
       OrderBook = require("./orderbook"),
-      Bars = require("./bars"),
+      Charts = require("./charts"),
       Order = require("./order"),
       Symbol = require("./symbol");
 
@@ -1247,9 +1609,6 @@ class Security extends Events {
         super();
         
         this.service = service;
-        
-        this.bars = new Bars(this);
-        
         Object.merge(this, contract);
     }
     
@@ -1261,8 +1620,12 @@ class Security extends Events {
         return new Quote(this);
     }
     
-    depth() {
+    level2() {
         return new OrderBook(this);
+    }
+    
+    charts() {
+        return new Charts(this);
     }
     
     order(defaults) {
@@ -1276,7 +1639,7 @@ class Security extends Events {
 }
 
 module.exports = Security;
-},{"./bars":3,"./fundamentals":7,"./order":8,"./orderbook":9,"./quote":12,"./symbol":15,"events":24,"sugar":18}],14:[function(require,module,exports){
+},{"./charts":3,"./fundamentals":8,"./order":9,"./orderbook":10,"./quote":13,"./symbol":17,"events":26,"sugar":20}],15:[function(require,module,exports){
 "use strict";
 
 var Events = require("events"),
@@ -1316,16 +1679,12 @@ class Session extends Events {
         return new Positions(this.service);
     }
     
-    orders(all) {
-        return new Orders(this.service, all);
+    orders() {
+        return new Orders(this.service);
     }
     
     executions() {
         return new Executions(this.service);
-    }
-    
-    news(flags) {
-        return new News(this.service, flags);
     }
     
     security(description, cb) {
@@ -1339,187 +1698,137 @@ class Session extends Events {
             .send();
     }
     
-    environment(options) {
-        return new Environment(this, options);
+    environment(options, symbolDefaults) {
+        return new Environment(this, options, symbolDefaults);
     }
     
 }
 
 module.exports = Session;
-},{"./accounts":2,"./contract":4,"./environment":5,"./executions":6,"./orders":10,"./positions":11,"./security":13,"./system":16,"events":24}],15:[function(require,module,exports){
+},{"./accounts":2,"./contract":5,"./environment":6,"./executions":7,"./orders":11,"./positions":12,"./security":14,"./system":18,"events":26}],16:[function(require,module,exports){
+require("sugar");
+
+const studies = { };
+
+studies.SMA = window => window.map("close").average();
+
+module.exports = studies;
+},{"sugar":20}],17:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
 const async = require("async"),
-      Events = require("events");
+      Events = require("events"),
+      config = require("./config");
 
 class Symbol extends Events {
     
     constructor(security, options) {
         super();
-
-        options = options || {
-            fundamentals: "all",
-            quote: "streaming",
-            depth: "all",
-            rows: 10,
-            bars: {
-                ONE_SECOND: false,
-                FIVE_SECONDS: false,
-                FIFTEEN_SECONDS: false,
-                THIRTY_SECONDS: false,
-                ONE_MINUTE: false,
-                TWO_MINUTES: false,
-                THREE_MINUTES: false,
-                FIVE_MINUTES: true,
-                FIFTEEN_MINUTES: false,
-                THIRTY_MINUTES: false,
-                ONE_HOUR: false,
-                TWO_HOURS: false,
-                FOUR_HOURS: false,
-                EIGHT_HOURS: false,
-                ONE_DAY: false,
-            }
-        };
+        
+        options = Object.merge(config().symbol, options || { });
         
         this.security = security;
         
         this.name = options.name || security.summary.localSymbol;
-
-        this.order = defaults => security.order(defaults);
         
-        this.cancel = () => {
-            if (this.quote) this.quote.cancel();
-            if (this.depth) this.depth.cancel();
-            if (this.bars) this.bars.cancel();
-            this.emit("close");
-        };
+        let errors = [ ],
+            errorHandler = err => {
+                if (this.loaded) this.emit("error", err);
+                else errors.push(err);
+            };
+        
+        (this.fundamentals = security.fundamentals())
+            .on("error", errorHandler)
+            .on("warning", msg => this.emit("warning", msg));
+        
+        (this.quote = security.quote())
+            .on("error", errorHandler)
+            .on("warning", msg => this.emit("warning", msg));
+        
+        (this.level2 = security.level2())
+            .on("error", errorHandler)
+            .on("warning", msg => this.emit("warning", msg));
+        
+        (this.charts = security.charts())
+            .on("error", errorHandler)
+            .on("warning", msg => this.emit("warning", msg));
 
-        async.parallel([
+        async.series([
             cb => {
                 if (options.fundamentals) {
-                    this.fundamentals = security.fundamentals();
-                    if (options.fundamentals == "all") {
-                        this.fundamentals.loadAll(cb);
-                    }
-                    else if (Array.isArray(options.fundamentals)) {
-                        this.fundamentals.loadSome(options.fundamentals, cb);
-                    }
-                    else if (Object.isString(options.fundamentals)) {
-                        this.fundamentals.load(options.fundamentals, cb);
-                    }
-                    else {
-                        cb();
-                    }
+                    if (options.fundamentals == "all") this.fundamentals.loadAll(cb);
+                    else if (Array.isArray(options.fundamentals)) this.fundamentals.loadSome(options.fundamentals, cb);
+                    else if (Object.isString(options.fundamentals)) this.fundamentals.load(options.fundamentals, cb);
+                    else cb();
                 }
-                else {
-                    cb();
-                }
+                else cb();
             },
             cb => {
                 if (options.quote) {
-                    this.quote = security.quote();
-                    
-                    this.quote
-                        .on("error", err => this.emit("error", err))
-                        .on("warning", msg => this.emit("warning", msg))
-                        .on("message", msg => this.emit("message", msg));
-                    
-                    if (Array.isArray(options.quote)) {
-                        this.quote.fields = options.quote;
-                    }
-                    
-                    if (options.quote != "snapshot") {
-                        this.quote.stream();
-                    }
-                    
+                    if (Array.isArray(options.quote)) this.quote.fields = options.quote;
                     this.quote.refresh(cb);
+                    if (options.quote != "snapshot") this.quote.stream();
                 }
                 else cb();
             },
             cb => {
-                if (options.depth) {
-                    this.depth = security.depth();
-                    
-                    this.depth
-                        .on("error", err => this.emit("error", err))
-                        .on("warning", msg => this.emit("warning", msg))
-                        .on("message", msg => this.emit("message", msg));
-                    
-                    if (options.depth == "all") {
-                        this.depth.openAllValidExchanges(options.rows || 10);
-                    }
-                    else if (Array.isArray(options.depth)) {
-                        this.depth.openAll(options.depth, options.rows || 10);
-                    }
-                    else if (Object.isString(options.depth)) {
-                        this.depth.open(options.depth, options.rows || 10);
-                    }
-                    
-                    cb();
+                if (options.level2) {
+                    if (options.level2.markets == "all") this.level2.streamAllValidExchanges(options.level2.rows || 10);
+                    else this.level2.stream(options.level2.markets, options.level2.rows || 10);
+                    this.level2.once("load", cb);
                 }
                 else cb();
             },
             cb => {
-                if (options.bars) {
-                    this.bars = { };
-                    
-                    if (Array.isArray(options.bars)) {
-                        options.bars.each(
-                            size => {
-                                this.bars[size] = security.bars[size]();
-                                this.bars[size]
-                                    .on("error", err => this.emit("error", err))
-                                    .on("warning", msg => this.emit("warning", msg))
-                                    .on("message", msg => this.emit("message", msg));
-                                
-                                this.bars[size].load(options.bars[size]);
+                if (options.charts) {
+                    let sizes = Object.keys(options.charts).filter(k => options.charts[k]);
+                    async.forEachSeries(sizes, (size, cb) => {
+                        let periods = options.charts[k];
+                        this.charts[size].history(err => {
+                            if (!err && periods > 1) {
+                                async.forEach(
+                                    (1).upto(periods).exclude(1), 
+                                    (i, cb) => this.charts[size].history(cb), 
+                                    cb
+                                );
                             }
-                        );
-                    }
-                    else if (Object.isObject(options.bars)) {
-                        Object.keys(options.bars).filter(k => options.bars[k]).each(
-                            size => {
-                                this.bars[size] = security.bars[size]();
-                                this.bars[size]
-                                    .on("error", err => this.emit("error", err))
-                                    .on("warning", msg => this.emit("warning", msg))
-                                    .on("message", msg => this.emit("message", msg));
-                                
-                                this.bars[size].load(options.bars[size]);
-                            }
-                        );
-                    }
-                    else if (Object.isString(options.bars)) {
-                        this.bars[options.bars] = security.bars[options.bars]();
-                        this.bars[options.bars]
-                            .on("error", err => this.emit("error", err))
-                            .on("warning", msg => this.emit("warning", msg))
-                            .on("message", msg => this.emit("message", msg));
+                            else cb(err);
+                        });
                         
-                        this.bars[options.bars].load(options.bars[size]);
-                    }
-                    
-                    this.bars.cancel = () => {
-                        Object.values(this.bars).cancel();
-                        this.bars = { };
-                    }
-                    
-                    cb();
+                        this.charts[size].stream();
+                    }, cb);
                 }
                 else cb();
             }
         ], err => {
-            if (err) this.emit("error", err);
-            this.emit("ready");
+            this.loaded = true;
+            if (err) {
+                err = new Error("Errors encountered during " + this.name + " symbol load.");
+                err.errors = errors;
+            }
+            
+            this.emit("load", err);
         });
+    }
+    
+    order(defaults) {
+        return security.order(defaults);
+    }
+    
+    cancel() {
+        this.fundamentals.cancel();
+        this.quote.cancel();
+        this.depth.cancel();
+        this.charts.cancel();
+        this.emit("close");
     }
     
 }
 
 module.exports = Symbol;
-},{"async":17,"events":24,"sugar":18}],16:[function(require,module,exports){
+},{"./config":4,"async":19,"events":26,"sugar":20}],18:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -1532,7 +1841,9 @@ class System extends Events {
         this.service = service;
         
         this.marketDataConnections = { };
-        
+    }
+    
+    stream() {
         this.service.system().on("data", data => {
             if (data.code >= 2103 || data.code <= 2106) {
                 let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
@@ -1545,14 +1856,31 @@ class System extends Events {
                 this.emit("marketDataConnectionChange", name, status);
             }
             
-            this.emit("message", data);
+            this.emit("update", data);
         });
+        
+        let req = this.service.newsBulletins(true);
+        this.cancel = () => {
+            req.cancel();
+            return true;
+        };
+        
+        req.on("data", data => {
+            console.log(data);
+            this.emit("update", data);
+        }).on("error", err => {
+            this.emit("error", err);
+        });
+    }
+    
+    cancel() {
+        return false;
     }
     
 }
 
 module.exports = System;
-},{"events":24}],17:[function(require,module,exports){
+},{"events":26}],19:[function(require,module,exports){
 (function (process,global){
 /*!
  * async
@@ -2821,7 +3149,7 @@ module.exports = System;
 }());
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":25}],18:[function(require,module,exports){
+},{"_process":27}],20:[function(require,module,exports){
 (function (global,Buffer){
 /*
  *  Sugar v1.5.0
@@ -13320,7 +13648,7 @@ module.exports = System;
 
 }).call(this);
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"buffer":23}],19:[function(require,module,exports){
+},{"buffer":25}],21:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -13393,7 +13721,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":22}],20:[function(require,module,exports){
+},{"./request":24}],22:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -13416,6 +13744,8 @@ class Proxy {
         }).on("error", msg => {
             dispatch.error(msg.ref, msg.error);
         });
+        
+        this.isProxy = true;
         
         this.socket = socket;
         
@@ -13510,7 +13840,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":19,"./relay":21}],21:[function(require,module,exports){
+},{"./dispatch":21,"./relay":23}],23:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -13553,7 +13883,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],22:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -13591,6 +13921,8 @@ class Request extends Events {
                 cancel(this);
                 delete this.dispatch.requests[this.id];
                 this.emit("close");
+                
+                this.cancel = () => { };
             };
         }
         else {
@@ -13602,6 +13934,8 @@ class Request extends Events {
                 
                 delete this.dispatch.requests[this.id];
                 this.emit("close");
+                
+                this.cancel = () => { };
             };
         }
         
@@ -13665,9 +13999,9 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":24}],23:[function(require,module,exports){
+},{"events":26}],25:[function(require,module,exports){
 
-},{}],24:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -13971,7 +14305,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],25:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 

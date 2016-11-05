@@ -39,7 +39,10 @@ const connect = exports.connect = (options, cb) => {
     
     let timeout = setTimeout(() => {
         if (cb) {
-            cb(new Error("Connection timeout. Make sure TWS or IB Gateway is running and you are logged in. Then check IB software is configured to accept API connections over the correct port."), sess);
+            cb(new Error(
+                "Connection timeout. Make sure TWS or IB Gateway is running and you are logged in. " + 
+                "Then check IB software is configured to accept API connections over the correct port."
+            ), sess);
         }
     }, options.timeout || 2500);
     
@@ -51,12 +54,21 @@ const connect = exports.connect = (options, cb) => {
     return sess;
 };
 
-const environment = exports.environment = (config, cb) => {
-    connect(config.connection, (err, session) => {
+const environment = exports.environment = (configuration, cb) => {
+    if (cb == null && Object.isFunction(configuration)) {
+        cb = configuration;
+        configuration = config();
+    }
+    
+    if (configuration == null) {
+        configuration = config();
+    }
+    
+    connect(configuration.connection, (err, session) => {
         if (err) cb(err);
-        else session.environment(config.environment).once("load", cb);
+        else session.environment(configuration.environment, configuration.symbol).once("load", cb);
     });
-}
+};
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -70,22 +82,27 @@ const proxy = exports.proxy = (socket, dispatch) => {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // TERMINAL
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-const terminal = exports.terminal = config => {
+function printError(err, prefix) {
+    if (err) {
+        console.log(err.message.red);
+        if (err.errors) {
+            err.errors.each(e => {
+                console.log((" - " + err.message).gray)
+                if (e.errors) {
+                    e.errors.each(x => {
+                        console.log(("    - " + x.message).gray);
+                    });
+                }
+            });
+        }
+    }
+}
+
+const terminal = exports.terminal = configuration => {
     console.log("Starting...".green);
-    environment(config, (err, env) => {
+    environment(configuration || config(), (err, env) => {
         if (err) {
-            console.log(err.message.red);
-            if (err.errors) {
-                err.errors.each(e => {
-                    console.log(err.message.gray)
-                    if (e.errors) {
-                        e.errors.each(x => {
-                            console.log((" - " + x.message).gray);
-                        });
-                    }
-                });
-            }
-            
+            printError(err);
             if (err.badState) {
                 env.close(() => {
                     console.log("Disconnected".red)
@@ -94,14 +111,7 @@ const terminal = exports.terminal = config => {
             }
         }
         else {
-            env.on("error", err => {
-                console.log(err.message.red);
-                if (err.errors) {
-                    err.errors.each(e => {
-                        console.log((" - " + e.message).gray);
-                    });
-                }
-            }).on("warning", msg => {
+            env.on("error", printError).on("warning", msg => {
                 console.log(msg.yellow);
             });
             
@@ -123,6 +133,21 @@ const terminal = exports.terminal = config => {
     });
 };
 
-if (process.argv[2] && process.argv[2] == "terminal") {
-    terminal(config());
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// COMMAND LINE
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if (process.argv[2]) {
+    let arg = process.argv[2].toLowerCase();
+    if (arg == "terminal") {
+        terminal();
+    }
+    else if (arg == "config") {
+        if (process.argv[3]) {
+            fs.writeFileSync(process.argv[3], JSON.stringify(config(), null, "\t"));    
+        }
+        else {
+            console.log("Cannot write config file.  No file specified.");
+        }
+    }
 }

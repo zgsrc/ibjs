@@ -1,4 +1,9 @@
 var Session = require("../model/session"),
-    Proxy = require("../service/proxy");
+    Proxy = require("../service/proxy"),
+    config = require("../model/config");
 
-window.connect = socket => new Session(new Proxy(socket));
+window.session = function(socket) {
+    return new Session(new Proxy(socket));
+};
+
+window.config = config;

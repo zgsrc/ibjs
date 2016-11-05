@@ -4,14 +4,14 @@ require("sugar");
 
 const async = require("async"),
       Events = require("events"),
-      defaults = require("./config")().symbols;
+      config = require("./config");
 
 class Symbol extends Events {
     
     constructor(security, options) {
         super();
         
-        options = Object.merge(Object.clone(defaults), options || { });
+        options = Object.merge(config().symbol, options || { });
         
         this.security = security;
         

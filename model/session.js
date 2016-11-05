@@ -56,8 +56,8 @@ class Session extends Events {
             .send();
     }
     
-    environment(options) {
-        return new Environment(this, options);
+    environment(options, symbolDefaults) {
+        return new Environment(this, options, symbolDefaults);
     }
     
 }

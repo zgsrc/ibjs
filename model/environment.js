@@ -1,22 +1,18 @@
 "use strict";
 
 const Events = require("events"),
-      async = require("async");
+      async = require("async"),
+      config = require("./config");
 
 class Environment extends Events {
     
-    constructor(session, options) {
+    constructor(session, options, symbolDefaults) {
         
         super();
         
-        options = options || { 
-            system: true,
-            accounts: true,
-            positions: true,
-            executions: true,
-            orders: "all",
-            timeout: 30000
-        };
+        this.defaults = config();
+        this.defaults.environment = options = options || this.defaults.environment;
+        this.defaults.symbol = symbolDefaults || this.defaults.symbol;
         
         this.session = session;
         
@@ -165,6 +161,7 @@ class Environment extends Events {
     }
     
     watch(description, options, cb) {
+        options = Object.merge(Object.clone(this.defaults.symbol), options || { });
         this.session.security(description, (err, security) => {
             if (err) {
                 this.emit("error", err);

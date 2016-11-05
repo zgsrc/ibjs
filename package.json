@@ -10,36 +10,12 @@
     "sugar": "^1.5.0",
     "xml2js": "^0.4.17"
   },
-  "devDependencies": {
-    "chai": "^3.2.0",
-    "mocha": "^2.2.5"
-  },
   "scripts": {
-    "test": "mocha",
     "start": "node index.js",
     "browserify": "browserify ./browser/browserify.js -o ./browser/ib.js"
   },
   "keywords": [
-    "interactive brokers",
-    "ib",
-    "sdk",
-    "api",
-    "stocks",
-    "options",
-    "futures",
-    "currency",
-    "forex",
-    "trading",
-    "brokerage",
-    "market data",
-    "algorithmic trading",
-    "programmatic trading",
-    "program trading",
-    "system trading",
-    "trading system",
-    "day trading",
-    "high frequency trading",
-    "automated trading"
+    "interactive brokers"
   ],
   "author": "Jonathan Hollinger",
   "license": "ISC",

@@ -1,17 +1,28 @@
 "use strict";
 
 module.exports = () => {
+    
     return {
         
         /* Settings for socket connection to IB software. */
         "connection": {
+            
+            /* Timeout when connecting */
+            "timeout": 1000,
+            
+            /* Host name of IB software */
             "host": "localhost",
-            "port": 4001,
-            "timeout": 1000
+            
+            /* Socket port to connect to IB software. */
+            "port": 4001
+            
         },
         
         /* Environment configuration. */
         "environment": {
+            
+            /* Load timeout in milliseconds */
+            "timeout": 30000,
             
             /* Subscribe to system notifications and connectivity status updates. */
             "system": true,
@@ -36,21 +47,18 @@ module.exports = () => {
 
             /* Watchlist of securities. */
             "symbols": [
-                "GOOGL",
-                [ "AAPL", { /* Override defaults */ } ],
-                { 
-                    "description": "IBM", 
-                    "options": { /* Override defaults */ }
-                }
-            ],
-            
-            /* Load timeout in milliseconds */
-            timeout: 30000
+                //"GOOGL",
+                //[ "AAPL", { /* Override defaults */ } ],
+                //{ 
+                //    "description": "IBM", 
+                //    "options": { /* Override defaults */ }
+                //}
+            ]
 
         },
                 
         /* Market data subscriptions that are opened by default. */
-        "symbols": {
+        "symbol": {
 
             /* Download fundamental data.
                - The "all" option fetches all available fundamental data.
@@ -96,4 +104,5 @@ module.exports = () => {
         }        
         
     };
+    
 };
