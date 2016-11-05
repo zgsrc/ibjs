@@ -227,6 +227,17 @@ class Charts extends Events {
             .on("error", err => this.emit("error", err))
             .on("warning", msg => this.emit("warning", msg))
             .on("update", data => this.emit("update", data));
+        
+        this.TEN_MINUTES = new Bars(this.security, {
+            text: "10 mins",
+            integer: 600,
+            duration: "2 W"
+        });
+        
+        this.TEN_MINUTES
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
 
         this.FIFTEEN_MINUTES = new Bars(this.security, {
             text: "15 mins",

@@ -59,8 +59,10 @@ const environment = exports.environment = (configuration, cb) => {
         cb = configuration;
         configuration = config();
     }
-    
-    if (configuration == null) {
+    else if (configuration && Object.isString(configuration)) {
+        configuration = JSON.parse(fs.readFileSync(configuration).toString());
+    }
+    else if (configuration == null) {
         configuration = config();
     }
     
@@ -140,7 +142,7 @@ const terminal = exports.terminal = configuration => {
 if (process.argv[2]) {
     let arg = process.argv[2].toLowerCase();
     if (arg == "terminal") {
-        terminal();
+        terminal(process.argv[3]);
     }
     else if (arg == "config") {
         if (process.argv[3]) {
