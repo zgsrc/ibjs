@@ -121,9 +121,15 @@ const terminal = exports.terminal = configuration => {
 
             let cmd = repl.start('> ');
             cmd.context.ib = env;
-            cmd.context.watch = (desc, opt) => env.watch(desc, opt);
             cmd.context.$ = env.symbols;
-
+            
+            cmd.context.search = desc => env.securities(desc, (err, sec) => {
+                if (err) printError(err);
+                else console.log(sec.map("summary"));
+            });
+            
+            cmd.context.watch = (desc, opt) => env.watch(desc, opt);
+            
             cmd.on("exit", () => {
                 console.log("Disconnecting...".gray);
                 env.close(() => {

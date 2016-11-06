@@ -160,22 +160,48 @@ class Environment extends Events {
         }
     }
     
-    watch(description, options, cb) {
+    securities(description, cb) {
+        this.session.securities(description, cb);
+    }
+    
+    attach(security, options) {
         options = Object.merge(Object.clone(this.defaults.symbol), options || { });
-        this.session.security(description, (err, security) => {
+        
+        let symbol = security.symbol(options);
+        this.symbols[symbol.name] = symbol;
+        
+        symbol.on("close", () => delete this.symbols[symbol.name])
+              .on("error", err => this.emit("error", err))
+              .on("warning", msg => this.emit("warning", msg));
+        
+        this.defaults.environment.symbols.push([ 
+            security.summary.conId, 
+            options
+        ]);
+        
+        return symbol;
+    }
+    
+    watch(description, options, cb) {
+        this.session.securities(description, (err, security) => {
             if (err) {
                 this.emit("error", err);
                 if (cb) cb(err);
             }
             else {
-                let symbol = security.symbol(options);
-                if (symbol.name) this.symbols[symbol.name] = symbol;
+                security = security[0];
                 
-                symbol.on("close", () => delete this.symbols[symbol.name])
-                      .on("error", err => this.emit("error", err))
-                      .on("warning", msg => this.emit("warning", msg));
-                
-                if (cb) cb(null, symbol);
+                if (security) {
+                    let symbol = security.symbol(Object.merge(Object.clone(this.defaults.symbol), options || { }));
+                    if (symbol.name) this.symbols[symbol.name] = symbol;
+
+                    symbol.on("close", () => delete this.symbols[symbol.name])
+                          .on("error", err => this.emit("error", err))
+                          .on("warning", msg => this.emit("warning", msg));
+
+                    if (cb) cb(null, symbol);
+                }
+                else if (cb) cb(new Error("No security with description '" + description + "'."));
             }
         });
     }

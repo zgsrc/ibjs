@@ -41,7 +41,7 @@ class Symbol extends Events {
 
         async.series([
             cb => {
-                if (options.fundamentals) {
+                if (options.fundamentals && this.fundamentals) {
                     if (options.fundamentals == "all") this.fundamentals.loadAll(cb);
                     else if (Array.isArray(options.fundamentals)) this.fundamentals.loadSome(options.fundamentals, cb);
                     else if (Object.isString(options.fundamentals)) this.fundamentals.load(options.fundamentals, cb);
@@ -50,7 +50,7 @@ class Symbol extends Events {
                 else cb();
             },
             cb => {
-                if (options.quote) {
+                if (options.quote && this.quote) {
                     if (Array.isArray(options.quote)) this.quote.fields = options.quote;
                     this.quote.refresh(cb);
                     if (options.quote != "snapshot") this.quote.stream();
@@ -58,7 +58,7 @@ class Symbol extends Events {
                 else cb();
             },
             cb => {
-                if (options.level2) {
+                if (options.level2 && this.level2) {
                     if (options.level2.markets == "all") this.level2.streamAllValidExchanges(options.level2.rows || 10);
                     else this.level2.stream(options.level2.markets, options.level2.rows || 10);
                     this.level2.once("load", cb);
@@ -66,7 +66,7 @@ class Symbol extends Events {
                 else cb();
             },
             cb => {
-                if (options.charts) {
+                if (options.charts && this.charts) {
                     let sizes = Object.keys(options.charts).filter(k => options.charts[k]);
                     async.forEachSeries(sizes, (size, cb) => {
                         let periods = options.charts[k];
@@ -102,10 +102,10 @@ class Symbol extends Events {
     }
     
     cancel() {
-        this.fundamentals.cancel();
-        this.quote.cancel();
-        this.depth.cancel();
-        this.charts.cancel();
+        if (this.fundamentals) this.fundamentals.cancel();
+        if (this.quote) this.quote.cancel();
+        if (this.depth) this.depth.cancel();
+        if (this.charts) this.charts.cancel();
         this.emit("close");
     }
     

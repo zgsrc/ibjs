@@ -7,7 +7,7 @@ var Events = require("events"),
     Orders = require("./orders"),
     Executions = require("./executions"),
     Security = require("./security"),
-    parse = require("./contract"),
+    contracts = require("./contract"),
     Environment = require("./environment");
 
 class Session extends Events {
@@ -45,15 +45,8 @@ class Session extends Events {
         return new Executions(this.service);
     }
     
-    security(description, cb) {
-        let summary = null;
-        try { summary = parse(description); }
-        catch (ex) { cb(ex); return; }
-        
-        this.service.contractDetails(summary)
-            .on("data", contract => cb(null, new Security(this.service, contract)))
-            .on("error", err => cb(err))
-            .send();
+    securities(description, cb) {
+        contracts(this.service, description, cb);
     }
     
     environment(options, symbolDefaults) {
