@@ -1,4 +1,4 @@
-## Session
+# Session
 
 Login to IB software and connect using the `connect` method with proper host and port parameters.  This method handles actual connection logic and timeouts.
 

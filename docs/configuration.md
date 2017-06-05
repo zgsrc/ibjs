@@ -1,14 +1,14 @@
 # Configuration
 
-
-
 The first parameter to the `sdk.environment(config, cb)` method may be either:
 
 * a string, in which case it is assumed to be a path to a JSON file
 * or an object, in which case it is interpretted literally
 
+If omitted, the default configuration is used, which is generated using the `config` method.
+
 ```javascript
-{
+let config = sdk.config() = {
     /* Settings for socket connection to IB software. */
     "connection": {
 
@@ -106,5 +106,5 @@ The first parameter to the `sdk.environment(config, cb)` method may be either:
             "ONE_DAY": false
         }
     }
-}
+};
 ```

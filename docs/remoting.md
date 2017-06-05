@@ -1,4 +1,4 @@
-## Remoting
+# Remoting
 
 `Service` instances also supports a mechanism to relay streaming responses to proxy instances of the SDK, enabling a distributed/networked system architecture.  The `relay` method takes a `EventEmitter` compatible (i.e. implements `emit` and `on`) object and relays `data`, `error`, and `end` events.  A `Proxy` is a `Service`-compatible object that can be instantiated remotely and use a similar `EventEmitter` compatible transport (e.g. [socket.io](http://socket.io/)) to communicate with a `Relay` server.
 

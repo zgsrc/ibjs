@@ -1,4 +1,4 @@
-## Terminal
+# Terminal
 
 The terminal uses the `REPL` package to expose an `Environment` to the command line.
 
