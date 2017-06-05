@@ -6,10 +6,10 @@ window.ib = {
     session: () => new Session(new Proxy(socket)),
     config: require("../model/config")
 };
-},{"../model/config":4,"../model/session":15,"../service/proxy":22}],2:[function(require,module,exports){
+},{"../model/config":4,"../model/session":17,"../service/proxy":24}],2:[function(require,module,exports){
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
 const TAGS = {
     accountType: "AccountType",
@@ -43,12 +43,11 @@ const TAGS = {
     leverage: "Leverage"
 };
 
-class Accounts extends Events {
+class Accounts extends RealTime {
     
     constructor(service) {
-        super();
+        super(service);
         
-        this.service = service;
         this.summary = { };
         this.details = { };
         this.positions = { };
@@ -93,8 +92,7 @@ class Accounts extends Events {
                 return true;
             };
             
-            this.ids = Object.keys(this.summary);
-            this.ids.each(id => {
+            Object.keys(this.summary).each(id => {
                 this.details[id] = { };
                 this.positions[id] = { };
                 updates.push(this.service.accountUpdates(id).on("data", data => {
@@ -135,30 +133,24 @@ class Accounts extends Events {
         }).send();
     }
     
-    cancel() {
-        return false;
-    }
-    
 }
 
 
 
 module.exports = Accounts;
-},{"events":26}],3:[function(require,module,exports){
+},{"./realtime":15}],3:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
 const async = require("async"),
-      Events = require("events"),
+      MarketData = require("./marketdata"),
       studies = require("./studies");
 
-class Bars extends Events {
+class Bars extends MarketData {
     
     constructor(security, barSize) {
-        super();
-        
-        this.security = security;
+        super(security);
         
         this.cursor = Date.create();
         this.field = "TRADES";
@@ -229,10 +221,6 @@ class Bars extends Events {
         };
     }
     
-    cancel() {
-        return false;
-    }
-    
     lookup(timestamp) { 
         let idx = this.series.findIndex(i => i.timestamp > timestamp);
         if (idx > 0) return this.series[idx - 1];
@@ -269,12 +257,10 @@ class Bars extends Events {
     
 }
 
-class Charts extends Events {
+class Charts extends MarketData {
     
     constructor(security) {
-        super();
-        
-        this.security = security;
+        super(security);
     
         this.ONE_SECOND = new Bars(this.security, {
             text: "1 sec",
@@ -487,7 +473,7 @@ class Charts extends Events {
 }
 
 module.exports = Charts;
-},{"./studies":16,"async":19,"events":26,"sugar":20}],4:[function(require,module,exports){
+},{"./marketdata":9,"./studies":18,"async":21,"sugar":22}],4:[function(require,module,exports){
 "use strict";
 
 module.exports = () => {
@@ -759,7 +745,7 @@ function contracts(service, description, cb) {
 }
 
 module.exports = contracts;
-},{"./security":14}],6:[function(require,module,exports){
+},{"./security":16}],6:[function(require,module,exports){
 "use strict";
 
 const Events = require("events"),
@@ -984,17 +970,15 @@ class Environment extends Events {
 }
 
 module.exports = Environment;
-},{"./config":4,"async":19,"events":26}],7:[function(require,module,exports){
+},{"./config":4,"async":21,"events":28}],7:[function(require,module,exports){
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class Executions extends Events {
+class Executions extends RealTime {
     
     constructor(service, options) {
-        super();
-        
-        this.service = service;
+        super(service);
         this.filter = { };
         this.trades = { };
     }
@@ -1030,18 +1014,14 @@ class Executions extends Events {
         };
     }
     
-    cancel() {
-        return false;
-    }
-    
 }
 
 module.exports = Executions;
-},{"events":26}],8:[function(require,module,exports){
+},{"./realtime":15}],8:[function(require,module,exports){
 "use strict";
 
 const async = require("async"),
-      Events = require("events");
+      MarketData = require("./marketdata");
 
 const REPORT = {
     snapshot: "ReportSnapshot",
@@ -1052,11 +1032,10 @@ const REPORT = {
     calendar: "CalendarReport"
 };
 
-class Fundamentals extends Events {
+class Fundamentals extends MarketData {
     
     constructor(security) {
-        super();
-        this.security = security;
+        super(security);
         this.REPORT_TYPES = REPORT;
     }
     
@@ -1135,23 +1114,35 @@ class Fundamentals extends Events {
         );
     }
     
-    cancel() {
-        return false();
+}
+
+module.exports = Fundamentals;
+},{"./marketdata":9,"async":21}],9:[function(require,module,exports){
+"use strict";
+
+require("sugar");
+
+const RealTime = require("./realtime");
+
+class MarketData extends RealTime {
+    
+    constructor(security) {
+        super(security);
+        Object.defineProperty(this, 'security', { value: security });
     }
     
 }
 
-module.exports = Fundamentals;
-},{"async":19,"events":26}],9:[function(require,module,exports){
+module.exports = MarketData;
+},{"./realtime":15,"sugar":22}],10:[function(require,module,exports){
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class Order extends Events {
+class Order extends RealTime {
     
     constructor(service, contract, defaults) {
-        super();
-        this.service = service;
+        super(service);
         this.contract = contract;
         this.ticket = defaults || { tif: "Day" };
     }
@@ -1304,10 +1295,6 @@ class Order extends Events {
         this.open();
     }
     
-    cancel() {
-        
-    }
-    
 }
 
 Order.SIDE = {
@@ -1367,19 +1354,17 @@ Order.TIME_IN_FORCE = {
 };
 
 module.exports = Order;
-},{"events":26}],10:[function(require,module,exports){
+},{"./realtime":15}],11:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
-const Events = require("events");
+const MarketData = require("./marketdata");
 
-class OrderBook extends Events {
+class OrderBook extends MarketData {
     
     constructor(security) {
-        super();
-        
-        this.security = security;
+        super(security);
         this.requests = [ ];
         this.exchanges = [ ];
         this.bids = { };
@@ -1474,17 +1459,15 @@ class OrderBook extends Events {
 }
 
 module.exports = OrderBook;
-},{"events":26,"sugar":20}],11:[function(require,module,exports){
+},{"./marketdata":9,"sugar":22}],12:[function(require,module,exports){
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class Orders extends Events {
+class Orders extends RealTime {
     
     constructor(service, all) {
-        super();
-        
-        this.service = service;
+        super(service);
         this.all = { };
     }
     
@@ -1511,24 +1494,18 @@ class Orders extends Events {
         this.service.globalCancel();
     }
     
-    cancel() {
-        return false;
-    }
-    
 }
 
 module.exports = Orders;
-},{"events":26}],12:[function(require,module,exports){
+},{"./realtime":15}],13:[function(require,module,exports){
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class Positions extends Events {
+class Positions extends RealTime {
     
     constructor(service) {
-        super();
-        
-        this.service = service;
+        super(service);
         this.accounts = { };
     }
     
@@ -1554,19 +1531,15 @@ class Positions extends Events {
         }).send();
     }
     
-    cancel() {
-        return false;
-    }
-    
 }
 
 module.exports = Positions;
-},{"events":26}],13:[function(require,module,exports){
+},{"./realtime":15}],14:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
-const Events = require("events");
+const MarketData = require("./marketdata");
 
 function parseQuotePart(datum) {
     let key = datum.name, value = datum.value;
@@ -1597,11 +1570,10 @@ const TICKS = {
     dividends: 456
 };
 
-class Quote extends Events {
+class Quote extends MarketData {
     
     constructor(security) {
-        super();
-        this.security = security;
+        super(security);
         this.fields = [ ];        
         this.TICK_TYPES = TICKS;
     }
@@ -1672,19 +1644,38 @@ class Quote extends Events {
         };
     }
     
+}
+
+module.exports = Quote;
+},{"./marketdata":9,"sugar":22}],15:[function(require,module,exports){
+"use strict";
+
+const Events = require("events");
+
+class RealTime extends Events {
+    
+    constructor(service) {
+        super();
+        Object.defineProperty(this, 'service', { value: service });
+    }
+    
+    get fields() {
+        return Object.keys(this).exclude(/\_.*/, "cancel");
+    }
+    
     cancel() {
         return false;
     }
     
 }
 
-module.exports = Quote;
-},{"events":26,"sugar":20}],14:[function(require,module,exports){
+module.exports = RealTime;
+},{"events":28}],16:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
-const Events = require("events"),
+const RealTime = require("./realtime"),
       Fundamentals = require("./fundamentals"),
       Quote = require("./quote"),
       OrderBook = require("./orderbook"),
@@ -1692,12 +1683,10 @@ const Events = require("events"),
       Order = require("./order"),
       Symbol = require("./symbol");
 
-class Security extends Events {
+class Security extends RealTime {
     
     constructor(service, contract) {
-        super();
-        
-        this.service = service;
+        super(service);
         Object.merge(this, contract);
     }
     
@@ -1728,10 +1717,10 @@ class Security extends Events {
 }
 
 module.exports = Security;
-},{"./charts":3,"./fundamentals":8,"./order":9,"./orderbook":10,"./quote":13,"./symbol":17,"events":26,"sugar":20}],15:[function(require,module,exports){
+},{"./charts":3,"./fundamentals":8,"./order":10,"./orderbook":11,"./quote":14,"./realtime":15,"./symbol":19,"sugar":22}],17:[function(require,module,exports){
 "use strict";
 
-var Events = require("events"),
+var RealTime = require("./realtime"),
     System = require("./system"),
     Accounts = require("./accounts"),
     Positions = require("./positions"),
@@ -1741,17 +1730,15 @@ var Events = require("events"),
     contracts = require("./contract"),
     Environment = require("./environment");
 
-class Session extends Events {
+class Session extends RealTime {
     
     constructor(service) {
-        super();
-        
-        this.service = service;
-        
-        this.service.socket
+        super(service);
+        service.socket
             .on("connected", () => {
                 this.emit("connected");
-            }).on("disconnected", () => {
+            })
+            .on("disconnected", () => {
                 this.emit("disconnected");
             });
     }
@@ -1787,7 +1774,7 @@ class Session extends Events {
 }
 
 module.exports = Session;
-},{"./accounts":2,"./contract":5,"./environment":6,"./executions":7,"./orders":11,"./positions":12,"./security":14,"./system":18,"events":26}],16:[function(require,module,exports){
+},{"./accounts":2,"./contract":5,"./environment":6,"./executions":7,"./orders":12,"./positions":13,"./realtime":15,"./security":16,"./system":20}],18:[function(require,module,exports){
 require("sugar");
 
 const studies = { };
@@ -1795,23 +1782,21 @@ const studies = { };
 studies.SMA = window => window.map("close").average();
 
 module.exports = studies;
-},{"sugar":20}],17:[function(require,module,exports){
+},{"sugar":22}],19:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
 const async = require("async"),
-      Events = require("events"),
+      MarketData = require("./marketdata"),
       config = require("./config");
 
-class Symbol extends Events {
+class Symbol extends MarketData {
     
     constructor(security, options) {
-        super();
+        super(security);
         
         options = Object.merge(config().symbol, options || { });
-        
-        this.security = security;
         
         this.name = options.name || security.summary.localSymbol;
         
@@ -1910,18 +1895,15 @@ class Symbol extends Events {
 }
 
 module.exports = Symbol;
-},{"./config":4,"async":19,"events":26,"sugar":20}],18:[function(require,module,exports){
+},{"./config":4,"./marketdata":9,"async":21,"sugar":22}],20:[function(require,module,exports){
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class System extends Events {
+class System extends RealTime {
     
     constructor(service) {
-        super();
-        
-        this.service = service;
-        
+        super(service);
         this.marketDataConnections = { };
     }
     
@@ -1948,21 +1930,16 @@ class System extends Events {
         };
         
         req.on("data", data => {
-            console.log(data);
             this.emit("update", data);
         }).on("error", err => {
             this.emit("error", err);
         });
     }
     
-    cancel() {
-        return false;
-    }
-    
 }
 
 module.exports = System;
-},{"events":26}],19:[function(require,module,exports){
+},{"./realtime":15}],21:[function(require,module,exports){
 (function (process,global){
 /*!
  * async
@@ -3231,7 +3208,7 @@ module.exports = System;
 }());
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":27}],20:[function(require,module,exports){
+},{"_process":29}],22:[function(require,module,exports){
 (function (global,Buffer){
 /*
  *  Sugar v1.5.0
@@ -13730,7 +13707,7 @@ module.exports = System;
 
 }).call(this);
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"buffer":25}],21:[function(require,module,exports){
+},{"buffer":27}],23:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -13803,7 +13780,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":24}],22:[function(require,module,exports){
+},{"./request":26}],24:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -13922,7 +13899,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":21,"./relay":23}],23:[function(require,module,exports){
+},{"./dispatch":23,"./relay":25}],25:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -13965,7 +13942,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],24:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -14081,9 +14058,9 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":26}],25:[function(require,module,exports){
+},{"events":28}],27:[function(require,module,exports){
 
-},{}],26:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -14387,7 +14364,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],27:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
