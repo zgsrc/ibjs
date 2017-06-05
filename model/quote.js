@@ -2,7 +2,8 @@
 
 require("sugar");
 
-const MarketData = require("./marketdata");
+const MarketData = require("./marketdata"),
+      flags = require("./flags");
 
 function parseQuotePart(datum) {
     let key = datum.name, value = datum.value;
@@ -14,31 +15,13 @@ function parseQuotePart(datum) {
     return { key: key.camelize(false), value: value };
 }
 
-const TICKS = {
-    fundamentalValues: 47,
-    optionVolume: 100,
-    optionOpenInterest: 101,
-    historicalVolatility: 104,
-    optionImpliedVolatility: 106,
-    indexFuturePremium: 162,
-    miscellaneousStats: 165,
-    markPrice: 221,
-    auctionValues: 225,
-    realTimeVolume: 233,
-    shortable: 236,
-    inventory: 256,
-    fundamentalRatios: 258,
-    news: 292,
-    realtimeHistoricalVolatility: 411,
-    dividends: 456
-};
+const TICKS = flags.QUOTE_TICK_TYPES;
 
 class Quote extends MarketData {
     
     constructor(security) {
         super(security);
-        this.fields = [ ];        
-        this.TICK_TYPES = TICKS;
+        this.fields = [ ];
     }
     
     pricing() {

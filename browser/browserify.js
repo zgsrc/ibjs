@@ -3,5 +3,6 @@ var Session = require("../model/session"),
 
 window.ib = {
     session: () => new Session(new Proxy(socket)),
-    config: require("../model/config")
+    config: require("../model/config"),
+    flags: require("../model/flags")
 };

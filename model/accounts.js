@@ -1,38 +1,7 @@
 "use strict";
 
-const RealTime = require("./realtime");
-
-const TAGS = {
-    accountType: "AccountType",
-    netLiquidation: "NetLiquidation",
-    totalCashValue: "TotalCashValue",
-    settledCash: "SettledCash",
-    accruedCash: "AccruedCash",
-    buyingPower: "BuyingPower",
-    equityWithLoanValue: "EquityWithLoanValue",
-    previousDayEquityWithLoanValue: "PreviousDayEquityWithLoanValue",
-    grossPositionValue: "GrossPositionValue",
-    regTEquity: "RegTEquity",
-    regTMargin: "RegTMargin",
-    sma: "SMA",
-    initMarginReq: "InitMarginReq",
-    maintMarginReq: "MaintMarginReq",
-    availableFunds: "AvailableFunds",
-    excessLiquidity: "ExcessLiquidity",
-    cushion: "Cushion",
-    fullInitMarginReq: "FullInitMarginReq",
-    fullMaintMarginReq: "FullMaintMarginReq",
-    fullAvailableFunds: "FullAvailableFunds",
-    fullExcessLiquidity: "FullExcessLiquidity",
-    lookAheadNextChange: "LookAheadNextChange",
-    lookAheadInitMarginReq: "LookAheadInitMarginReq",
-    lookAheadMaintMarginReq: "LookAheadMaintMarginReq",
-    lookAheadAvailableFunds: "LookAheadAvailableFunds",
-    lookAheadExcessLiquidity: "LookAheadExcessLiquidity",
-    highestSeverity: "HighestSeverity",
-    dayTradesRemaining: "DayTradesRemaining",
-    leverage: "Leverage"
-};
+const RealTime = require("./realtime"),
+      flags = require("./flags");
 
 class Accounts extends RealTime {
     
@@ -43,8 +12,7 @@ class Accounts extends RealTime {
         this.details = { };
         this.positions = { };
         
-        this.TAGS = TAGS;
-        this.tags = Object.values(TAGS).join(',');
+        this.tags = Object.values(flags.ACCOUNT_TAGS).join(',');
         this.group = "All";
     }
     

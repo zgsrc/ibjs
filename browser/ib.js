@@ -4,44 +4,14 @@ var Session = require("../model/session"),
 
 window.ib = {
     session: () => new Session(new Proxy(socket)),
-    config: require("../model/config")
+    config: require("../model/config"),
+    flags: require("../model/flags")
 };
-},{"../model/config":4,"../model/session":17,"../service/proxy":24}],2:[function(require,module,exports){
+},{"../model/config":4,"../model/flags":8,"../model/session":18,"../service/proxy":25}],2:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("./realtime");
-
-const TAGS = {
-    accountType: "AccountType",
-    netLiquidation: "NetLiquidation",
-    totalCashValue: "TotalCashValue",
-    settledCash: "SettledCash",
-    accruedCash: "AccruedCash",
-    buyingPower: "BuyingPower",
-    equityWithLoanValue: "EquityWithLoanValue",
-    previousDayEquityWithLoanValue: "PreviousDayEquityWithLoanValue",
-    grossPositionValue: "GrossPositionValue",
-    regTEquity: "RegTEquity",
-    regTMargin: "RegTMargin",
-    sma: "SMA",
-    initMarginReq: "InitMarginReq",
-    maintMarginReq: "MaintMarginReq",
-    availableFunds: "AvailableFunds",
-    excessLiquidity: "ExcessLiquidity",
-    cushion: "Cushion",
-    fullInitMarginReq: "FullInitMarginReq",
-    fullMaintMarginReq: "FullMaintMarginReq",
-    fullAvailableFunds: "FullAvailableFunds",
-    fullExcessLiquidity: "FullExcessLiquidity",
-    lookAheadNextChange: "LookAheadNextChange",
-    lookAheadInitMarginReq: "LookAheadInitMarginReq",
-    lookAheadMaintMarginReq: "LookAheadMaintMarginReq",
-    lookAheadAvailableFunds: "LookAheadAvailableFunds",
-    lookAheadExcessLiquidity: "LookAheadExcessLiquidity",
-    highestSeverity: "HighestSeverity",
-    dayTradesRemaining: "DayTradesRemaining",
-    leverage: "Leverage"
-};
+const RealTime = require("./realtime"),
+      flags = require("./flags");
 
 class Accounts extends RealTime {
     
@@ -52,8 +22,7 @@ class Accounts extends RealTime {
         this.details = { };
         this.positions = { };
         
-        this.TAGS = TAGS;
-        this.tags = Object.values(TAGS).join(',');
+        this.tags = Object.values(flags.ACCOUNT_TAGS).join(',');
         this.group = "All";
     }
     
@@ -138,7 +107,7 @@ class Accounts extends RealTime {
 
 
 module.exports = Accounts;
-},{"./realtime":15}],3:[function(require,module,exports){
+},{"./flags":8,"./realtime":16}],3:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -473,7 +442,7 @@ class Charts extends MarketData {
 }
 
 module.exports = Charts;
-},{"./marketdata":9,"./studies":18,"async":21,"sugar":22}],4:[function(require,module,exports){
+},{"./marketdata":10,"./studies":19,"async":22,"sugar":23}],4:[function(require,module,exports){
 "use strict";
 
 module.exports = () => {
@@ -745,7 +714,7 @@ function contracts(service, description, cb) {
 }
 
 module.exports = contracts;
-},{"./security":16}],6:[function(require,module,exports){
+},{"./security":17}],6:[function(require,module,exports){
 "use strict";
 
 const Events = require("events"),
@@ -970,7 +939,7 @@ class Environment extends Events {
 }
 
 module.exports = Environment;
-},{"./config":4,"async":21,"events":28}],7:[function(require,module,exports){
+},{"./config":4,"async":22,"events":29}],7:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("./realtime");
@@ -1017,7 +986,41 @@ class Executions extends RealTime {
 }
 
 module.exports = Executions;
-},{"./realtime":15}],8:[function(require,module,exports){
+},{"./realtime":16}],8:[function(require,module,exports){
+const TAGS = {
+    accountType: "AccountType",
+    netLiquidation: "NetLiquidation",
+    totalCashValue: "TotalCashValue",
+    settledCash: "SettledCash",
+    accruedCash: "AccruedCash",
+    buyingPower: "BuyingPower",
+    equityWithLoanValue: "EquityWithLoanValue",
+    previousDayEquityWithLoanValue: "PreviousDayEquityWithLoanValue",
+    grossPositionValue: "GrossPositionValue",
+    regTEquity: "RegTEquity",
+    regTMargin: "RegTMargin",
+    sma: "SMA",
+    initMarginReq: "InitMarginReq",
+    maintMarginReq: "MaintMarginReq",
+    availableFunds: "AvailableFunds",
+    excessLiquidity: "ExcessLiquidity",
+    cushion: "Cushion",
+    fullInitMarginReq: "FullInitMarginReq",
+    fullMaintMarginReq: "FullMaintMarginReq",
+    fullAvailableFunds: "FullAvailableFunds",
+    fullExcessLiquidity: "FullExcessLiquidity",
+    lookAheadNextChange: "LookAheadNextChange",
+    lookAheadInitMarginReq: "LookAheadInitMarginReq",
+    lookAheadMaintMarginReq: "LookAheadMaintMarginReq",
+    lookAheadAvailableFunds: "LookAheadAvailableFunds",
+    lookAheadExcessLiquidity: "LookAheadExcessLiquidity",
+    highestSeverity: "HighestSeverity",
+    dayTradesRemaining: "DayTradesRemaining",
+    leverage: "Leverage"
+};
+
+exports.ACCOUNT_TAGS = TAGS;
+},{}],9:[function(require,module,exports){
 "use strict";
 
 const async = require("async"),
@@ -1117,7 +1120,7 @@ class Fundamentals extends MarketData {
 }
 
 module.exports = Fundamentals;
-},{"./marketdata":9,"async":21}],9:[function(require,module,exports){
+},{"./marketdata":10,"async":22}],10:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1134,7 +1137,7 @@ class MarketData extends RealTime {
 }
 
 module.exports = MarketData;
-},{"./realtime":15,"sugar":22}],10:[function(require,module,exports){
+},{"./realtime":16,"sugar":23}],11:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("./realtime");
@@ -1354,7 +1357,7 @@ Order.TIME_IN_FORCE = {
 };
 
 module.exports = Order;
-},{"./realtime":15}],11:[function(require,module,exports){
+},{"./realtime":16}],12:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1459,7 +1462,7 @@ class OrderBook extends MarketData {
 }
 
 module.exports = OrderBook;
-},{"./marketdata":9,"sugar":22}],12:[function(require,module,exports){
+},{"./marketdata":10,"sugar":23}],13:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("./realtime");
@@ -1497,7 +1500,7 @@ class Orders extends RealTime {
 }
 
 module.exports = Orders;
-},{"./realtime":15}],13:[function(require,module,exports){
+},{"./realtime":16}],14:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("./realtime");
@@ -1534,7 +1537,7 @@ class Positions extends RealTime {
 }
 
 module.exports = Positions;
-},{"./realtime":15}],14:[function(require,module,exports){
+},{"./realtime":16}],15:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1647,7 +1650,7 @@ class Quote extends MarketData {
 }
 
 module.exports = Quote;
-},{"./marketdata":9,"sugar":22}],15:[function(require,module,exports){
+},{"./marketdata":10,"sugar":23}],16:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -1670,7 +1673,7 @@ class RealTime extends Events {
 }
 
 module.exports = RealTime;
-},{"events":28}],16:[function(require,module,exports){
+},{"events":29}],17:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1717,7 +1720,7 @@ class Security extends RealTime {
 }
 
 module.exports = Security;
-},{"./charts":3,"./fundamentals":8,"./order":10,"./orderbook":11,"./quote":14,"./realtime":15,"./symbol":19,"sugar":22}],17:[function(require,module,exports){
+},{"./charts":3,"./fundamentals":9,"./order":11,"./orderbook":12,"./quote":15,"./realtime":16,"./symbol":20,"sugar":23}],18:[function(require,module,exports){
 "use strict";
 
 var RealTime = require("./realtime"),
@@ -1774,7 +1777,7 @@ class Session extends RealTime {
 }
 
 module.exports = Session;
-},{"./accounts":2,"./contract":5,"./environment":6,"./executions":7,"./orders":12,"./positions":13,"./realtime":15,"./security":16,"./system":20}],18:[function(require,module,exports){
+},{"./accounts":2,"./contract":5,"./environment":6,"./executions":7,"./orders":13,"./positions":14,"./realtime":16,"./security":17,"./system":21}],19:[function(require,module,exports){
 require("sugar");
 
 const studies = { };
@@ -1782,7 +1785,7 @@ const studies = { };
 studies.SMA = window => window.map("close").average();
 
 module.exports = studies;
-},{"sugar":22}],19:[function(require,module,exports){
+},{"sugar":23}],20:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1895,7 +1898,7 @@ class Symbol extends MarketData {
 }
 
 module.exports = Symbol;
-},{"./config":4,"./marketdata":9,"async":21,"sugar":22}],20:[function(require,module,exports){
+},{"./config":4,"./marketdata":10,"async":22,"sugar":23}],21:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("./realtime");
@@ -1939,7 +1942,7 @@ class System extends RealTime {
 }
 
 module.exports = System;
-},{"./realtime":15}],21:[function(require,module,exports){
+},{"./realtime":16}],22:[function(require,module,exports){
 (function (process,global){
 /*!
  * async
@@ -3208,7 +3211,7 @@ module.exports = System;
 }());
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":29}],22:[function(require,module,exports){
+},{"_process":30}],23:[function(require,module,exports){
 (function (global,Buffer){
 /*
  *  Sugar v1.5.0
@@ -13707,7 +13710,7 @@ module.exports = System;
 
 }).call(this);
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"buffer":27}],23:[function(require,module,exports){
+},{"buffer":28}],24:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -13780,7 +13783,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":26}],24:[function(require,module,exports){
+},{"./request":27}],25:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -13899,7 +13902,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":23,"./relay":25}],25:[function(require,module,exports){
+},{"./dispatch":24,"./relay":26}],26:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -13942,7 +13945,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],26:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -14058,9 +14061,9 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":28}],27:[function(require,module,exports){
+},{"events":29}],28:[function(require,module,exports){
 
-},{}],28:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -14364,7 +14367,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],29:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 

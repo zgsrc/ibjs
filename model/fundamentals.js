@@ -1,16 +1,10 @@
 "use strict";
 
 const async = require("async"),
-      MarketData = require("./marketdata");
+      MarketData = require("./marketdata"),
+      flags = require("./flags");
 
-const REPORT = {
-    snapshot: "ReportSnapshot",
-    financials: "ReportsFinSummary",
-    ratios: "ReportRatios",
-    statements: "ReportsFinStatements",
-    consensus: "RESC",
-    calendar: "CalendarReport"
-};
+const REPORT = flags.FUNDAMENTALS_REPORTS;
 
 class Fundamentals extends MarketData {
     

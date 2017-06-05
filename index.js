@@ -9,7 +9,8 @@ const Service = exports.Service = require("./service/service"),
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Session = exports.Session = require("./model/session"),
       Proxy = exports.Proxy = require("./service/proxy"),
-      config = exports.config = require("./model/config");
+      config = exports.config = require("./model/config"),
+      flags = exports.flags = require("./model/flags");
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
