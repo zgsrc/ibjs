@@ -27,14 +27,14 @@ The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to m
     * Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if so desired.
 2. Make sure sure things work by running the terminal interface from the SDK directory.  Any issues encountered during startup will be reported and the terminal will exit.
 
-    $ cd ib-sdk
-    $ npm start terminal [config]
+>    $ cd ib-sdk
+>    $ npm start terminal [config]
     
 3. If the SDK can establish a working connection and load the object model, the terminal will start successfully.
 
-    Starting...
-    Use the 'ib' variable to access the environment. Type .exit to quit.
-    > 
+>    Starting...
+>    Use the 'ib' variable to access the environment. Type .exit to quit.
+>    > 
 
 Learn more about exploring the SDK using the terminal [here](./docs/terminal.md).
 
