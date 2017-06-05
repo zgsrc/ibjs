@@ -48,7 +48,7 @@ const connect = exports.connect = (options, cb) => {
     
     sess.service.socket.on("connected", () => {
         clearTimeout(timeout);
-        cb(null, sess);
+        if (cb) cb(null, sess);
     }).connect();
     
     return sess;
