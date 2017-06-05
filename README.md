@@ -11,7 +11,6 @@ Interactive Brokers SDK is a framework build atop the [native javascript API](ht
 ### Prerequisites
 
 * An [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
-* Install [Java](https://java.com/en/download/).
 * Install the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T).
 
 The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without dedicated communication infrastructure, there is no IB support for direct connections to their server tier.
@@ -107,12 +106,9 @@ Specifics of the `Configuration` object can be found [here](./docs/configuration
 
 The `Environment` is a good way to get setup quickly and focus on ultimate programming tasks.  Certain use cases benefit from a more light-weight or customized configuration.
 
-* [Session](./docs/session.md)
-* [Service](./docs/service.md)
+A [Session](./docs/session.md) is a generator class used by an `Environment` to construct the realtime object model around a [Service](./docs/service.md), which is responsible for managing low-level requests and data subscriptions.
 
-### Remoting
-
-* [Remoting](./docs/remoting.md)
+This separation allows for proxying architecture, whereby a `Session` can connect to a remote `Service`.  Read more [here](./docs/remoting.md).
 
 ## License
 
