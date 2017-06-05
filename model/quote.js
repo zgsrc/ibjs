@@ -2,7 +2,7 @@
 
 require("sugar");
 
-const Events = require("events");
+const MarketData = require("./marketdata");
 
 function parseQuotePart(datum) {
     let key = datum.name, value = datum.value;
@@ -33,11 +33,10 @@ const TICKS = {
     dividends: 456
 };
 
-class Quote extends Events {
+class Quote extends MarketData {
     
     constructor(security) {
-        super();
-        this.security = security;
+        super(security);
         this.fields = [ ];        
         this.TICK_TYPES = TICKS;
     }
@@ -106,10 +105,6 @@ class Quote extends Events {
             req.cancel();
             return true;
         };
-    }
-    
-    cancel() {
-        return false;
     }
     
 }

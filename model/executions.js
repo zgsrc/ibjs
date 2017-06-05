@@ -1,13 +1,11 @@
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class Executions extends Events {
+class Executions extends RealTime {
     
     constructor(service, options) {
-        super();
-        
-        this.service = service;
+        super(service);
         this.filter = { };
         this.trades = { };
     }
@@ -41,10 +39,6 @@ class Executions extends Events {
             request.cancel();
             return true;
         };
-    }
-    
-    cancel() {
-        return false;
     }
     
 }

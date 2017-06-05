@@ -3,15 +3,13 @@
 require("sugar");
 
 const async = require("async"),
-      Events = require("events"),
+      MarketData = require("./marketdata"),
       studies = require("./studies");
 
-class Bars extends Events {
+class Bars extends MarketData {
     
     constructor(security, barSize) {
-        super();
-        
-        this.security = security;
+        super(security);
         
         this.cursor = Date.create();
         this.field = "TRADES";
@@ -82,10 +80,6 @@ class Bars extends Events {
         };
     }
     
-    cancel() {
-        return false;
-    }
-    
     lookup(timestamp) { 
         let idx = this.series.findIndex(i => i.timestamp > timestamp);
         if (idx > 0) return this.series[idx - 1];
@@ -122,12 +116,10 @@ class Bars extends Events {
     
 }
 
-class Charts extends Events {
+class Charts extends MarketData {
     
     constructor(security) {
-        super();
-        
-        this.security = security;
+        super(security);
     
         this.ONE_SECOND = new Bars(this.security, {
             text: "1 sec",

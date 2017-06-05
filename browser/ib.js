@@ -92,8 +92,9 @@ class Accounts extends Events {
                 updates.map("cancel");
                 return true;
             };
-
-            Object.keys(this.summary).each(id => {
+            
+            this.ids = Object.keys(this.summary);
+            this.ids.each(id => {
                 this.details[id] = { };
                 this.positions[id] = { };
                 updates.push(this.service.accountUpdates(id).on("data", data => {
@@ -13886,7 +13887,7 @@ class Proxy {
         
         this.exerciseOptions = request("exerciseOptions", 10000, socket, dispatch);
         
-        this.newsBulletins = request("newsBulletins", 10000, socket, dispatch);
+        this.newsBulletins = request("news", 10000, socket, dispatch);
         
         this.queryDisplayGroups = request("queryDisplayGroups", 10000, socket, dispatch);
         

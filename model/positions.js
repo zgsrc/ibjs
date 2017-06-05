@@ -1,13 +1,11 @@
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class Positions extends Events {
+class Positions extends RealTime {
     
     constructor(service) {
-        super();
-        
-        this.service = service;
+        super(service);
         this.accounts = { };
     }
     
@@ -31,10 +29,6 @@ class Positions extends Events {
         }).on("error", err => {
             this.emit("error", err);
         }).send();
-    }
-    
-    cancel() {
-        return false;
     }
     
 }

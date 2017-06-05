@@ -1,12 +1,11 @@
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class Order extends Events {
+class Order extends RealTime {
     
     constructor(service, contract, defaults) {
-        super();
-        this.service = service;
+        super(service);
         this.contract = contract;
         this.ticket = defaults || { tif: "Day" };
     }
@@ -157,10 +156,6 @@ class Order extends Events {
     transmit() {
         this.ticket.transmit = true;
         this.open();
-    }
-    
-    cancel() {
-        
     }
     
 }

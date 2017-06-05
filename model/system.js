@@ -1,14 +1,11 @@
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class System extends Events {
+class System extends RealTime {
     
     constructor(service) {
-        super();
-        
-        this.service = service;
-        
+        super(service);
         this.marketDataConnections = { };
     }
     
@@ -35,15 +32,10 @@ class System extends Events {
         };
         
         req.on("data", data => {
-            console.log(data);
             this.emit("update", data);
         }).on("error", err => {
             this.emit("error", err);
         });
-    }
-    
-    cancel() {
-        return false;
     }
     
 }

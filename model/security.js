@@ -2,7 +2,7 @@
 
 require("sugar");
 
-const Events = require("events"),
+const RealTime = require("./realtime"),
       Fundamentals = require("./fundamentals"),
       Quote = require("./quote"),
       OrderBook = require("./orderbook"),
@@ -10,12 +10,10 @@ const Events = require("events"),
       Order = require("./order"),
       Symbol = require("./symbol");
 
-class Security extends Events {
+class Security extends RealTime {
     
     constructor(service, contract) {
-        super();
-        
-        this.service = service;
+        super(service);
         Object.merge(this, contract);
     }
     

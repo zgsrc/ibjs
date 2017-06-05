@@ -3,17 +3,15 @@
 require("sugar");
 
 const async = require("async"),
-      Events = require("events"),
+      MarketData = require("./marketdata"),
       config = require("./config");
 
-class Symbol extends Events {
+class Symbol extends MarketData {
     
     constructor(security, options) {
-        super();
+        super(security);
         
         options = Object.merge(config().symbol, options || { });
-        
-        this.security = security;
         
         this.name = options.name || security.summary.localSymbol;
         

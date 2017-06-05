@@ -1,6 +1,6 @@
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
 const TAGS = {
     accountType: "AccountType",
@@ -34,12 +34,11 @@ const TAGS = {
     leverage: "Leverage"
 };
 
-class Accounts extends Events {
+class Accounts extends RealTime {
     
     constructor(service) {
-        super();
+        super(service);
         
-        this.service = service;
         this.summary = { };
         this.details = { };
         this.positions = { };
@@ -83,7 +82,7 @@ class Accounts extends Events {
                 updates.map("cancel");
                 return true;
             };
-
+            
             Object.keys(this.summary).each(id => {
                 this.details[id] = { };
                 this.positions[id] = { };
@@ -123,10 +122,6 @@ class Accounts extends Events {
         }).on("error", err => {
             this.emit("error", err);
         }).send();
-    }
-    
-    cancel() {
-        return false;
     }
     
 }

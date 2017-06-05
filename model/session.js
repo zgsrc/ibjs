@@ -1,6 +1,6 @@
 "use strict";
 
-var Events = require("events"),
+var RealTime = require("./realtime"),
     System = require("./system"),
     Accounts = require("./accounts"),
     Positions = require("./positions"),
@@ -10,17 +10,15 @@ var Events = require("events"),
     contracts = require("./contract"),
     Environment = require("./environment");
 
-class Session extends Events {
+class Session extends RealTime {
     
     constructor(service) {
-        super();
-        
-        this.service = service;
-        
-        this.service.socket
+        super(service);
+        service.socket
             .on("connected", () => {
                 this.emit("connected");
-            }).on("disconnected", () => {
+            })
+            .on("disconnected", () => {
                 this.emit("disconnected");
             });
     }

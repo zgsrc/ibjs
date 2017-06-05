@@ -2,14 +2,12 @@
 
 require("sugar");
 
-const Events = require("events");
+const MarketData = require("./marketdata");
 
-class OrderBook extends Events {
+class OrderBook extends MarketData {
     
     constructor(security) {
-        super();
-        
-        this.security = security;
+        super(security);
         this.requests = [ ];
         this.exchanges = [ ];
         this.bids = { };

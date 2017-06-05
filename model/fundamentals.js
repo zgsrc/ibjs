@@ -1,7 +1,7 @@
 "use strict";
 
 const async = require("async"),
-      Events = require("events");
+      MarketData = require("./marketdata");
 
 const REPORT = {
     snapshot: "ReportSnapshot",
@@ -12,11 +12,10 @@ const REPORT = {
     calendar: "CalendarReport"
 };
 
-class Fundamentals extends Events {
+class Fundamentals extends MarketData {
     
     constructor(security) {
-        super();
-        this.security = security;
+        super(security);
         this.REPORT_TYPES = REPORT;
     }
     
@@ -93,10 +92,6 @@ class Fundamentals extends Events {
                 this.emit("load");
             }
         );
-    }
-    
-    cancel() {
-        return false();
     }
     
 }

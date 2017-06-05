@@ -1,13 +1,11 @@
 "use strict";
 
-const Events = require("events");
+const RealTime = require("./realtime");
 
-class Orders extends Events {
+class Orders extends RealTime {
     
     constructor(service, all) {
-        super();
-        
-        this.service = service;
+        super(service);
         this.all = { };
     }
     
@@ -32,10 +30,6 @@ class Orders extends Events {
     
     cancelAllOrders() {
         this.service.globalCancel();
-    }
-    
-    cancel() {
-        return false;
     }
     
 }
