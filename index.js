@@ -59,8 +59,21 @@ const environment = exports.environment = (configuration, cb) => {
         cb = configuration;
         configuration = config();
     }
+    else if (configuration && /[0-9]+/.test(configuration)) {
+        var port = parseInt(configuration);
+        configuration = config();
+        configuration.connection.port = port;
+    }
     else if (configuration && Object.isString(configuration)) {
-        configuration = JSON.parse(fs.readFileSync(configuration).toString());
+        fs.stat(configuration, (err, stats) => {
+            if (err) {
+                cb(new Error(`No configuration file '${configuration}' exists.`));
+                return;
+            }
+            else {
+                configuration = JSON.parse(fs.readFileSync(configuration).toString());
+            }
+        });
     }
     else if (configuration == null) {
         configuration = config();

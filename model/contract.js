@@ -144,13 +144,11 @@ function parse(definition) {
 }
 
 function contracts(service, description, cb) {
-    console.log(description);
-    
     let summary = description;
     try { summary = parse(description); }
     catch (ex) { cb(ex); return; }
 
-    console.log(summary);
+    console.log(description + " = " + JSON.stringify(summary));
     
     let req = service.contractDetails(summary);
     
