@@ -1,4 +1,6 @@
-### Configuration
+# Configuration
+
+
 
 The first parameter to the `sdk.environment(config, cb)` method may be either:
 

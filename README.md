@@ -40,9 +40,7 @@ Learn more about exploring the SDK using the terminal [here](./docs/terminal.md)
 
 ## Programming
 
-> **NOTE**: IB Gateway or TWS can enter a "bad state" with respect to API connections.  If connect works but other calls do not, you may need to restart the IB software.
-
-An `Environment` is a realtime object model of your brokerage account(s).  The default configuration subscribes to system notices, account information, open positions, pending orders, and trade history.  All constituent objects share an interface and pattern of behavior.
+An `Environment` is a realtime object model of your brokerage account(s).  All constituent objects share an interface and pattern of behavior.
 
 * `update` event signals a single data point has changed
 * `error` event signals an asynchronous error was encountered
@@ -65,6 +63,12 @@ sdk.environment((err, ib) => {
             trades = ib.executions,
             $ = ib.symbols;
             
+        // watch a symbol
+        $.watch("AAPL stock", err => {
+            // ready
+            let aapl = $.AAPL;
+        });    
+            
         // monitor updates
         accounts.on("update", data => {  });
         
@@ -80,11 +84,24 @@ sdk.environment((err, ib) => {
 });
 ```
 
-## Basic Use
+Click here for details of the [Object Model](./docs/model.md).
 
-* [Configuration](./docs/configuration.md)
-* [Symbols](./docs/symbols.md)
-* [Object Model](./docs/model.md)
+### Customization
+
+The default `Environment` configuration subscribes to system notices, account information, open positions, pending orders, and trade history.  A configuration object or file may be passed to the `sdk.environment` method to customize the specific data subscriptions the environment maintains.
+
+```javascript
+sdk.environment("./config.json", (err, ib) => {
+    // use a file path
+});
+
+let config = sdk.config();
+sdk.environment(config, (err, ib) => {
+    // use an object
+});
+```
+
+Specifics of the `Configuration` object can be found [here](./docs/configuration.md).
 
 ## Advanced Use
 
@@ -92,8 +109,10 @@ The `Environment` is a good way to get setup quickly and focus on ultimate progr
 
 * [Session](./docs/session.md)
 * [Service](./docs/service.md)
+
+### Remoting
+
 * [Remoting](./docs/remoting.md)
-* [Terminal](./docs/terminal.md)
 
 ## License
 
