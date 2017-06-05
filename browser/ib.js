@@ -375,6 +375,17 @@ class Charts extends Events {
             .on("error", err => this.emit("error", err))
             .on("warning", msg => this.emit("warning", msg))
             .on("update", data => this.emit("update", data));
+        
+        this.TEN_MINUTES = new Bars(this.security, {
+            text: "10 mins",
+            integer: 600,
+            duration: "2 W"
+        });
+        
+        this.TEN_MINUTES
+            .on("error", err => this.emit("error", err))
+            .on("warning", msg => this.emit("warning", msg))
+            .on("update", data => this.emit("update", data));
 
         this.FIFTEEN_MINUTES = new Bars(this.security, {
             text: "15 mins",
@@ -589,6 +600,8 @@ module.exports = () => {
 },{}],5:[function(require,module,exports){
 "use strict";
 
+const Security = require("./security");
+
 const CURRENCIES = [
     'KRW', 'EUR', 'GBP', 'AUD',
     'USD', 'TRY', 'ZAR', 'CAD', 
@@ -616,8 +629,10 @@ const SECURITY_TYPE = {
 };
 
 function parse(definition) {
-    
-    if (Object.isString(definition)) {
+    if (Object.isNumber(definition)) {
+        definition = { conId: definition };
+    }
+    else if (Object.isString(definition)) {
         let tokens = definition.split(' ').map("trim").compact(true);
         definition = { };
         
@@ -627,6 +642,9 @@ function parse(definition) {
             type = SECURITY_TYPE[side];
         
         if (type) {
+            definition.secType = type;
+            definition.symbol = symbol;
+            
             if (type == "OPT") {
                 if (side.startsWith("put") || side.startsWith("call")) {
                     definition.right = side.toUpperCase();
@@ -636,26 +654,45 @@ function parse(definition) {
                 }
             }
             
-            definition.secType = type;
-            definition.expiry = date;
-            definition.symbol = symbol;
-            
+            if (date) {
+                let month = date.to(3),
+                    year = date.from(3).trim();
+
+                if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) {
+                    year = year.from(1);
+                }
+                
+                if (year.length == 2) {
+                    year = "20" + year;
+                }
+                
+                if (year == "") {
+                    year = Date.create().fullYear();
+                }
+
+                date = Date.create(month + " " + year).format("{yyyy}{MM}");
+                definition.expiry = date;
+            }
+
             tokens = tokens.from(3);
         }
         else {
             definition.symbol = tokens[0].toUpperCase();
             
-            if (tokens[1]) {
-                definition.type = SECURITY_TYPE[tokens[1].toLowerCase()];
+            if (tokens[1] && SECURITY_TYPE[tokens[1].toLowerCase()]) {
+                definition.secType = SECURITY_TYPE[tokens[1].toLowerCase()];
+                tokens = tokens.from(2);
+            }
+            else {
+                tokens = tokens.from(1);
             }
             
-            tokens = tokens.from(2);
         }
         
         tokens.inGroupsOf(2).each(field => {
             if (field.length == 2 && field.all(a => a != null)) {
                 if (field[0].toLowerCase() == "in") {
-                    definition.currency = field[1].toUppercase();
+                    definition.currency = field[1].toUpperCase();
                     if (CURRENCIES.indexOf(definition.currency) < 0) {
                         throw new Error("Invalid currency " + definition.currency);
                     }
@@ -677,15 +714,26 @@ function parse(definition) {
     }
 
     if (Object.isObject(definition)) {
-        if (definition.symbol == null) 
-            cb(new Error("Definition must have symbol."));
+        if (definition.symbol == null && definition.conId == null) {
+            throw new Error("Definition must have symbol or conId.");
+        }
 
-        definition.secType = definition.secType || "STK";
-        definition.currency = definition.currency || "USD";
-        definition.exchange = definition.exchange || "SMART";
+        if (definition.conId == null) {
+            if (!definition.secType && CURRENCIES.indexOf(definition.symbol) >= 0) {
+                definition.secType = "CASH";
+            }
+            else {
+                definition.secType = definition.secType || "STK";
+            }
 
-        if (definition.secType == "CASH") {
-            definition.exchange = "IDEALPRO";
+            if (definition.secType == "CASH") {
+                definition.exchange = "IDEALPRO";
+            }
+            else if (definition.secType == "STK" || definition.secType == "OPT") {
+                definition.exchange = definition.exchange || "SMART";
+            }
+
+            definition.currency = definition.currency || "USD";
         }
         
         return definition;
@@ -693,10 +741,26 @@ function parse(definition) {
     else {
         throw new Error("Unrecognized security definition '" + definition + "'");
     }
-}        
+}
 
-module.exports = parse;
-},{}],6:[function(require,module,exports){
+function contracts(service, description, cb) {
+    let summary = description;
+    try { summary = parse(description); }
+    catch (ex) { cb(ex); return; }
+
+    console.log(description + " = " + JSON.stringify(summary));
+    
+    let req = service.contractDetails(summary);
+    
+    let list = [ ];
+    req.on("data", contract => list.push(new Security(service, contract)));
+    req.on("error", err => cb(err, list));
+    req.on("end", () => cb(null, list));
+    req.send();
+}
+
+module.exports = contracts;
+},{"./security":14}],6:[function(require,module,exports){
 "use strict";
 
 const Events = require("events"),
@@ -859,22 +923,48 @@ class Environment extends Events {
         }
     }
     
-    watch(description, options, cb) {
+    securities(description, cb) {
+        this.session.securities(description, cb);
+    }
+    
+    attach(security, options) {
         options = Object.merge(Object.clone(this.defaults.symbol), options || { });
-        this.session.security(description, (err, security) => {
+        
+        let symbol = security.symbol(options);
+        this.symbols[symbol.name] = symbol;
+        
+        symbol.on("close", () => delete this.symbols[symbol.name])
+              .on("error", err => this.emit("error", err))
+              .on("warning", msg => this.emit("warning", msg));
+        
+        this.defaults.environment.symbols.push([ 
+            security.summary.conId, 
+            options
+        ]);
+        
+        return symbol;
+    }
+    
+    watch(description, options, cb) {
+        this.session.securities(description, (err, security) => {
             if (err) {
                 this.emit("error", err);
                 if (cb) cb(err);
             }
             else {
-                let symbol = security.symbol(options);
-                if (symbol.name) this.symbols[symbol.name] = symbol;
+                security = security[0];
                 
-                symbol.on("close", () => delete this.symbols[symbol.name])
-                      .on("error", err => this.emit("error", err))
-                      .on("warning", msg => this.emit("warning", msg));
-                
-                if (cb) cb(null, symbol);
+                if (security) {
+                    let symbol = security.symbol(Object.merge(Object.clone(this.defaults.symbol), options || { }));
+                    if (symbol.name) this.symbols[symbol.name] = symbol;
+
+                    symbol.on("close", () => delete this.symbols[symbol.name])
+                          .on("error", err => this.emit("error", err))
+                          .on("warning", msg => this.emit("warning", msg));
+
+                    if (cb) cb(null, symbol);
+                }
+                else if (cb) cb(new Error("No security with description '" + description + "'."));
             }
         });
     }
@@ -1649,7 +1739,7 @@ var Events = require("events"),
     Orders = require("./orders"),
     Executions = require("./executions"),
     Security = require("./security"),
-    parse = require("./contract"),
+    contracts = require("./contract"),
     Environment = require("./environment");
 
 class Session extends Events {
@@ -1687,15 +1777,8 @@ class Session extends Events {
         return new Executions(this.service);
     }
     
-    security(description, cb) {
-        let summary = null;
-        try { summary = parse(description); }
-        catch (ex) { cb(ex); return; }
-        
-        this.service.contractDetails(summary)
-            .on("data", contract => cb(null, new Security(this.service, contract)))
-            .on("error", err => cb(err))
-            .send();
+    securities(description, cb) {
+        contracts(this.service, description, cb);
     }
     
     environment(options, symbolDefaults) {
@@ -1757,7 +1840,7 @@ class Symbol extends Events {
 
         async.series([
             cb => {
-                if (options.fundamentals) {
+                if (options.fundamentals && this.fundamentals) {
                     if (options.fundamentals == "all") this.fundamentals.loadAll(cb);
                     else if (Array.isArray(options.fundamentals)) this.fundamentals.loadSome(options.fundamentals, cb);
                     else if (Object.isString(options.fundamentals)) this.fundamentals.load(options.fundamentals, cb);
@@ -1766,7 +1849,7 @@ class Symbol extends Events {
                 else cb();
             },
             cb => {
-                if (options.quote) {
+                if (options.quote && this.quote) {
                     if (Array.isArray(options.quote)) this.quote.fields = options.quote;
                     this.quote.refresh(cb);
                     if (options.quote != "snapshot") this.quote.stream();
@@ -1774,7 +1857,7 @@ class Symbol extends Events {
                 else cb();
             },
             cb => {
-                if (options.level2) {
+                if (options.level2 && this.level2) {
                     if (options.level2.markets == "all") this.level2.streamAllValidExchanges(options.level2.rows || 10);
                     else this.level2.stream(options.level2.markets, options.level2.rows || 10);
                     this.level2.once("load", cb);
@@ -1782,7 +1865,7 @@ class Symbol extends Events {
                 else cb();
             },
             cb => {
-                if (options.charts) {
+                if (options.charts && this.charts) {
                     let sizes = Object.keys(options.charts).filter(k => options.charts[k]);
                     async.forEachSeries(sizes, (size, cb) => {
                         let periods = options.charts[k];
@@ -1818,10 +1901,10 @@ class Symbol extends Events {
     }
     
     cancel() {
-        this.fundamentals.cancel();
-        this.quote.cancel();
-        this.depth.cancel();
-        this.charts.cancel();
+        if (this.fundamentals) this.fundamentals.cancel();
+        if (this.quote) this.quote.cancel();
+        if (this.depth) this.depth.cancel();
+        if (this.charts) this.charts.cancel();
         this.emit("close");
     }
     
@@ -14476,6 +14559,10 @@ process.off = noop;
 process.removeListener = noop;
 process.removeAllListeners = noop;
 process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
 
 process.binding = function (name) {
     throw new Error('process.binding is not supported');
