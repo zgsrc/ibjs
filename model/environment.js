@@ -207,10 +207,10 @@ class Environment extends Events {
     }
     
     close(cb) {
-        let socket = this.session.socket;
+        let socket = this.session.socket || this.session.service.socket;
         if (socket && !socket.isProxy) {
             if (socket.disconnect && Object.isFunction(socket.disconnect)) {
-                this.session.socket.once("disconnected", () => {
+                socket.once("disconnected", () => {
                     if (cb) cb();
                 }).disconnect();
             }
