@@ -75,7 +75,7 @@ sdk.environment((err, ib) => {
         ib.on("error", err => console.log(err));
         
         // cleanup before exit
-        ib.close(0, () => console.log("Disconnected"));
+        ib.close(() => console.log("Disconnected"));
     }
 });
 ```
