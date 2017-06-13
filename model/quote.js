@@ -21,41 +21,41 @@ class Quote extends MarketData {
     
     constructor(security) {
         super(security);
-        this.fields = [ ];
+        this.ticks = [ ];
     }
     
     pricing() {
-        this.fields.add([ TICKS.markPrice, TICKS.auctionValues, TICKS.realTimeVolume ]);
+        this.ticks.add([ TICKS.markPrice, TICKS.auctionValues, TICKS.realTimeVolume ]);
         return this;
     }
     
     fundamentals() {
-        this.fields.add([ TICKS.dividends, TICKS.fundamentalValues, TICKS.fundamentalRatios, TICKS.miscellaneousStats ]);
+        this.ticks.add([ TICKS.dividends, TICKS.fundamentalValues, TICKS.fundamentalRatios, TICKS.miscellaneousStats ]);
         return this;
     }
     
     volatility() {
-        this.fields.add([ TICKS.historicalVolatility, TICKS.optionImpliedVolatility, TICKS.realtimeHistoricalVolatility ]);
+        this.ticks.add([ TICKS.historicalVolatility, TICKS.optionImpliedVolatility, TICKS.realtimeHistoricalVolatility ]);
         return this;
     }
     
     options() {
-        this.fields.add([ TICKS.optionVolume, TICKS.optionOpenInterest ]);
+        this.ticks.add([ TICKS.optionVolume, TICKS.optionOpenInterest ]);
         return this;
     }
     
     short() {
-        this.fields.add([ TICKS.shortable, TICKS.inventory ]);
+        this.ticks.add([ TICKS.shortable, TICKS.inventory ]);
         return this;
     }
     
     news() {
-        this.fields.add([ TICKS.news ]);
+        this.ticks.add([ TICKS.news ]);
         return this;
     }
     
     refresh(cb) {
-        this.security.service.mktData(this.security.summary, this.fields.join(","), true)
+        this.security.service.mktData(this.security.summary, this.ticks.join(","), true)
             .on("data", datum => {
                 datum = parseQuotePart(datum);
                 this[datum.key] = datum.value;
@@ -72,7 +72,7 @@ class Quote extends MarketData {
     }
     
     stream() {
-        let req = this.security.service.mktData(this.security.summary, this.fields.join(","), false)
+        let req = this.security.service.mktData(this.security.summary, this.ticks.join(","), false)
             .on("data", datum  => {
                 datum = parseQuotePart(datum);
                 
