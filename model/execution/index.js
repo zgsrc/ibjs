@@ -1,6 +1,6 @@
 "use strict";
 
-const RealTime = require("./realtime");
+const RealTime = require("../realtime");
 
 class Order extends RealTime {
     

@@ -1,13 +1,13 @@
 "use strict";
 
-const RealTime = require("./realtime");
+const RealTime = require("../realtime");
 
-class Executions extends RealTime {
+class Trades extends RealTime {
     
-    constructor(service, options) {
-        super(service);
+    constructor(session, options) {
+        super(session);
         this.filter = { };
-        this.trades = { };
+        this._exclude.push("filter");
     }
     
     stream(options) {
@@ -23,11 +23,11 @@ class Executions extends RealTime {
         
         let request = this.service.executions(this.filter);
         request.on("data", data => {
-            if (!this.trades[data.exec.permId]) {
-                this.trades[data.exec.permId] = { };
+            if (!this[data.exec.permId]) {
+                this[data.exec.permId] = { };
             }
 
-            this.trades[data.exec.permId][data.exec.execId] = data;
+            this[data.exec.permId][data.exec.execId] = data;
             this.emit("update");
         }).on("error", err => {
             this.emit("error", err);
@@ -43,4 +43,4 @@ class Executions extends RealTime {
     
 }
 
-module.exports = Executions;
+module.exports = Trades;

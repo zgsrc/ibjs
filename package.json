@@ -1,6 +1,6 @@
 {
   "name": "ib-sdk",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Interactive Brokers SDK framework build atop the native javascript API.",
   "main": "index.js",
   "dependencies": {
@@ -15,7 +15,9 @@
     "browserify": "browserify ./browser/browserify.js -o ./browser/ib.js"
   },
   "keywords": [
-    "interactive brokers"
+    "interactive brokers",
+    "brokerage api",
+    "trading api"
   ],
   "author": "Jonathan Hollinger",
   "license": "ISC",

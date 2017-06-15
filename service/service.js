@@ -60,6 +60,8 @@ class Service {
         
         this.scannerSubscription = instance("reqScannerSubscription", "cancelScannerSubscription", 5000, ib, dispatch);
 
+        this.managedAccounts = singleton("managedAccounts", "reqManagedAccts", null, 5000, ib, dispatch);
+        
         this.accountSummary = instance("reqAccountSummary", "cancelAccountSummary", 5000, ib, dispatch);
         
         this.accountUpdates = accountCode => {
@@ -361,10 +363,10 @@ function attach(ib, dispatch) {
     
     ib.on('position', function(account, contract, pos, avgCost) {
         dispatch.data("positions", {
-            account: account, 
+            accountName: account, 
             contract: contract, 
-            pos: pos, 
-            avgCost: avgCost 
+            position: pos, 
+            averageCost: avgCost 
         });
     }).on('positionEnd', function() {
         dispatch.end("positions");

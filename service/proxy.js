@@ -81,7 +81,7 @@ class Proxy {
         
         this.exerciseOptions = request("exerciseOptions", 10000, socket, dispatch);
         
-        this.newsBulletins = request("news", 10000, socket, dispatch);
+        this.newsBulletins = request("newsBulletins", null, socket, dispatch);
         
         this.queryDisplayGroups = request("queryDisplayGroups", 10000, socket, dispatch);
         

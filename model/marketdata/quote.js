@@ -3,7 +3,7 @@
 require("sugar");
 
 const MarketData = require("./marketdata"),
-      flags = require("./flags");
+      flags = require("../flags");
 
 function parseQuotePart(datum) {
     let key = datum.name, value = datum.value;

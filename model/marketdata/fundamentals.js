@@ -2,7 +2,7 @@
 
 const async = require("async"),
       MarketData = require("./marketdata"),
-      flags = require("./flags");
+      flags = require("../flags");
 
 const REPORT = flags.FUNDAMENTALS_REPORTS;
 

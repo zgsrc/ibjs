@@ -4,13 +4,15 @@ const Events = require("events");
 
 class RealTime extends Events {
     
-    constructor(service) {
+    constructor(session) {
         super();
-        Object.defineProperty(this, 'service', { value: service });
+        this._exclude = [ ];
+        Object.defineProperty(this, 'session', { value: session });
+        Object.defineProperty(this, 'service', { value: session.service });
     }
     
     get fields() {
-        return Object.keys(this).exclude(/\_.*/, "cancel");
+        return Object.keys(this).exclude(/\_.*/, this._exclude, "cancel");
     }
     
     cancel() {

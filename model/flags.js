@@ -63,3 +63,33 @@ const REPORT = {
 };
 
 exports.FUNDAMENTALS_REPORTS = REPORT;
+
+const CURRENCIES = [
+    'KRW', 'EUR', 'GBP', 'AUD',
+    'USD', 'TRY', 'ZAR', 'CAD', 
+    'CHF', 'MXN', 'HKD', 'JPY', 
+    'INR', 'NOK', 'SEK', 'RUB'
+];
+
+exports.CURRENCIES = CURRENCIES;
+
+const SECURITY_TYPE = {
+    stock: "STK",
+    equity: "STK",
+    option: "OPT",
+    put: "OPT",
+    puts: "OPT",
+    call: "OPT",
+    calls: "OPT",
+    future: "FUT",
+    futures: "FUT",
+    index: "IND",
+    forward: "FOP",
+    forwards: "FOP",
+    cash: "CASH",
+    currency: "CASH",
+    bag: "BAG",
+    news: "NEWS"
+};
+
+exports.SECURITY_TYPE = SECURITY_TYPE;

@@ -2,7 +2,7 @@
 
 require("sugar");
 
-const RealTime = require("./realtime");
+const RealTime = require("../realtime");
 
 class MarketData extends RealTime {
     
