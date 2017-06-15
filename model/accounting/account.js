@@ -4,25 +4,21 @@ const RealTime = require("../realtime");
 
 class Account extends RealTime {
     
-    constructor(session, id) {
-        super(session);
-        this.id = id;
-        this.positions = { };
-    }
-    
     /* string id, object/boolean orders, object/boolean trades */
-    stream(options) {
+    constructor(session, options) {
+        super(session);
+        
         if (Object.isNumber(options)) {
             options = { 
-                id: options 
+                id: options,
+                orders: true,
+                trades: true
             };
         }
         
-        if (options.id) {
-            this.id = options.id;
-        }
+        this.positions = { };
         
-        let account = this.service.accountUpdates(this.id).on("data", data => {
+        let account = this.service.accountUpdates(options.id).on("data", data => {
             if (data.key) {
                 var value = data.value;
                 if (/^\-?[0-9]+(\.[0-9]+)?$/.test(value)) value = parseFloat(value);
@@ -55,23 +51,19 @@ class Account extends RealTime {
         
         let orders = null;
         if (options.orders) {
-            this.orders = this.session.orders();
-            this.orders.stream(options.orders);
+            this.orders = this.session.orders({ all: true, autoOpen: true, account: options.id });
         }
         
         let trades = null;
         if (options.trades) {
-            this.trades = this.session.trades();
-            this.trades.stream(options.trades);
+            this.trades = this.session.trades({ account: options.id });
         }
         
-        this.cancel = () => {
+        this.close = () => {
             account.cancel();
-            if (orders) orders.cancel();
-            if (trades) trades.cancel();
-            
-            return true;
-        }
+            if (orders) orders.close();
+            if (trades) trades.close();
+        };
     }
     
 }

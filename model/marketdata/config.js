@@ -3,59 +3,6 @@
 module.exports = () => {
     
     return {
-        
-        /* Settings for socket connection to IB software. */
-        "connection": {
-            
-            /* Timeout when connecting */
-            "timeout": 1000,
-            
-            /* Host name of IB software */
-            "host": "localhost",
-            
-            /* Socket port to connect to IB software. */
-            "port": 4001
-            
-        },
-        
-        /* Environment configuration. */
-        "environment": {
-            
-            /* Load timeout in milliseconds */
-            "timeout": 30000,
-            
-            /* Subscribe to system notifications and connectivity status updates. */
-            "system": true,
-
-            /* Subscribe to realtime account balance and position values.
-               - Boolean value subscribes to all account info.
-               - An array of tags (i.e. [ "TAG1", "TAG2" ]) subscribes to select values.  (Print Environment.accounts.TAGS variable for a list of tags.) */
-            "accounts": true,
-
-            /* Subscribe to basic position info across accounts. */
-            "positions": true,
-
-            /* Subscribe to trade history, past and ongoing trades. 
-               - Boolean value loads today's trades.
-               - A filter object adjusts the scope of trades. */
-            "executions": true,
-
-            /* Subscribe to pending orders.
-               - "all" subscribes to all orders placed in IB.
-               - "local" subscribes only to orders placed through this process. */
-            "orders": "all",
-
-            /* Watchlist of securities. */
-            "symbols": [
-                //"GOOGL",
-                //[ "AAPL", { /* Override defaults */ } ],
-                //{ 
-                //    "description": "IBM", 
-                //    "options": { /* Override defaults */ }
-                //}
-            ]
-
-        },
                 
         /* Market data subscriptions that are opened by default. */
         "symbol": {

@@ -27,11 +27,14 @@ The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to m
 2. Make sure sure things work by running the terminal interface from the SDK directory.  Any issues encountered during startup will be reported and the terminal will exit.
 
         $ cd ib-sdk
-        $ npm start terminal [config]
+        $ npm start
     
 3. If the SDK can establish a working connection and load the object model, the terminal will start successfully.
 
-        Starting...
+
+        Starting
+        Connected
+        Ready
         Use the 'ib' variable to access the environment. Type .exit to quit.
         > 
 
@@ -39,80 +42,46 @@ Learn more about exploring the SDK using the terminal [here](./docs/terminal.md)
 
 ## Programming
 
-An `Environment` is a realtime object model of your brokerage account(s).  All constituent objects share an interface and pattern of behavior.
-
-* `update` event signals a single data point has changed
-* `error` event signals an asynchronous error was encountered
-* `cancel` method closes the underlying data subscription and takes the object offline
-
 ```javascript
 "use strict";
 
 const sdk = require("ib-sdk");
 
-sdk.environment((err, ib) => {
-    if (err) {
-        console.log("Connection error: " + err.message);
-    }
-    else {
-        let system = ib.system,
-            accounts = ib.accounts,
-            positions = ib.positions,
-            orders = ib.orders,
-            trades = ib.executions,
-            $ = ib.symbols;
-            
-        // watch a symbol
-        $.watch("AAPL stock", err => {
-            // ready
-            let aapl = $.AAPL;
-        });    
-            
-        // monitor updates
-        accounts.on("update", data => {  });
-        
-        // handle specific errors
-        accounts.on("error", err => accounts.cancel());
+let session = sdk.open({
+    timeout: 1000,            // Timeout when connecting
+    host: "localhost",        // Host name of IB software
+    port: 4001,               // Socket port to connect to IB software
+    id: 0,                    // Client id used to connect to API
+    trace: "messages.log",    // IB API event logging for audit or debug,
+    dispatch: new Dispatch()  // Custom dispatch object (advanced use)
+}).on("ready", () => {
     
-        // catch all errors
-        ib.on("error", err => console.log(err));
-        
-        // cleanup before exit
-        ib.close(() => console.log("Disconnected"));
-    }
+    // IB news bulletins (margin calls, special labelling, etc)
+    let bulletins = session.bulletins;
+    session.on("bulletin", data => { });
+    
+    // Market data farm connections
+    let connectivity = session.connectivity;
+    session.on("connectivity", data => { });
+    
+    // Real time account access.  Best entry point for most use cases.
+    let account = session.account();
+    
+    // Multiple account or special purpose use cases
+    let accounts = session.accounts(),
+        positions = session.positions(),
+        orders = session.orders(),
+        trades = session.trades();
+    
+    session.close();
 });
 ```
 
 Click here for details of the [Object Model](./docs/model.md).
 
-### Customization
-
-The default `Environment` configuration subscribes to system notices, account information, open positions, pending orders, and trade history.  A configuration object or file may be passed to the `sdk.environment` method to customize the specific data subscriptions the environment maintains.
-
-```javascript
-sdk.environment("./config.json", (err, ib) => {
-    // use a file path
-});
-
-let config = sdk.config();
-sdk.environment(config, (err, ib) => {
-    // use an object
-});
-```
-
-Specifics of the `Configuration` object can be found [here](./docs/configuration.md).
-
-## Advanced Use
-
-The `Environment` is a good way to get setup quickly and focus on ultimate programming tasks.  Certain use cases benefit from a more light-weight or customized configuration.
-
-A [Session](./docs/session.md) is a generator class used by an `Environment` to construct the realtime object model around a [Service](./docs/service.md), which is responsible for managing low-level requests and data subscriptions.
-
-This separation allows for proxying architecture, whereby a `Session` can connect to a remote `Service`.  Read more [here](./docs/remoting.md).
-
 ## License
 
-Copyright (c) 2016, Jonathan Hollinger
+Copyright (c) 2017, Jonathan Hollinger
 
 Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
 

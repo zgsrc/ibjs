@@ -4,11 +4,9 @@ const RealTime = require("../realtime");
 
 class Orders extends RealTime {
     
-    constructor(session) {
+    constructor(session, options) {
         super(session);
-    }
-    
-    stream(options) {
+
         if (options == null) {
             options = { all: true };
         }
@@ -18,7 +16,7 @@ class Orders extends RealTime {
         }
         
         let orders = options.all ? this.service.allOpenOrders() : this.service.openOrders();
-        this.cancel = () => orders.cancel();
+        this.close = () => orders.cancel();
         
         orders.on("data", data => {
             this[data.orderId] = data;
@@ -27,10 +25,6 @@ class Orders extends RealTime {
         }).on("error", err => {
             this.emit("error", err);
         }).send();
-    }
-    
-    autoOpenOrders(autoBind) {
-        this.service.autoOpenOrders(autoBind);
     }
     
     cancelAllOrders() {

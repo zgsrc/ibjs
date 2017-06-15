@@ -5,19 +5,15 @@ const RealTime = require("../realtime"),
 
 class Accounts extends RealTime {
     
-    constructor(session) {
-        super(session);
-    }
-    
     /* string group, array tags, boolean positions */
-    stream(options) {
+    constructor(session, options) {
+        super(session);
+
         if (options == null) {
             options = { positions: true };
         }
         
-        let summary = null, positions = null;
-            
-        summary = this.service.accountSummary(
+        let positions = null, summary = this.service.accountSummary(
             options.group || "All", 
             options.tags || Object.values(flags.ACCOUNT_TAGS).join(',')
         ).on("data", datum => {
@@ -61,14 +57,10 @@ class Accounts extends RealTime {
             this.emit("error", err);
         }).send();
         
-        this.cancel = () => {
+        this.close = () => {
             summary.cancel();
-            if (positions) {
-                positions.cancel();
-            }
-
-            return true;
-        }
+            if (positions) positions.cancel();
+        };
     }
     
 }

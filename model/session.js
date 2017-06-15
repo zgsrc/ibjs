@@ -14,6 +14,7 @@ class Session extends Events {
         super();
         
         Object.defineProperty(this, 'service', { value: service });
+        
         this.connectivity = { };
         this.bulletins = [ ];
         this.state = "initializing";
@@ -54,42 +55,38 @@ class Session extends Events {
         });
     }
     
+    get clientId {
+        return this.service.socket.clientId;
+    }
+    
     close() {
         this.service.socket.disconnect();
     }
     
-    accounts() {
-        return new Accounts(this);
-    }
-    
-    positions() {
-        return new Positions(this);
-    }
-    
-    orders() {
-        return new Orders(this);
-    }
-    
-    autoOpenOrders(autoBind) {
-        this.service.autoOpenOrders(autoBind);
-    }
-    
-    cancelAllOrders() {
-        this.service.globalCancel();
+    account(options) {
+        return new Account(this, options || this.managedAccounts.first());
     }
 
-    trades() {
-        return new Trades(this);
+    accounts(options) {
+        return new Accounts(this, options);
     }
     
-    account(id) {
-        return new Account(this, id);
+    positions(options) {
+        return new Positions(this, options);
     }
     
+    orders(options) {
+        return new Orders(this, options);
+    }
+
+    trades(options) {
+        return new Trades(this, options);
+    }
+
     securities(description, cb) {
         lookup(this, description, cb);
     }
-
+    
 }
 
 module.exports = Session;

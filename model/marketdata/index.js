@@ -221,12 +221,11 @@ class Security extends RealTime {
         });
     }
     
-    cancel() {
-        if (this.fundamentals) this.fundamentals.cancel();
-        if (this.quote) this.quote.cancel();
-        if (this.depth) this.depth.cancel();
-        if (this.charts) this.charts.cancel();
-        return true;
+    close() {
+        if (this.fundamentals) this.fundamentals.close();
+        if (this.quote) this.quote.close();
+        if (this.depth) this.depth.close();
+        if (this.charts) this.charts.close();
     }
     
 }

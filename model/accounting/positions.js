@@ -4,11 +4,9 @@ const RealTime = require("../realtime");
 
 class Positions extends RealTime {
     
-    constructor(session) {
+    constructor(session, options) {
         super(session);
-    }
-    
-    stream(options) {
+
         let positions = this.service.positions().on("data", data => {
             if (!this[data.contract.conId]) {
                 this[data.contract.conId] = { };    
@@ -22,10 +20,7 @@ class Positions extends RealTime {
             this.emit("error", err);
         }).send();
         
-        this.cancel = () => {
-            positions.cancel();
-            return true;
-        };
+        this.close = () => positions.cancel();
     }
     
 }

@@ -1,6 +1,7 @@
 "use strict";
 
-const IB = require("ib"),
+const fs = require("fs"),
+      IB = require("ib"),
       Service = exports.Service = require("./service/service"),
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),
@@ -8,16 +9,6 @@ const IB = require("ib"),
       flags = exports.flags = require("./model/flags"),
       id = exports.id = 0;
 
-/*
-{
-    "id": 0,                    // Client id used to connect to API
-    "timeout": 1000,            // Timeout when connecting
-    "host": "localhost",        // Host name of IB software
-    "port": 4001,               // Socket port to connect to IB software
-    "dispatch": new Dispatch(), // Custom dispatch object
-    "trace": "messages.log"     // IB API event logging for audit or debug
-}
-*/
 const open = exports.open = (options, cb) => {
     if (Object.isFunction(options) && cb == null) {
         cb = options;
@@ -56,8 +47,9 @@ const session = exports.session = options => {
     
     if (options.trace) {
         ib.on("all", (name, data) => {
-            if (name == "sent" || name == "received" || name == "server") return;
-            console.log(name + ": " + data);
+            fs.appendFile(options.trace, (new Date()) + " | " + name + ": " + data + "\n", err => {
+                throw err;
+            });
         });
     }
     

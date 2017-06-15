@@ -15,7 +15,7 @@ class RealTime extends Events {
         return Object.keys(this).exclude(/\_.*/, this._exclude, "cancel");
     }
     
-    cancel() {
+    close() {
         return false;
     }
     
