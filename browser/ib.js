@@ -4,37 +4,116 @@ var Session = require("../model/session"),
 
 window.ib = {
     session: () => new Session(new Proxy(socket)),
-    config: require("../model/config"),
     flags: require("../model/flags")
 };
-},{"../model/config":4,"../model/flags":8,"../model/session":18,"../service/proxy":25}],2:[function(require,module,exports){
+},{"../model/flags":7,"../model/session":16,"../service/proxy":20}],2:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("./realtime"),
-      flags = require("./flags");
+const RealTime = require("../realtime");
+
+class Account extends RealTime {
+    
+    constructor(session, id) {
+        super(session);
+        this.id = id;
+        this.positions = { };
+    }
+    
+    /* string id, object/boolean orders, object/boolean trades */
+    stream(options) {
+        if (Object.isNumber(options)) {
+            options = { 
+                id: options 
+            };
+        }
+        
+        if (options.id) {
+            this.id = options.id;
+        }
+        
+        let account = this.service.accountUpdates(this.id).on("data", data => {
+            if (data.key) {
+                var value = data.value;
+                if (/^\-?[0-9]+(\.[0-9]+)?$/.test(value)) value = parseFloat(value);
+                else if (value == "true") value = true;
+                else if (value == "false") value = false;
+
+                if (data.currency && data.currency != "") {
+                    value = { currency: data.currency, value: value };
+                }
+
+                var key = data.key.camelize(false);
+                this[key] = value;
+                this.emit("update", { type: "account", field: key, value: value });
+            }
+            else if (data.timestamp) {
+                var date = Date.create(data.timestamp);
+                this.timestamp = date;
+                this.emit("update", { type: "account", field: "timestamp", value: date });
+            }
+            else if (data.contract) {
+                this.positions[data.contract.conId] = data;
+                this.emit("update", { type: "position", field: data.contract.conId, value: data });
+            }
+            else {
+                this.emit("warning", "Unrecognized account update " + JSON.stringify(data));
+            }
+        }).on("error", err => {
+            this.emit("error", err);
+        }).send();
+        
+        let orders = null;
+        if (options.orders) {
+            this.orders = this.session.orders();
+            this.orders.stream(options.orders);
+        }
+        
+        let trades = null;
+        if (options.trades) {
+            this.trades = this.session.trades();
+            this.trades.stream(options.trades);
+        }
+        
+        this.cancel = () => {
+            account.cancel();
+            if (orders) orders.cancel();
+            if (trades) trades.cancel();
+            
+            return true;
+        }
+    }
+    
+}
+
+module.exports = Account;
+},{"../realtime":15}],3:[function(require,module,exports){
+"use strict";
+
+const RealTime = require("../realtime"),
+      flags = require("../flags");
 
 class Accounts extends RealTime {
     
-    constructor(service) {
-        super(service);
-        
-        this.summary = { };
-        this.details = { };
-        this.positions = { };
-        
-        this.tags = Object.values(flags.ACCOUNT_TAGS).join(',');
-        this.group = "All";
+    constructor(session) {
+        super(session);
     }
     
-    stream(tags, group) {
-        if (tags) this.tags = tags;
-        if (group)  this.group = group;
+    /* string group, array tags, boolean positions */
+    stream(options) {
+        if (options == null) {
+            options = { positions: true };
+        }
         
-        this.service.accountSummary(this.group, this.tags).on("data", datum => {
+        let summary = null, positions = null;
+            
+        summary = this.service.accountSummary(
+            options.group || "All", 
+            options.tags || Object.values(flags.ACCOUNT_TAGS).join(',')
+        ).on("data", datum => {
             if (datum.account && datum.tag) {
-                var id = datum.account;
-                if (!this.summary[id]) {
-                    this.summary[id] = { };
+                let id = datum.account;
+                if (this[id] == null) {
+                    this[id] = { positions: { } };
                 }
 
                 if (datum.tag) {
@@ -48,66 +127,263 @@ class Accounts extends RealTime {
                     }
 
                     var key = datum.tag.camelize(false);
-                    this.summary[id][key] = value;
-                    this.emit("update", { type: "summary", field: key, value: value });
+                    this[id][key] = value;
+                    this.emit("update", { field: key, value: value });
                 }
             }
         }).on("end", cancel => {
-            cancel();
-
-            let updates = [ ];
-            this.cancel = () => { 
-                updates.map("cancel");
-                return true;
-            };
-            
-            Object.keys(this.summary).each(id => {
-                this.details[id] = { };
-                this.positions[id] = { };
-                updates.push(this.service.accountUpdates(id).on("data", data => {
-                    if (data.key) {
-                        var value = data.value;
-                        if (/^\-?[0-9]+(\.[0-9]+)?$/.test(value)) value = parseFloat(value);
-                        else if (value == "true") value = true;
-                        else if (value == "false") value = false;
-
-                        if (data.currency && data.currency != "") {
-                            value = { currency: data.currency, value: value };
-                        }
-
-                        var key = data.key.camelize(false);
-                        this.details[id][key] = value;
-                        this.emit("update", { type: "details", field: key, value: value });
-                    }
-                    else if (data.timestamp) {
-                        var date = Date.create(data.timestamp);
-                        this.details[id].timestamp = date;
-                        this.emit("update", { type: "details", field: "timestamp", value: date });
-                    }
-                    else if (data.contract) {
-                        this.positions[id][data.contract.conId] = data;
-                        this.emit("update", { type: "position", field: data.contract.conId, value: data });
-                    }
-                    else {
-                        this.emit("warning", "Unrecognized account update " + JSON.stringify(data));
-                    }
+            if (options.positions) {
+                positions = this.service.positions();
+                positions.on("data", data => {
+                    this[data.accountName].positions[data.contract.conId] = data;
+                    this.emit("update", { type: "position", field: data.contract.conId, value: data });
+                }).on("end", cancel => {
+                    this.emit("load");
                 }).on("error", err => {
                     this.emit("error", err);
-                }).send());
-            });
-            
+                }).send();
+            }
+            else {
+                this.emit("load");
+            }
+        }).on("error", err => {
+            this.emit("error", err);
+        }).send();
+        
+        this.cancel = () => {
+            summary.cancel();
+            if (positions) {
+                positions.cancel();
+            }
+
+            return true;
+        }
+    }
+    
+}
+
+module.exports = Accounts;
+},{"../flags":7,"../realtime":15}],4:[function(require,module,exports){
+"use strict";
+
+const RealTime = require("../realtime");
+
+class Orders extends RealTime {
+    
+    constructor(session) {
+        super(session);
+    }
+    
+    stream(options) {
+        if (options == null) {
+            options = { all: true };
+        }
+        
+        if (options.autoOpen) {
+            this.service.autoOpenOrders(options.autoOpen ? true : false);
+        }
+        
+        let orders = options.all ? this.service.allOpenOrders() : this.service.openOrders();
+        this.cancel = () => orders.cancel();
+        
+        orders.on("data", data => {
+            this[data.orderId] = data;
+        }).on("end", () => {
             this.emit("load");
         }).on("error", err => {
             this.emit("error", err);
         }).send();
     }
     
+    autoOpenOrders(autoBind) {
+        this.service.autoOpenOrders(autoBind);
+    }
+    
+    cancelAllOrders() {
+        this.service.globalCancel();
+    }
+    
 }
 
+module.exports = Orders;
+},{"../realtime":15}],5:[function(require,module,exports){
+"use strict";
 
+const RealTime = require("../realtime");
 
-module.exports = Accounts;
-},{"./flags":8,"./realtime":16}],3:[function(require,module,exports){
+class Positions extends RealTime {
+    
+    constructor(session) {
+        super(session);
+    }
+    
+    stream(options) {
+        let positions = this.service.positions().on("data", data => {
+            if (!this[data.contract.conId]) {
+                this[data.contract.conId] = { };    
+            }
+            
+            this[data.contract.conId][data.accountName] = data;
+            this.emit("update", data);
+        }).on("end", cancel => {
+            this.emit("load");
+        }).on("error", err => {
+            this.emit("error", err);
+        }).send();
+        
+        this.cancel = () => {
+            positions.cancel();
+            return true;
+        };
+    }
+    
+}
+
+module.exports = Positions;
+},{"../realtime":15}],6:[function(require,module,exports){
+"use strict";
+
+const RealTime = require("../realtime");
+
+class Trades extends RealTime {
+    
+    constructor(session, options) {
+        super(session);
+        this.filter = { };
+        this._exclude.push("filter");
+    }
+    
+    stream(options) {
+        options = options || { };
+        
+        if (options.account) this.filter.acctCode = options.account;
+        if (options.client) this.filter.clientId = options.client;
+        if (options.exchange) this.filter.exchange = options.exchange;
+        if (options.secType) this.filter.secType = options.secType;
+        if (options.side) this.filter.side = options.side;
+        if (options.symbol) this.filter.symbol = options.symbol;
+        if (options.time) this.filter.time = options.time;
+        
+        let request = this.service.executions(this.filter);
+        request.on("data", data => {
+            if (!this[data.exec.permId]) {
+                this[data.exec.permId] = { };
+            }
+
+            this[data.exec.permId][data.exec.execId] = data;
+            this.emit("update");
+        }).on("error", err => {
+            this.emit("error", err);
+        }).on("end", () => {
+            this.emit("load");
+        }).send();
+        
+        this.cancel = () => {
+            request.cancel();
+            return true;
+        };
+    }
+    
+}
+
+module.exports = Trades;
+},{"../realtime":15}],7:[function(require,module,exports){
+const TAGS = {
+    accountType: "AccountType",
+    netLiquidation: "NetLiquidation",
+    totalCashValue: "TotalCashValue",
+    settledCash: "SettledCash",
+    accruedCash: "AccruedCash",
+    buyingPower: "BuyingPower",
+    equityWithLoanValue: "EquityWithLoanValue",
+    previousDayEquityWithLoanValue: "PreviousDayEquityWithLoanValue",
+    grossPositionValue: "GrossPositionValue",
+    regTEquity: "RegTEquity",
+    regTMargin: "RegTMargin",
+    sma: "SMA",
+    initMarginReq: "InitMarginReq",
+    maintMarginReq: "MaintMarginReq",
+    availableFunds: "AvailableFunds",
+    excessLiquidity: "ExcessLiquidity",
+    cushion: "Cushion",
+    fullInitMarginReq: "FullInitMarginReq",
+    fullMaintMarginReq: "FullMaintMarginReq",
+    fullAvailableFunds: "FullAvailableFunds",
+    fullExcessLiquidity: "FullExcessLiquidity",
+    lookAheadNextChange: "LookAheadNextChange",
+    lookAheadInitMarginReq: "LookAheadInitMarginReq",
+    lookAheadMaintMarginReq: "LookAheadMaintMarginReq",
+    lookAheadAvailableFunds: "LookAheadAvailableFunds",
+    lookAheadExcessLiquidity: "LookAheadExcessLiquidity",
+    highestSeverity: "HighestSeverity",
+    dayTradesRemaining: "DayTradesRemaining",
+    leverage: "Leverage"
+};
+
+exports.ACCOUNT_TAGS = TAGS;
+
+const TICKS = {
+    fundamentalValues: 47,
+    optionVolume: 100,
+    optionOpenInterest: 101,
+    historicalVolatility: 104,
+    optionImpliedVolatility: 106,
+    indexFuturePremium: 162,
+    miscellaneousStats: 165,
+    markPrice: 221,
+    auctionValues: 225,
+    realTimeVolume: 233,
+    shortable: 236,
+    inventory: 256,
+    fundamentalRatios: 258,
+    news: 292,
+    realtimeHistoricalVolatility: 411,
+    dividends: 456
+};
+
+exports.QUOTE_TICK_TYPES = TICKS;
+
+const REPORT = {
+    snapshot: "ReportSnapshot",
+    financials: "ReportsFinSummary",
+    ratios: "ReportRatios",
+    statements: "ReportsFinStatements",
+    consensus: "RESC",
+    calendar: "CalendarReport"
+};
+
+exports.FUNDAMENTALS_REPORTS = REPORT;
+
+const CURRENCIES = [
+    'KRW', 'EUR', 'GBP', 'AUD',
+    'USD', 'TRY', 'ZAR', 'CAD', 
+    'CHF', 'MXN', 'HKD', 'JPY', 
+    'INR', 'NOK', 'SEK', 'RUB'
+];
+
+exports.CURRENCIES = CURRENCIES;
+
+const SECURITY_TYPE = {
+    stock: "STK",
+    equity: "STK",
+    option: "OPT",
+    put: "OPT",
+    puts: "OPT",
+    call: "OPT",
+    calls: "OPT",
+    future: "FUT",
+    futures: "FUT",
+    index: "IND",
+    forward: "FOP",
+    forwards: "FOP",
+    cash: "CASH",
+    currency: "CASH",
+    bag: "BAG",
+    news: "NEWS"
+};
+
+exports.SECURITY_TYPE = SECURITY_TYPE;
+},{}],8:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -442,622 +718,12 @@ class Charts extends MarketData {
 }
 
 module.exports = Charts;
-},{"./marketdata":10,"./studies":19,"async":22,"sugar":23}],4:[function(require,module,exports){
-"use strict";
-
-module.exports = () => {
-    
-    return {
-        
-        /* Settings for socket connection to IB software. */
-        "connection": {
-            
-            /* Timeout when connecting */
-            "timeout": 1000,
-            
-            /* Host name of IB software */
-            "host": "localhost",
-            
-            /* Socket port to connect to IB software. */
-            "port": 4001
-            
-        },
-        
-        /* Environment configuration. */
-        "environment": {
-            
-            /* Load timeout in milliseconds */
-            "timeout": 30000,
-            
-            /* Subscribe to system notifications and connectivity status updates. */
-            "system": true,
-
-            /* Subscribe to realtime account balance and position values.
-               - Boolean value subscribes to all account info.
-               - An array of tags (i.e. [ "TAG1", "TAG2" ]) subscribes to select values.  (Print Environment.accounts.TAGS variable for a list of tags.) */
-            "accounts": true,
-
-            /* Subscribe to basic position info across accounts. */
-            "positions": true,
-
-            /* Subscribe to trade history, past and ongoing trades. 
-               - Boolean value loads today's trades.
-               - A filter object adjusts the scope of trades. */
-            "executions": true,
-
-            /* Subscribe to pending orders.
-               - "all" subscribes to all orders placed in IB.
-               - "local" subscribes only to orders placed through this process. */
-            "orders": "all",
-
-            /* Watchlist of securities. */
-            "symbols": [
-                //"GOOGL",
-                //[ "AAPL", { /* Override defaults */ } ],
-                //{ 
-                //    "description": "IBM", 
-                //    "options": { /* Override defaults */ }
-                //}
-            ]
-
-        },
-                
-        /* Market data subscriptions that are opened by default. */
-        "symbol": {
-
-            /* Download fundamental data.
-               - The "all" option fetches all available fundamental data.
-               - Any other string fetches the fundamental report by that name.
-               - An array of strings fetch all reports in the array.  (Print Symbol.fundamentals.REPORT_TYPES variable for a list of reports.) */
-            "fundamentals": "all",
-
-            /* Subscribe to quote data.
-               - Boolean value opens a streaming quote of price and volume data.
-               - The "snapshot" string fetches a snapshot of quote data without initializing a streaming subscription.
-               - An array of strings registers specific streaming quote fields.  (Print Symbol.quote.TICK_TYPES variable for a list of fields.) */
-            "quote": true,
-
-            /* Subscribe to level 2 data.
-               - The "all" string subscribes to level 2 data from all valid exchanges.
-               - An array of strings subscribes to specific market data centers. */
-            "level2": {
-                "markets": "all",
-                "rows": 10
-            },
-
-            /* Subscribes to a bar chart data.  Must use one of the bar sizes below.
-               - Boolean loads one history period and subscribes to realtime updates
-               - Positive integer loads that many historical periods and subscribes to realtime updates */
-            "bars": {
-                "ONE_SECOND": false,
-                "FIVE_SECONDS": false,
-                "FIFTEEN_SECONDS": false,
-                "THIRTY_SECONDS": false,
-                "ONE_MINUTE": false,
-                "TWO_MINUTES": false,
-                "THREE_MINUTES": false,
-                "FIVE_MINUTES": true,
-                "FIFTEEN_MINUTES": false,
-                "THIRTY_MINUTES": false,
-                "ONE_HOUR": false,
-                "TWO_HOURS": false,
-                "FOUR_HOURS": false,
-                "EIGHT_HOURS": false,
-                "ONE_DAY": false
-            }
-
-        }        
-        
-    };
-    
-};
-},{}],5:[function(require,module,exports){
-"use strict";
-
-const Security = require("./security");
-
-const CURRENCIES = [
-    'KRW', 'EUR', 'GBP', 'AUD',
-    'USD', 'TRY', 'ZAR', 'CAD', 
-    'CHF', 'MXN', 'HKD', 'JPY', 
-    'INR', 'NOK', 'SEK', 'RUB'
-];
-
-const SECURITY_TYPE = {
-    stock: "STK",
-    equity: "STK",
-    option: "OPT",
-    put: "OPT",
-    puts: "OPT",
-    call: "OPT",
-    calls: "OPT",
-    future: "FUT",
-    futures: "FUT",
-    index: "IND",
-    forward: "FOP",
-    forwards: "FOP",
-    cash: "CASH",
-    currency: "CASH",
-    bag: "BAG",
-    news: "NEWS"
-};
-
-function parse(definition) {
-    if (Object.isNumber(definition)) {
-        definition = { conId: definition };
-    }
-    else if (Object.isString(definition)) {
-        let tokens = definition.split(' ').map("trim").compact(true);
-        definition = { };
-        
-        let date = tokens[0],
-            symbol = tokens[1],
-            side = tokens[2] ? tokens[2].toLowerCase() : null,
-            type = SECURITY_TYPE[side];
-        
-        if (type) {
-            definition.secType = type;
-            definition.symbol = symbol;
-            
-            if (type == "OPT") {
-                if (side.startsWith("put") || side.startsWith("call")) {
-                    definition.right = side.toUpperCase();
-                }
-                else {
-                    throw new Error("Must specify 'put' or 'call' for option contracts.");
-                }
-            }
-            
-            if (date) {
-                let month = date.to(3),
-                    year = date.from(3).trim();
-
-                if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) {
-                    year = year.from(1);
-                }
-                
-                if (year.length == 2) {
-                    year = "20" + year;
-                }
-                
-                if (year == "") {
-                    year = Date.create().fullYear();
-                }
-
-                date = Date.create(month + " " + year).format("{yyyy}{MM}");
-                definition.expiry = date;
-            }
-
-            tokens = tokens.from(3);
-        }
-        else {
-            definition.symbol = tokens[0].toUpperCase();
-            
-            if (tokens[1] && SECURITY_TYPE[tokens[1].toLowerCase()]) {
-                definition.secType = SECURITY_TYPE[tokens[1].toLowerCase()];
-                tokens = tokens.from(2);
-            }
-            else {
-                tokens = tokens.from(1);
-            }
-            
-        }
-        
-        tokens.inGroupsOf(2).each(field => {
-            if (field.length == 2 && field.all(a => a != null)) {
-                if (field[0].toLowerCase() == "in") {
-                    definition.currency = field[1].toUpperCase();
-                    if (CURRENCIES.indexOf(definition.currency) < 0) {
-                        throw new Error("Invalid currency " + definition.currency);
-                    }
-                }
-                else if (field[0].toLowerCase() == "on") {
-                    definition.exchange = field[1].toUpperCase();
-                }
-                else if (field[0].toLowerCase() == "at") {
-                    definition.strike = parseFloat(field[1]);
-                }
-                else {
-                    throw new Error("Unrecognized field " + field.join(' '));
-                }
-            }
-            else {
-                throw new Error("Unrecognized field " + field.join(' '));
-            }
-        });
-    }
-
-    if (Object.isObject(definition)) {
-        if (definition.symbol == null && definition.conId == null) {
-            throw new Error("Definition must have symbol or conId.");
-        }
-
-        if (definition.conId == null) {
-            if (!definition.secType && CURRENCIES.indexOf(definition.symbol) >= 0) {
-                definition.secType = "CASH";
-            }
-            else {
-                definition.secType = definition.secType || "STK";
-            }
-
-            if (definition.secType == "CASH") {
-                definition.exchange = "IDEALPRO";
-            }
-            else if (definition.secType == "STK" || definition.secType == "OPT") {
-                definition.exchange = definition.exchange || "SMART";
-            }
-
-            definition.currency = definition.currency || "USD";
-        }
-        
-        return definition;
-    }
-    else {
-        throw new Error("Unrecognized security definition '" + definition + "'");
-    }
-}
-
-function contracts(service, description, cb) {
-    let summary = description;
-    try { summary = parse(description); }
-    catch (ex) { cb(ex); return; }
-
-    console.log(description + " = " + JSON.stringify(summary));
-    
-    let req = service.contractDetails(summary);
-    
-    let list = [ ];
-    req.on("data", contract => list.push(new Security(service, contract)));
-    req.on("error", err => cb(err, list));
-    req.on("end", () => cb(null, list));
-    req.send();
-}
-
-module.exports = contracts;
-},{"./security":17}],6:[function(require,module,exports){
-"use strict";
-
-const Events = require("events"),
-      async = require("async"),
-      config = require("./config");
-
-class Environment extends Events {
-    
-    constructor(session, options, symbolDefaults) {
-        
-        super();
-        
-        this.defaults = config();
-        this.defaults.environment = options = options || this.defaults.environment;
-        this.defaults.symbol = symbolDefaults || this.defaults.symbol;
-        
-        this.session = session;
-        
-        let loadCount = 0,
-            loadTimeouts = 0,
-            loadErrors = 0,
-            loadSuccess = 0,
-            loadErrorsList = [ ];
-        
-        let errorHandler = err => {
-            if (err.timeout) loadTimeouts++;
-            else loadErrors++;
-
-            if (loadCount == loadTimeouts) {
-                let bs = new Error("IB API unresponsive. Try restarting IB software and reconnecting.");
-                bs.badState = true;
-                bs.errors = loadErrorsList;
-                
-                this.loaded = true;
-                this.emit("load", bs, this);
-            }
-            else if (loadCount == loadTimeouts + loadErrors + loadSuccess) {
-                let le = new Error("Errors encountered during initial load.");
-                le.errors = loadErrorsList;
-                
-                this.loaded = true;
-                this.emit("load", le, this);
-            }
-        };
-        
-        let loadHandler = err => {
-            if (err) {
-                errorHandler(err);
-                return;
-            }
-            else loadSuccess++;
-
-            if (loadCount == loadSuccess) {
-                this.loaded = true;
-                this.emit("load", null, this);
-            }
-            else if (loadCount == loadTimeouts + loadErrors + loadSuccess) {
-                let le = new Error("Errors encountered during initial load.");
-                le.errors = loadErrorsList;
-                
-                this.loaded = true;
-                this.emit("load", le, this);
-            }
-        };
-
-        let loadTimer = setTimeout(() => {
-            if (!this.loaded) {
-                let to = new Error("Environment load time out.");
-                to.timeout = true;
-                this.emit("load", to, this);
-            }
-        }, options.timeout || 30000);
-        
-        let load = obj => {
-            loadCount++;
-            obj.once("error", errorHandler)
-               .once("load", loadHandler);
-            
-            setTimeout(() => obj.removeListener("error", errorHandler), options.timeout || 30000);
-            setTimeout(() => obj.removeListener("load", loadHandler), options.timeout || 30000);
-        };
-        
-        let emitError = err => {
-            if (this.loaded) this.emit("error", err);
-            else loadErrorsList.push(err);
-        }
-        
-        this.system = this.session.system();    
-        this.system
-            .on("error", emitError)
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", { type: "system", data: data }));
-        
-        if (options.system) {
-            this.system.stream();
-        }
-        
-        this.accounts = this.session.accounts();    
-        this.accounts
-            .on("error", emitError)
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", { type: "accounts", data: data }));
-        
-        if (options.accounts) {
-            if (Array.isArray(options.accounts)) {
-                this.accounts.tags = options.accounts;
-            }
-            
-            load(this.accounts);
-            this.accounts.stream();
-        }
-        
-        this.positions = this.session.positions();    
-        this.positions
-            .on("error", emitError)
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", { type: "positions", data: data }));
-        
-        if (options.positions) {
-            load(this.positions);
-            this.positions.stream();
-        }
-        
-        this.executions = this.session.executions(Object.isObject(options.executions) ? options.executions : null);
-        this.executions
-            .on("error", emitError)
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", { type: "executions", data: data }));
-        
-        if (options.executions) {
-            load(this.executions);
-            this.executions.stream();
-        }
-        
-        this.orders = this.session.orders();    
-        this.orders
-            .on("error", emitError)
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", { type: "orders", data: data }));
-
-        if (options.orders) {
-            load(this.orders);
-            this.orders.autoOpenOrders(options.orders == "all");
-            this.orders.stream(options.orders == "all");
-        }
-        
-        this.symbols = { };
-        if (options.symbols && options.symbols.length) {
-            let symbolLoad = (err, symbol) => {
-                if (err) errorHandler(err);
-                else symbol.on("load", loadHandler);
-            };
-            
-            options.symbols.each(security => {
-                loadCount++;
-                if (Array.isArray(security)) this.watch(security[0], security[1], symbolLoad);
-                else if (Object.isObject(security)) this.watch(security.description, security.options, symbolLoad);
-                else this.watch(security, null, symbolLoad);
-            });
-        }
-    }
-    
-    securities(description, cb) {
-        this.session.securities(description, cb);
-    }
-    
-    attach(security, options) {
-        options = Object.merge(Object.clone(this.defaults.symbol), options || { });
-        
-        let symbol = security.symbol(options);
-        this.symbols[symbol.name] = symbol;
-        
-        symbol.on("close", () => delete this.symbols[symbol.name])
-              .on("error", err => this.emit("error", err))
-              .on("warning", msg => this.emit("warning", msg));
-        
-        this.defaults.environment.symbols.push([ 
-            security.summary.conId, 
-            options
-        ]);
-        
-        return symbol;
-    }
-    
-    watch(description, options, cb) {
-        this.session.securities(description, (err, security) => {
-            if (err) {
-                this.emit("error", err);
-                if (cb) cb(err);
-            }
-            else {
-                security = security[0];
-                
-                if (security) {
-                    let symbol = security.symbol(Object.merge(Object.clone(this.defaults.symbol), options || { }));
-                    if (symbol.name) this.symbols[symbol.name] = symbol;
-
-                    symbol.on("close", () => delete this.symbols[symbol.name])
-                          .on("error", err => this.emit("error", err))
-                          .on("warning", msg => this.emit("warning", msg));
-
-                    if (cb) cb(null, symbol);
-                }
-                else if (cb) cb(new Error("No security with description '" + description + "'."));
-            }
-        });
-    }
-    
-    close(cb) {
-        let socket = this.session.socket || this.session.service.socket;
-        if (socket && !socket.isProxy) {
-            if (socket.disconnect && Object.isFunction(socket.disconnect)) {
-                socket.once("disconnected", () => {
-                    if (cb) cb();
-                }).disconnect();
-            }
-            else if (cb) cb();
-        }
-        else if (cb) cb();
-    }
-    
-}
-
-module.exports = Environment;
-},{"./config":4,"async":22,"events":29}],7:[function(require,module,exports){
-"use strict";
-
-const RealTime = require("./realtime");
-
-class Executions extends RealTime {
-    
-    constructor(service, options) {
-        super(service);
-        this.filter = { };
-        this.trades = { };
-    }
-    
-    stream(options) {
-        options = options || { };
-        
-        if (options.account) this.filter.acctCode = options.account;
-        if (options.client) this.filter.clientId = options.client;
-        if (options.exchange) this.filter.exchange = options.exchange;
-        if (options.secType) this.filter.secType = options.secType;
-        if (options.side) this.filter.side = options.side;
-        if (options.symbol) this.filter.symbol = options.symbol;
-        if (options.time) this.filter.time = options.time;
-        
-        let request = this.service.executions(this.filter);
-        request.on("data", data => {
-            if (!this.trades[data.exec.permId]) {
-                this.trades[data.exec.permId] = { };
-            }
-
-            this.trades[data.exec.permId][data.exec.execId] = data;
-            this.emit("update");
-        }).on("error", err => {
-            this.emit("error", err);
-        }).on("end", () => {
-            this.emit("load");
-        }).send();
-        
-        this.cancel = () => {
-            request.cancel();
-            return true;
-        };
-    }
-    
-}
-
-module.exports = Executions;
-},{"./realtime":16}],8:[function(require,module,exports){
-const TAGS = {
-    accountType: "AccountType",
-    netLiquidation: "NetLiquidation",
-    totalCashValue: "TotalCashValue",
-    settledCash: "SettledCash",
-    accruedCash: "AccruedCash",
-    buyingPower: "BuyingPower",
-    equityWithLoanValue: "EquityWithLoanValue",
-    previousDayEquityWithLoanValue: "PreviousDayEquityWithLoanValue",
-    grossPositionValue: "GrossPositionValue",
-    regTEquity: "RegTEquity",
-    regTMargin: "RegTMargin",
-    sma: "SMA",
-    initMarginReq: "InitMarginReq",
-    maintMarginReq: "MaintMarginReq",
-    availableFunds: "AvailableFunds",
-    excessLiquidity: "ExcessLiquidity",
-    cushion: "Cushion",
-    fullInitMarginReq: "FullInitMarginReq",
-    fullMaintMarginReq: "FullMaintMarginReq",
-    fullAvailableFunds: "FullAvailableFunds",
-    fullExcessLiquidity: "FullExcessLiquidity",
-    lookAheadNextChange: "LookAheadNextChange",
-    lookAheadInitMarginReq: "LookAheadInitMarginReq",
-    lookAheadMaintMarginReq: "LookAheadMaintMarginReq",
-    lookAheadAvailableFunds: "LookAheadAvailableFunds",
-    lookAheadExcessLiquidity: "LookAheadExcessLiquidity",
-    highestSeverity: "HighestSeverity",
-    dayTradesRemaining: "DayTradesRemaining",
-    leverage: "Leverage"
-};
-
-exports.ACCOUNT_TAGS = TAGS;
-
-const TICKS = {
-    fundamentalValues: 47,
-    optionVolume: 100,
-    optionOpenInterest: 101,
-    historicalVolatility: 104,
-    optionImpliedVolatility: 106,
-    indexFuturePremium: 162,
-    miscellaneousStats: 165,
-    markPrice: 221,
-    auctionValues: 225,
-    realTimeVolume: 233,
-    shortable: 236,
-    inventory: 256,
-    fundamentalRatios: 258,
-    news: 292,
-    realtimeHistoricalVolatility: 411,
-    dividends: 456
-};
-
-exports.QUOTE_TICK_TYPES = TICKS;
-
-const REPORT = {
-    snapshot: "ReportSnapshot",
-    financials: "ReportsFinSummary",
-    ratios: "ReportRatios",
-    statements: "ReportsFinStatements",
-    consensus: "RESC",
-    calendar: "CalendarReport"
-};
-
-exports.FUNDAMENTALS_REPORTS = REPORT;
-},{}],9:[function(require,module,exports){
+},{"./marketdata":11,"./studies":14,"async":17,"sugar":18}],9:[function(require,module,exports){
 "use strict";
 
 const async = require("async"),
       MarketData = require("./marketdata"),
-      flags = require("./flags");
+      flags = require("../flags");
 
 const REPORT = flags.FUNDAMENTALS_REPORTS;
 
@@ -1146,12 +812,260 @@ class Fundamentals extends MarketData {
 }
 
 module.exports = Fundamentals;
-},{"./flags":8,"./marketdata":10,"async":22}],10:[function(require,module,exports){
+},{"../flags":7,"./marketdata":11,"async":17}],10:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
-const RealTime = require("./realtime");
+const RealTime = require("../realtime"),
+      Fundamentals = require("./fundamentals"),
+      Quote = require("./quote"),
+      OrderBook = require("./orderbook"),
+      Charts = require("./charts"),
+      flags = require("../flags");
+
+function parse(definition) {
+    if (Object.isNumber(definition)) {
+        definition = { conId: definition };
+    }
+    else if (Object.isString(definition)) {
+        let tokens = definition.split(' ').map("trim").compact(true);
+        definition = { };
+        
+        let date = tokens[0],
+            symbol = tokens[1],
+            side = tokens[2] ? tokens[2].toLowerCase() : null,
+            type = flags.SECURITY_TYPE[side];
+        
+        if (type) {
+            definition.secType = type;
+            definition.symbol = symbol;
+            
+            if (type == "OPT") {
+                if (side.startsWith("put") || side.startsWith("call")) {
+                    definition.right = side.toUpperCase();
+                }
+                else {
+                    throw new Error("Must specify 'put' or 'call' for option contracts.");
+                }
+            }
+            
+            if (date) {
+                let month = date.to(3),
+                    year = date.from(3).trim();
+
+                if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) {
+                    year = year.from(1);
+                }
+                
+                if (year.length == 2) {
+                    year = "20" + year;
+                }
+                
+                if (year == "") {
+                    year = Date.create().fullYear();
+                }
+
+                date = Date.create(month + " " + year).format("{yyyy}{MM}");
+                definition.expiry = date;
+            }
+
+            tokens = tokens.from(3);
+        }
+        else {
+            definition.symbol = tokens[0].toUpperCase();
+            
+            if (tokens[1] && flags.SECURITY_TYPE[tokens[1].toLowerCase()]) {
+                definition.secType = flags.SECURITY_TYPE[tokens[1].toLowerCase()];
+                tokens = tokens.from(2);
+            }
+            else {
+                tokens = tokens.from(1);
+            }
+            
+        }
+        
+        tokens.inGroupsOf(2).each(field => {
+            if (field.length == 2 && field.all(a => a != null)) {
+                if (field[0].toLowerCase() == "in") {
+                    definition.currency = field[1].toUpperCase();
+                    if (flags.CURRENCIES.indexOf(definition.currency) < 0) {
+                        throw new Error("Invalid currency " + definition.currency);
+                    }
+                }
+                else if (field[0].toLowerCase() == "on") {
+                    definition.exchange = field[1].toUpperCase();
+                }
+                else if (field[0].toLowerCase() == "at") {
+                    definition.strike = parseFloat(field[1]);
+                }
+                else {
+                    throw new Error("Unrecognized field " + field.join(' '));
+                }
+            }
+            else {
+                throw new Error("Unrecognized field " + field.join(' '));
+            }
+        });
+    }
+
+    if (Object.isObject(definition)) {
+        if (definition.symbol == null && definition.conId == null) {
+            throw new Error("Definition must have symbol or conId.");
+        }
+
+        if (definition.conId == null) {
+            if (!definition.secType && flags.CURRENCIES.indexOf(definition.symbol) >= 0) {
+                definition.secType = "CASH";
+            }
+            else {
+                definition.secType = definition.secType || "STK";
+            }
+
+            if (definition.secType == "CASH") {
+                definition.exchange = "IDEALPRO";
+            }
+            else if (definition.secType == "STK" || definition.secType == "OPT") {
+                definition.exchange = definition.exchange || "SMART";
+            }
+
+            definition.currency = definition.currency || "USD";
+        }
+        
+        return definition;
+    }
+    else {
+        throw new Error("Unrecognized security definition '" + definition + "'");
+    }
+}
+
+class Security extends RealTime {
+    
+    constructor(session, contract) {
+        super(session);
+        Object.defineProperty(this, 'contract', { value: contract });
+        
+        if (this.contract.secType == "STOCK") {
+            this.fundamentals = new Fundamentals(this);
+        }
+        
+        this.quote = new Quote(this);
+        this.level2 = new OrderBook(this);
+        this.charts = new Charts(this);
+    }
+    
+    load(options, cb) {
+        let errors = [ ],
+            errorHandler = err => {
+                if (this.loaded) this.emit("error", err);
+                else errors.push(err);
+            };
+        
+        if (options.fundamentals && this.fundamentals) {
+            this.fundamentals.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
+        }   
+        
+        if (options.quote) {
+            this.quote.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
+        }
+        
+        if (options.level2) {
+            this.level2.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
+        }
+        
+        if (options.charts) {
+            this.charts.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
+        }
+
+        async.series([
+            cb => {
+                if (this.fundamentals) {
+                    if (options.fundamentals == "all") this.fundamentals.loadAll(cb);
+                    else if (Array.isArray(options.fundamentals)) this.fundamentals.loadSome(options.fundamentals, cb);
+                    else if (Object.isString(options.fundamentals)) this.fundamentals.load(options.fundamentals, cb);
+                    else cb();
+                }
+                else cb();
+            },
+            cb => {
+                if (this.quote) {
+                    if (Array.isArray(options.quote)) this.quote.fields = options.quote;
+                    this.quote.refresh(cb);
+                    if (options.quote != "snapshot") this.quote.stream();
+                }
+                else cb();
+            },
+            cb => {
+                if (this.level2) {
+                    if (options.level2.markets == "all") this.level2.streamAllValidExchanges(options.level2.rows || 10);
+                    else this.level2.stream(options.level2.markets, options.level2.rows || 10);
+                    this.level2.once("load", cb);
+                }
+                else cb();
+            },
+            cb => {
+                if (this.charts) {
+                    let sizes = Object.keys(options.charts).filter(k => options.charts[k]);
+                    async.forEachSeries(sizes, (size, cb) => {
+                        let periods = options.charts[k];
+                        this.charts[size].history(err => {
+                            if (!err && periods > 1) {
+                                async.forEach(
+                                    (1).upto(periods).exclude(1), 
+                                    (i, cb) => this.charts[size].history(cb), 
+                                    cb
+                                );
+                            }
+                            else cb(err);
+                        });
+                        
+                        this.charts[size].stream();
+                    }, cb);
+                }
+                else cb();
+            }
+        ], err => {
+            this.loaded = true;
+            if (err) {
+                err = new Error("Errors encountered during " + this.name + " symbol load.");
+                err.errors = errors;
+            }
+            
+            this.emit("load", err);
+            if (cb) cb(err);
+        });
+    }
+    
+    cancel() {
+        if (this.fundamentals) this.fundamentals.cancel();
+        if (this.quote) this.quote.cancel();
+        if (this.depth) this.depth.cancel();
+        if (this.charts) this.charts.cancel();
+        return true;
+    }
+    
+}
+
+function contracts(session, description, cb) {
+    let summary = description;
+    try { summary = parse(description); }
+    catch (ex) { cb(ex); return; }
+
+    console.log(description + " = " + JSON.stringify(summary));
+    
+    let list = [ ];
+    session.service.contractDetails(summary).on("data", contract => {
+        list.push(new Security(session, contract));
+    }).on("error", err => cb(err, list)).on("end", () => cb(null, list)).send();
+}
+
+module.exports = contracts;
+},{"../flags":7,"../realtime":15,"./charts":8,"./fundamentals":9,"./orderbook":12,"./quote":13,"sugar":18}],11:[function(require,module,exports){
+"use strict";
+
+require("sugar");
+
+const RealTime = require("../realtime");
 
 class MarketData extends RealTime {
     
@@ -1163,227 +1077,7 @@ class MarketData extends RealTime {
 }
 
 module.exports = MarketData;
-},{"./realtime":16,"sugar":23}],11:[function(require,module,exports){
-"use strict";
-
-const RealTime = require("./realtime");
-
-class Order extends RealTime {
-    
-    constructor(service, contract, defaults) {
-        super(service);
-        this.contract = contract;
-        this.ticket = defaults || { tif: "Day" };
-    }
-    
-    ////////////////////////////////////////
-    // QUANTITY
-    ////////////////////////////////////////
-    trade(qty, show) {
-        this.ticket.totalQuantity = Math.abs(qty);
-        this.ticket.action = qty > 0 ? "BUY" : "SELL";
-        
-        if (show != null) {
-            if (show == 0) this.hidden = true;
-            this.displaySize = Math.abs(show);
-        }
-        
-        return this;
-    }
-    
-    buy(qty, show) {
-        this.ticket.totalQuantity = qty;
-        this.ticket.action = "BUY";
-        
-        if (show != null) {
-            if (show == 0) this.hidden = true;
-            this.displaySize = Math.abs(show);
-        }
-        
-        return this;
-    }
-    
-    sell(qty, show) {
-        this.ticket.totalQuantity = qty;
-        this.ticket.action = "SELL";
-        
-        if (show != null) {
-            if (show == 0) this.hidden = true;
-            this.displaySize = Math.abs(show);
-        }
-        
-        return this;
-    }
-    
-    show(qty) {
-        if (show != null) {
-            if (show == 0) this.hidden = true;
-            this.displaySize = Math.abs(show);
-        }
-
-        return this;
-    }
-    
-    ////////////////////////////////////////
-    // PRICE
-    ////////////////////////////////////////
-    market() {
-        this.ticket.type = "MKT";
-        return this;
-    }
-    
-    marketWithProtection() {
-        this.ticket.type = "MKT PRT";
-        return this;
-    }
-    
-    marketThenLimit() {
-        this.ticket.type = "MTL";
-        return this;
-    }
-    
-    limit(price) {
-        this.ticket.type = "LMT";
-        this.ticket.lmtPrice = price;
-        return this;
-    }
-    
-    stop(trigger) {
-        this.ticket.type = "STP";
-        this.ticket.auxPrice = trigger;
-            
-        return this;
-    }
-    
-    stopLimit(trigger, limit) {
-        this.ticket.type = "STP LMT";
-        this.ticket.auxPrice = trigger;
-        this.ticket.lmtPrice = limit;
-            
-        return this;
-    }
-    
-    stopWithProtection(trigger) {
-        this.ticket.type = "STP PRT";
-        this.ticket.auxPrice = trigger;
-        return this;
-    }
-    
-    ////////////////////////////////////////
-    // TIMEFRAME
-    ////////////////////////////////////////
-    goodToday() {
-        this.ticket.tif = "Day";
-        return this;
-    }
-    
-    goodUntilCancelled() {
-        this.ticket.tif = "GTC";
-        return this;
-    }
-    
-    immediateOrCancel() {
-        this.ticket.tif = "IOC";
-        return this;
-    }
-    
-    outsideRegularTradingHours() { 
-        this.ticket.outsideRth = true; 
-        return this; 
-    }
-    
-    ////////////////////////////////////////
-    // EXECUTION
-    ////////////////////////////////////////
-    overridePercentageConstraints() {
-        this.ticket.overridePercentageConstraints = true;
-        return this;
-    }
-    
-    open() {
-        let me = this, 
-            nextId = this.service.nextValidId(1);
-        
-        nextId.on("data", id => {
-            nextId.cancel();
-            
-            let request = this.service.placeOrder(this.contract, this.ticket);
-            me.cancel = () => request.cancel();
-            
-            request.on("data", data => {
-                Object.merge(me, data, { resolve: true });
-            }).on("error", err => {
-                me.error = err;
-                me.emit("error", err);
-            }).send();
-        }).on("error", err => cb(err)).send();
-    }
-    
-    transmit() {
-        this.ticket.transmit = true;
-        this.open();
-    }
-    
-}
-
-Order.SIDE = {
-    buy: "BUY",
-    sell: "SELL",
-    short: "SSHORT"
-};
-
-Order.ORDER_TYPE = {
-    limit: "LMT",
-    marketToLimit: "MTL",
-    marketWithProtection: "MKT PRT",
-    requestForQuote: "QUOTE",
-    stop: "STP",
-    stopLimit: "STP LMT",
-    trailingLimitIfTouched: "TRAIL LIT",
-    trailingMarketIfTouched: "TRAIL MIT",
-    trailingStop: "TRAIL",
-    trailingStopLimit: "TRAIL LIMIT",
-    market: "MKT",
-    marketIfTouched: "MIT",
-    marketOnClose: "MOC",
-    marketOnOpen: "MOO",
-    peggedToMarket: "PEG MKT",
-    relative: "REL",
-    boxTop: "BOX TOP",
-    limitOnClose: "LOC",
-    limitOnOpen: "LOO",
-    limitIfTouched: "LIT",
-    peggedToMidpoint: "PEG MID",
-    VWAP: "VWAP",
-    goodAfter: "GAT",
-    goodUntil: "GTD",
-    goodUntilCancelled: "GTC",
-    immediateOrCancel: "IOC",
-    oneCancelsAll: "OCA",
-    volatility: "VOL"
-};
-
-Order.RULE80A = { 
-    individual: "I",
-    agency: "A",
-    agentOtherMember: "W",
-    individualPTIA: "J",
-    agencyPTIA: "U",
-    agentOtherMemberPTIA: "M",
-    individualPT: "K",
-    agencyPT: "Y",
-    agentOtherMemberPT: "N"
-};
-
-Order.TIME_IN_FORCE = {
-    day: "DAY",
-    goodUntilCancelled: "GTC",
-    immediateOrCancel: "IOC",
-    goodUntil: "GTD"
-};
-
-module.exports = Order;
-},{"./realtime":16}],12:[function(require,module,exports){
+},{"../realtime":15,"sugar":18}],12:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1488,88 +1182,13 @@ class OrderBook extends MarketData {
 }
 
 module.exports = OrderBook;
-},{"./marketdata":10,"sugar":23}],13:[function(require,module,exports){
-"use strict";
-
-const RealTime = require("./realtime");
-
-class Orders extends RealTime {
-    
-    constructor(service, all) {
-        super(service);
-        this.all = { };
-    }
-    
-    stream(all) {
-        let request = all ? this.service.allOpenOrders() : this.service.openOrders();
-        
-        this.cancel = () => request.cancel();
-        
-        let me = this;
-        request.on("data", data => {
-            me.all[data.orderId] = data;
-        }).on("end", () => {
-            me.emit("load");
-        }).on("error", err => {
-            me.emit("error", err);
-        }).send();
-    }
-    
-    autoOpenOrders(autoBind) {
-        this.service.autoOpenOrders(autoBind);
-    }
-    
-    cancelAllOrders() {
-        this.service.globalCancel();
-    }
-    
-}
-
-module.exports = Orders;
-},{"./realtime":16}],14:[function(require,module,exports){
-"use strict";
-
-const RealTime = require("./realtime");
-
-class Positions extends RealTime {
-    
-    constructor(service) {
-        super(service);
-        this.accounts = { };
-    }
-    
-    stream() {
-        let request = this.service.positions();
-        
-        this.cancel = () => {
-            request.cancel();
-            return true;
-        }
-        
-        request.on("data", data => {
-            if (!this.accounts[data.account]) {
-                this.accounts[data.account] = { };    
-            }
-            
-            this.accounts[data.account][data.contract.conId] = data;
-            this.emit("update", data);
-        }).on("end", cancel => {
-            this.emit("load");
-        }).on("error", err => {
-            this.emit("error", err);
-        }).send();
-    }
-    
-}
-
-module.exports = Positions;
-},{"./realtime":16}],15:[function(require,module,exports){
+},{"./marketdata":11,"sugar":18}],13:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
 const MarketData = require("./marketdata"),
-      flags = require("./flags");
+      flags = require("../flags");
 
 function parseQuotePart(datum) {
     let key = datum.name, value = datum.value;
@@ -1659,20 +1278,30 @@ class Quote extends MarketData {
 }
 
 module.exports = Quote;
-},{"./flags":8,"./marketdata":10,"sugar":23}],16:[function(require,module,exports){
+},{"../flags":7,"./marketdata":11,"sugar":18}],14:[function(require,module,exports){
+require("sugar");
+
+const studies = { };
+
+studies.SMA = window => window.map("close").average();
+
+module.exports = studies;
+},{"sugar":18}],15:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
 
 class RealTime extends Events {
     
-    constructor(service) {
+    constructor(session) {
         super();
-        Object.defineProperty(this, 'service', { value: service });
+        this._exclude = [ ];
+        Object.defineProperty(this, 'session', { value: session });
+        Object.defineProperty(this, 'service', { value: session.service });
     }
     
     get fields() {
-        return Object.keys(this).exclude(/\_.*/, "cancel");
+        return Object.keys(this).exclude(/\_.*/, this._exclude, "cancel");
     }
     
     cancel() {
@@ -1682,276 +1311,103 @@ class RealTime extends Events {
 }
 
 module.exports = RealTime;
-},{"events":29}],17:[function(require,module,exports){
+},{"events":24}],16:[function(require,module,exports){
 "use strict";
 
-require("sugar");
+var Events = require("events"),
+    Accounts = require("./accounting/accounts"),
+    Positions = require("./accounting/positions"),
+    Orders = require("./accounting/orders"),
+    Trades = require("./accounting/trades"),
+    Account = require("./accounting/account"),
+    lookup = require("./marketdata");
 
-const RealTime = require("./realtime"),
-      Fundamentals = require("./fundamentals"),
-      Quote = require("./quote"),
-      OrderBook = require("./orderbook"),
-      Charts = require("./charts"),
-      Order = require("./order"),
-      Symbol = require("./symbol");
-
-class Security extends RealTime {
-    
-    constructor(service, contract) {
-        super(service);
-        Object.merge(this, contract);
-    }
-    
-    fundamentals() {
-        return new Fundamentals(this);
-    }
-    
-    quote() {
-        return new Quote(this);
-    }
-    
-    level2() {
-        return new OrderBook(this);
-    }
-    
-    charts() {
-        return new Charts(this);
-    }
-    
-    order(defaults) {
-        return new Order(this.service, this.summary, defaults);
-    }
-    
-    symbol(options) {
-        return new Symbol(this, options);
-    }
-    
-}
-
-module.exports = Security;
-},{"./charts":3,"./fundamentals":9,"./order":11,"./orderbook":12,"./quote":15,"./realtime":16,"./symbol":20,"sugar":23}],18:[function(require,module,exports){
-"use strict";
-
-var RealTime = require("./realtime"),
-    System = require("./system"),
-    Accounts = require("./accounts"),
-    Positions = require("./positions"),
-    Orders = require("./orders"),
-    Executions = require("./executions"),
-    Security = require("./security"),
-    contracts = require("./contract"),
-    Environment = require("./environment");
-
-class Session extends RealTime {
+class Session extends Events {
     
     constructor(service) {
-        super(service);
-        service.socket
-            .on("connected", () => {
-                this.emit("connected");
-            })
-            .on("disconnected", () => {
-                this.emit("disconnected");
+        super();
+        
+        Object.defineProperty(this, 'service', { value: service });
+        this.connectivity = { };
+        this.bulletins = [ ];
+        this.state = "initializing";
+        
+        this.service.socket.once("managedAccounts", data => {
+            this.managedAccounts = Array.isArray(data) ? data : [ data ];
+            this.state = "ready";
+            this.emit("ready");
+        });
+        
+        this.service.socket.on("connected", () => {
+            this.service.system().on("data", data => {
+                if (data.code >= 2103 || data.code <= 2106) {
+                    let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
+                    name = name.split(":");
+
+                    let status = name[0];
+                    name = name[1];
+
+                    this.connectivity[name] = { status: status, time: new Date() };   
+                }
+                
+                this.emit("connectivity", data);
             });
+            
+            this.service.newsBulletins(true).on("data", data => {
+                this.bulletins.push(data);
+                this.emit("bulletin", data);
+            }).on("error", err => {
+                this.emit("error", err);
+            }).send();
+            
+            this.emit("connected");
+            this.state = "connected";
+        }).on("disconnected", () => {
+            this.state = "disconnected";
+            this.emit("disconnected");
+        });
     }
     
-    system() {
-        return new System(this.service);
+    close() {
+        this.service.socket.disconnect();
     }
     
     accounts() {
-        return new Accounts(this.service);
+        return new Accounts(this);
     }
     
     positions() {
-        return new Positions(this.service);
+        return new Positions(this);
     }
     
     orders() {
-        return new Orders(this.service);
+        return new Orders(this);
     }
     
-    executions() {
-        return new Executions(this.service);
+    autoOpenOrders(autoBind) {
+        this.service.autoOpenOrders(autoBind);
+    }
+    
+    cancelAllOrders() {
+        this.service.globalCancel();
+    }
+
+    trades() {
+        return new Trades(this);
+    }
+    
+    account(id) {
+        return new Account(this, id);
     }
     
     securities(description, cb) {
-        contracts(this.service, description, cb);
+        lookup(this, description, cb);
     }
-    
-    environment(options, symbolDefaults) {
-        return new Environment(this, options, symbolDefaults);
-    }
-    
+
 }
 
 module.exports = Session;
-},{"./accounts":2,"./contract":5,"./environment":6,"./executions":7,"./orders":13,"./positions":14,"./realtime":16,"./security":17,"./system":21}],19:[function(require,module,exports){
-require("sugar");
-
-const studies = { };
-
-studies.SMA = window => window.map("close").average();
-
-module.exports = studies;
-},{"sugar":23}],20:[function(require,module,exports){
-"use strict";
-
-require("sugar");
-
-const async = require("async"),
-      MarketData = require("./marketdata"),
-      config = require("./config");
-
-class Symbol extends MarketData {
-    
-    constructor(security, options) {
-        super(security);
-        
-        options = Object.merge(config().symbol, options || { });
-        
-        this.name = options.name || security.summary.localSymbol;
-        
-        let errors = [ ],
-            errorHandler = err => {
-                if (this.loaded) this.emit("error", err);
-                else errors.push(err);
-            };
-        
-        (this.fundamentals = security.fundamentals())
-            .on("error", errorHandler)
-            .on("warning", msg => this.emit("warning", msg));
-        
-        (this.quote = security.quote())
-            .on("error", errorHandler)
-            .on("warning", msg => this.emit("warning", msg));
-        
-        (this.level2 = security.level2())
-            .on("error", errorHandler)
-            .on("warning", msg => this.emit("warning", msg));
-        
-        (this.charts = security.charts())
-            .on("error", errorHandler)
-            .on("warning", msg => this.emit("warning", msg));
-
-        async.series([
-            cb => {
-                if (options.fundamentals && this.fundamentals) {
-                    if (options.fundamentals == "all") this.fundamentals.loadAll(cb);
-                    else if (Array.isArray(options.fundamentals)) this.fundamentals.loadSome(options.fundamentals, cb);
-                    else if (Object.isString(options.fundamentals)) this.fundamentals.load(options.fundamentals, cb);
-                    else cb();
-                }
-                else cb();
-            },
-            cb => {
-                if (options.quote && this.quote) {
-                    if (Array.isArray(options.quote)) this.quote.fields = options.quote;
-                    this.quote.refresh(cb);
-                    if (options.quote != "snapshot") this.quote.stream();
-                }
-                else cb();
-            },
-            cb => {
-                if (options.level2 && this.level2) {
-                    if (options.level2.markets == "all") this.level2.streamAllValidExchanges(options.level2.rows || 10);
-                    else this.level2.stream(options.level2.markets, options.level2.rows || 10);
-                    this.level2.once("load", cb);
-                }
-                else cb();
-            },
-            cb => {
-                if (options.charts && this.charts) {
-                    let sizes = Object.keys(options.charts).filter(k => options.charts[k]);
-                    async.forEachSeries(sizes, (size, cb) => {
-                        let periods = options.charts[k];
-                        this.charts[size].history(err => {
-                            if (!err && periods > 1) {
-                                async.forEach(
-                                    (1).upto(periods).exclude(1), 
-                                    (i, cb) => this.charts[size].history(cb), 
-                                    cb
-                                );
-                            }
-                            else cb(err);
-                        });
-                        
-                        this.charts[size].stream();
-                    }, cb);
-                }
-                else cb();
-            }
-        ], err => {
-            this.loaded = true;
-            if (err) {
-                err = new Error("Errors encountered during " + this.name + " symbol load.");
-                err.errors = errors;
-            }
-            
-            this.emit("load", err);
-        });
-    }
-    
-    order(defaults) {
-        return security.order(defaults);
-    }
-    
-    cancel() {
-        if (this.fundamentals) this.fundamentals.cancel();
-        if (this.quote) this.quote.cancel();
-        if (this.depth) this.depth.cancel();
-        if (this.charts) this.charts.cancel();
-        this.emit("close");
-    }
-    
-}
-
-module.exports = Symbol;
-},{"./config":4,"./marketdata":10,"async":22,"sugar":23}],21:[function(require,module,exports){
-"use strict";
-
-const RealTime = require("./realtime");
-
-class System extends RealTime {
-    
-    constructor(service) {
-        super(service);
-        this.marketDataConnections = { };
-    }
-    
-    stream() {
-        this.service.system().on("data", data => {
-            if (data.code >= 2103 || data.code <= 2106) {
-                let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
-                name = name.split(":");
-                
-                let status = name[0];
-                name = name[1];
-                
-                this.marketDataConnections[name] = status;
-                this.emit("marketDataConnectionChange", name, status);
-            }
-            
-            this.emit("update", data);
-        });
-        
-        let req = this.service.newsBulletins(true);
-        this.cancel = () => {
-            req.cancel();
-            return true;
-        };
-        
-        req.on("data", data => {
-            this.emit("update", data);
-        }).on("error", err => {
-            this.emit("error", err);
-        });
-    }
-    
-}
-
-module.exports = System;
-},{"./realtime":16}],22:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata":10,"events":24}],17:[function(require,module,exports){
 (function (process,global){
 /*!
  * async
@@ -3220,7 +2676,7 @@ module.exports = System;
 }());
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":30}],23:[function(require,module,exports){
+},{"_process":25}],18:[function(require,module,exports){
 (function (global,Buffer){
 /*
  *  Sugar v1.5.0
@@ -13719,7 +13175,7 @@ module.exports = System;
 
 }).call(this);
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"buffer":28}],24:[function(require,module,exports){
+},{"buffer":23}],19:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -13792,7 +13248,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":27}],25:[function(require,module,exports){
+},{"./request":22}],20:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -13876,7 +13332,7 @@ class Proxy {
         
         this.exerciseOptions = request("exerciseOptions", 10000, socket, dispatch);
         
-        this.newsBulletins = request("news", 10000, socket, dispatch);
+        this.newsBulletins = request("newsBulletins", null, socket, dispatch);
         
         this.queryDisplayGroups = request("queryDisplayGroups", 10000, socket, dispatch);
         
@@ -13911,7 +13367,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":24,"./relay":26}],26:[function(require,module,exports){
+},{"./dispatch":19,"./relay":21}],21:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -13954,7 +13410,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],27:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -14070,9 +13526,9 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":29}],28:[function(require,module,exports){
+},{"events":24}],23:[function(require,module,exports){
 
-},{}],29:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -14376,7 +13832,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],30:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 

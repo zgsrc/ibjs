@@ -13,12 +13,19 @@ class Session extends Events {
     constructor(service) {
         super();
         
-        this.service = service;
+        Object.defineProperty(this, 'service', { value: service });
         this.connectivity = { };
+        this.bulletins = [ ];
         this.state = "initializing";
         
+        this.service.socket.once("managedAccounts", data => {
+            this.managedAccounts = Array.isArray(data) ? data : [ data ];
+            this.state = "ready";
+            this.emit("ready");
+        });
+        
         this.service.socket.on("connected", () => {
-            let handler = data => {
+            this.service.system().on("data", data => {
                 if (data.code >= 2103 || data.code <= 2106) {
                     let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
                     name = name.split(":");
@@ -26,37 +33,29 @@ class Session extends Events {
                     let status = name[0];
                     name = name[1];
 
-                    this.connectivity[name] = status;   
+                    this.connectivity[name] = { status: status, time: new Date() };   
                 }
                 
-                this.emit("system", data);
-            };
+                this.emit("connectivity", data);
+            });
             
-            let system = this.service.system().on("data", handler).send(),
-                bulletins = this.service.newsBulletins(true).on("data", data => this.emit("system", data)).on("error", err => this.emit("error", err)).send();
-            
-            this.cancel = () => {
-                system.off("data", handler);
-                bulletins.cancel();
-                return true;
-            };
+            this.service.newsBulletins(true).on("data", data => {
+                this.bulletins.push(data);
+                this.emit("bulletin", data);
+            }).on("error", err => {
+                this.emit("error", err);
+            }).send();
             
             this.emit("connected");
             this.state = "connected";
-            
-            this.service.managedAccounts().once("data", data => {
-                this.managedAccounts = data;
-                this.state = "ready";
-                this.emit("ready");
-            }).once("error", err => {                
-                this.state = "bad";
-                this.emit("error", err.timeout ? new Error("IB API unresponsive. Try restarting IB software and reconnecting.") : err);
-            });
-            
         }).on("disconnected", () => {
             this.state = "disconnected";
             this.emit("disconnected");
         });
+    }
+    
+    close() {
+        this.service.socket.disconnect();
     }
     
     accounts() {

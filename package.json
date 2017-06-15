@@ -11,7 +11,7 @@
     "xml2js": "^0.4.17"
   },
   "scripts": {
-    "start": "node index.js",
+    "start": "node terminal.js",
     "browserify": "browserify ./browser/browserify.js -o ./browser/ib.js"
   },
   "keywords": [

@@ -21,23 +21,27 @@ function printError(err, prefix) {
 }
 
 const terminal = exports.terminal = configuration => {
-    console.log("Starting...".green);
-    let session = ib.session(configuration).on("connected", () => {
-        console.log("Connected.".green);
+    process.on('uncaughtException', err => {
+        printError(err);
+    });
+    
+    console.log("Starting".red);
+    let session = ib.open(configuration).on("connected", () => {
+        console.log("Connected".yellow);
     }).on("error", err => {
         printError(err);
     }).on("ready", () => {
-        console.log("Ready.".green);
+        console.log("Ready".green);
         console.log("Use the 'session' variable to access the session. Type .exit to quit.".gray);
         
         let cmd = repl.start('> ');
         cmd.context.session = session;
         cmd.on("exit", () => {
-            console.log("Disconnecting...".gray);
-            session.service.socket.disconnect();
+            console.log("Disconnecting".yellow);
+            session.close();
         });
     }).on("disconnected", () => {
-        console.log("Disconnected".red)
+        console.log("Disconnected".red);
         process.exit(0);
     });
 };

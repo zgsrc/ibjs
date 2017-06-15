@@ -14,26 +14,17 @@ const IB = require("ib"),
     "timeout": 1000,            // Timeout when connecting
     "host": "localhost",        // Host name of IB software
     "port": 4001,               // Socket port to connect to IB software
-    "dispatch": new Dispatch()  // Custom dispatch object
+    "dispatch": new Dispatch(), // Custom dispatch object
+    "trace": "messages.log"     // IB API event logging for audit or debug
 }
 */
-const session = exports.session = options => {
-    options = options || { };
-
-    let ib = options.ib || new IB({
-        clientId: options.id || exports.id++,
-        host: options.host || "127.0.0.1",
-        port: options.port || 4001
-    });
-    
-    return new Session(new Service(ib, options.dispatch || new Dispatch()));
-};
-
-const connect = exports.connect = (options, cb) => {
+const open = exports.open = (options, cb) => {
     if (Object.isFunction(options) && cb == null) {
         cb = options;
-        options = null;
+        options = { };
     }
+    
+    options = options || { };
     
     let sess = session(options);
     
@@ -52,6 +43,25 @@ const connect = exports.connect = (options, cb) => {
     }).connect();
     
     return sess;
+};
+
+const session = exports.session = options => {
+    options = options || { };
+
+    let ib = options.ib || new IB({
+        clientId: options.id || exports.id++,
+        host: options.host || "127.0.0.1",
+        port: options.port || 4001
+    });
+    
+    if (options.trace) {
+        ib.on("all", (name, data) => {
+            if (name == "sent" || name == "received" || name == "server") return;
+            console.log(name + ": " + data);
+        });
+    }
+    
+    return new Session(new Service(ib, options.dispatch || new Dispatch()));
 };
 
 const proxy = exports.proxy = (socket, dispatch) => {
