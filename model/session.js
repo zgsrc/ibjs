@@ -55,7 +55,7 @@ class Session extends Events {
         });
     }
     
-    get clientId {
+    get clientId() {
         return this.service.socket.clientId;
     }
     
