@@ -4,6 +4,8 @@
 
 Interactive Brokers SDK is a framework build atop the [native javascript API](https://github.com/pilwon/node-ib).  Straightforward programmatic access to your portfolio and market data subscriptions.
 
+    Refactor of object model under way that introduces breaking changes.  Unstable API for the next week or so.
+
 ## Installation
 
     npm install ib-sdk
