@@ -49,14 +49,7 @@ Learn more about exploring the SDK using the terminal [here](./docs/terminal.md)
 
 const sdk = require("ib-sdk");
 
-let session = sdk.open({
-    timeout: 1000,            // Timeout when connecting
-    host: "localhost",        // Host name of IB software
-    port: 4001,               // Socket port to connect to IB software
-    id: 0,                    // Client id used to connect to API
-    trace: "messages.log",    // IB API event logging for audit or debug,
-    dispatch: new Dispatch()  // Custom dispatch object (advanced use)
-}).on("ready", () => {
+let session = sdk.open({ port: 4001 }).on("ready", () => {
     
     // IB news bulletins (margin calls, special labelling, etc)
     let bulletins = session.bulletins;
