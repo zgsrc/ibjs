@@ -2,12 +2,12 @@
 
 require("sugar");
 
-const RealTime = require("../realtime"),
+const flags = require("../flags"),
+      MarketData = require("./marketdata"),
       Fundamentals = require("./fundamentals"),
       Quote = require("./quote"),
-      OrderBook = require("./orderbook"),
-      Charts = require("./charts"),
-      flags = require("../flags");
+      Depth = require("./depth"),
+      Charts = require("./charts");
 
 function parse(definition) {
     if (Object.isNumber(definition)) {
@@ -124,105 +124,28 @@ function parse(definition) {
     }
 }
 
-class Security extends RealTime {
+class Security extends MarketData {
     
     constructor(session, contract) {
-        super(session);
-        Object.defineProperty(this, 'contract', { value: contract });
-        
-        if (this.contract.secType == "STOCK") {
-            this.fundamentals = new Fundamentals(this);
-        }
-        
-        this.quote = new Quote(this);
-        this.level2 = new OrderBook(this);
-        this.charts = new Charts(this);
+        super(session, contract);
+        this.quote = new Quote(session, contract);
+        this.depth = new Depth(session, contract);
+        this.charts = new Charts(session, contract);
     }
     
-    load(options, cb) {
-        let errors = [ ],
-            errorHandler = err => {
-                if (this.loaded) this.emit("error", err);
-                else errors.push(err);
-            };
-        
-        if (options.fundamentals && this.fundamentals) {
-            this.fundamentals.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
-        }   
-        
-        if (options.quote) {
-            this.quote.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
-        }
-        
-        if (options.level2) {
-            this.level2.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
-        }
-        
-        if (options.charts) {
-            this.charts.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
-        }
-
-        async.series([
-            cb => {
-                if (this.fundamentals) {
-                    if (options.fundamentals == "all") this.fundamentals.loadAll(cb);
-                    else if (Array.isArray(options.fundamentals)) this.fundamentals.loadSome(options.fundamentals, cb);
-                    else if (Object.isString(options.fundamentals)) this.fundamentals.load(options.fundamentals, cb);
-                    else cb();
-                }
-                else cb();
-            },
-            cb => {
-                if (this.quote) {
-                    if (Array.isArray(options.quote)) this.quote.fields = options.quote;
-                    this.quote.refresh(cb);
-                    if (options.quote != "snapshot") this.quote.stream();
-                }
-                else cb();
-            },
-            cb => {
-                if (this.level2) {
-                    if (options.level2.markets == "all") this.level2.streamAllValidExchanges(options.level2.rows || 10);
-                    else this.level2.stream(options.level2.markets, options.level2.rows || 10);
-                    this.level2.once("load", cb);
-                }
-                else cb();
-            },
-            cb => {
-                if (this.charts) {
-                    let sizes = Object.keys(options.charts).filter(k => options.charts[k]);
-                    async.forEachSeries(sizes, (size, cb) => {
-                        let periods = options.charts[k];
-                        this.charts[size].history(err => {
-                            if (!err && periods > 1) {
-                                async.forEach(
-                                    (1).upto(periods).exclude(1), 
-                                    (i, cb) => this.charts[size].history(cb), 
-                                    cb
-                                );
-                            }
-                            else cb(err);
-                        });
-                        
-                        this.charts[size].stream();
-                    }, cb);
-                }
-                else cb();
-            }
-        ], err => {
-            this.loaded = true;
-            if (err) {
-                err = new Error("Errors encountered during " + this.name + " symbol load.");
-                err.errors = errors;
-            }
-            
-            this.emit("load", err);
-            if (cb) cb(err);
-        });
+    fundamentals(type, cb) {
+        this.service.fundamentalData(this.contract.summary, flags.FUNDAMENTALS_REPORTS[type])
+            .on("data", (data, cancel) => {
+                this[type] = data;
+                cb(null, data);
+            }).on("end", cancel => {
+                cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message));
+            }).on("error", (err, cancel) => {
+                cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message));
+            }).send();
     }
     
     close() {
-        if (this.fundamentals) this.fundamentals.close();
         if (this.quote) this.quote.close();
         if (this.depth) this.depth.close();
         if (this.charts) this.charts.close();
@@ -230,7 +153,7 @@ class Security extends RealTime {
     
 }
 
-function contracts(session, description, cb) {
+function securities(session, description, cb) {
     let summary = description;
     try { summary = parse(description); }
     catch (ex) { cb(ex); return; }
@@ -243,4 +166,4 @@ function contracts(session, description, cb) {
     }).on("error", err => cb(err, list)).on("end", () => cb(null, list)).send();
 }
 
-module.exports = contracts;
+module.exports = securities;

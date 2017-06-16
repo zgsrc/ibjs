@@ -6,9 +6,9 @@ const RealTime = require("../realtime");
 
 class MarketData extends RealTime {
     
-    constructor(security) {
-        super(security);
-        Object.defineProperty(this, 'security', { value: security });
+    constructor(session, contract) {
+        super(session);
+        Object.defineProperty(this, 'contract', { value: contract });
     }
     
 }

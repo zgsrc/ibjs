@@ -64,6 +64,10 @@ class Session extends Events {
     }
     
     account(options) {
+        if (options && !options.id) {
+            options.id = this.managedAccounts.first();
+        }
+        
         return new Account(this, options || this.managedAccounts.first());
     }
 
