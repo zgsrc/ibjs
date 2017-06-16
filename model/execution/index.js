@@ -1,10 +1,11 @@
 "use strict";
 
-const RealTime = require("../realtime");
+const RealTime = require("../realtime"),
+      flags = require("../flags");
 
 class Order extends RealTime {
     
-    constructor(service, contract, defaults) {
+    constructor(session, contract, defaults) {
         super(service);
         this.contract = contract;
         this.ticket = defaults || { tif: "Day" };
@@ -159,61 +160,5 @@ class Order extends RealTime {
     }
     
 }
-
-Order.SIDE = {
-    buy: "BUY",
-    sell: "SELL",
-    short: "SSHORT"
-};
-
-Order.ORDER_TYPE = {
-    limit: "LMT",
-    marketToLimit: "MTL",
-    marketWithProtection: "MKT PRT",
-    requestForQuote: "QUOTE",
-    stop: "STP",
-    stopLimit: "STP LMT",
-    trailingLimitIfTouched: "TRAIL LIT",
-    trailingMarketIfTouched: "TRAIL MIT",
-    trailingStop: "TRAIL",
-    trailingStopLimit: "TRAIL LIMIT",
-    market: "MKT",
-    marketIfTouched: "MIT",
-    marketOnClose: "MOC",
-    marketOnOpen: "MOO",
-    peggedToMarket: "PEG MKT",
-    relative: "REL",
-    boxTop: "BOX TOP",
-    limitOnClose: "LOC",
-    limitOnOpen: "LOO",
-    limitIfTouched: "LIT",
-    peggedToMidpoint: "PEG MID",
-    VWAP: "VWAP",
-    goodAfter: "GAT",
-    goodUntil: "GTD",
-    goodUntilCancelled: "GTC",
-    immediateOrCancel: "IOC",
-    oneCancelsAll: "OCA",
-    volatility: "VOL"
-};
-
-Order.RULE80A = { 
-    individual: "I",
-    agency: "A",
-    agentOtherMember: "W",
-    individualPTIA: "J",
-    agencyPTIA: "U",
-    agentOtherMemberPTIA: "M",
-    individualPT: "K",
-    agencyPT: "Y",
-    agentOtherMemberPT: "N"
-};
-
-Order.TIME_IN_FORCE = {
-    day: "DAY",
-    goodUntilCancelled: "GTC",
-    immediateOrCancel: "IOC",
-    goodUntil: "GTD"
-};
 
 module.exports = Order;

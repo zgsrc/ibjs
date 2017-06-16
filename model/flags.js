@@ -93,3 +93,67 @@ const SECURITY_TYPE = {
 };
 
 exports.SECURITY_TYPE = SECURITY_TYPE;
+
+const SIDE = {
+    buy: "BUY",
+    sell: "SELL",
+    short: "SSHORT"
+};
+
+exports.SIDE = SIDE;
+
+const ORDER_TYPE = {
+    limit: "LMT",
+    marketToLimit: "MTL",
+    marketWithProtection: "MKT PRT",
+    requestForQuote: "QUOTE",
+    stop: "STP",
+    stopLimit: "STP LMT",
+    trailingLimitIfTouched: "TRAIL LIT",
+    trailingMarketIfTouched: "TRAIL MIT",
+    trailingStop: "TRAIL",
+    trailingStopLimit: "TRAIL LIMIT",
+    market: "MKT",
+    marketIfTouched: "MIT",
+    marketOnClose: "MOC",
+    marketOnOpen: "MOO",
+    peggedToMarket: "PEG MKT",
+    relative: "REL",
+    boxTop: "BOX TOP",
+    limitOnClose: "LOC",
+    limitOnOpen: "LOO",
+    limitIfTouched: "LIT",
+    peggedToMidpoint: "PEG MID",
+    VWAP: "VWAP",
+    goodAfter: "GAT",
+    goodUntil: "GTD",
+    goodUntilCancelled: "GTC",
+    immediateOrCancel: "IOC",
+    oneCancelsAll: "OCA",
+    volatility: "VOL"
+};
+
+exports.ORDER_TYPE = ORDER_TYPE;
+
+const RULE80A = { 
+    individual: "I",
+    agency: "A",
+    agentOtherMember: "W",
+    individualPTIA: "J",
+    agencyPTIA: "U",
+    agentOtherMemberPTIA: "M",
+    individualPT: "K",
+    agencyPT: "Y",
+    agentOtherMemberPT: "N"
+};
+
+exports.RULE80A = RULE80A;
+
+const TIME_IN_FORCE = {
+    day: "DAY",
+    goodUntilCancelled: "GTC",
+    immediateOrCancel: "IOC",
+    goodUntil: "GTD"
+};
+
+exports.TIME_IN_FORCE = TIME_IN_FORCE;
