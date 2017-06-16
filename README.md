@@ -68,7 +68,9 @@ let session = sdk.open({ port: 4001 }).on("ready", () => {
         orders = session.orders(),
         trades = session.trades();
     
+    // Close connection and fire 'disconnect' event
     session.close();
+    
 });
 ```
 
