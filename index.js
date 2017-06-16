@@ -36,6 +36,7 @@ const open = exports.open = (options, cb) => {
     return sess;
 };
 
+<<<<<<< HEAD
 const session = exports.session = options => {
     options = options || { };
 
@@ -51,6 +52,25 @@ const session = exports.session = options => {
                 throw err;
             });
         });
+=======
+const environment = exports.environment = (configuration, cb) => {
+    if (cb == null && Object.isFunction(configuration)) {
+        cb = configuration;
+        configuration = config();
+    }
+    else if (configuration && /[0-9]+/.test(configuration)) {
+        var port = parseInt(configuration);
+        configuration = config();
+        configuration.connection.port = port;
+    }
+    else if (configuration && Object.isString(configuration)) {
+        if (fs.existsSync( configuration)) {
+            configuration = JSON.parse(fs.readFileSync(configuration).toString());
+        } else {
+            cb(new Error(`No configuration file '${configuration}' exists.`));
+            return;
+        }
+>>>>>>> 58478201b54690d054c1def9ffc13a646182de64
     }
     
     return new Session(new Service(ib, options.dispatch || new Dispatch()));
