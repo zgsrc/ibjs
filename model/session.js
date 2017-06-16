@@ -6,7 +6,7 @@ var Events = require("events"),
     Orders = require("./accounting/orders"),
     Trades = require("./accounting/trades"),
     Account = require("./accounting/account"),
-    lookup = require("./marketdata");
+    securities = require("./marketdata/security");
 
 class Session extends Events {
     
@@ -88,7 +88,7 @@ class Session extends Events {
     }
 
     securities(description, cb) {
-        lookup(this, description, cb);
+        securities(this, description, cb);
     }
     
 }

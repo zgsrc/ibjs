@@ -4,7 +4,6 @@ require("sugar");
 
 const flags = require("../flags"),
       MarketData = require("./marketdata"),
-      Fundamentals = require("./fundamentals"),
       Quote = require("./quote"),
       Depth = require("./depth"),
       Charts = require("./charts");
