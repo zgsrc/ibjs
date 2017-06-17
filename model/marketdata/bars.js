@@ -14,9 +14,7 @@ class Bars extends MarketData {
         this.field = "TRADES";
         this.regularTradingHours = true;
         this.dateFormat = 1;
-        
         this.barSize = barSize;
-        
         this.series = [ ];
     }
     
