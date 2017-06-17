@@ -12,7 +12,7 @@ class RealTime extends Events {
     }
     
     get fields() {
-        return Object.keys(this).exclude(/\_.*/, this._exclude, "cancel");
+        return Object.keys(this).exclude(/\_.*/, this._exclude, "close", "domain");
     }
     
     close() {

@@ -8,7 +8,7 @@ class Account extends RealTime {
     constructor(session, options) {
         super(session);
         
-        if (Object.isNumber(options)) {
+        if (Object.isString(options)) {
             options = { 
                 id: options,
                 orders: true,
