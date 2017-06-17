@@ -71,7 +71,7 @@ class Account extends RealTime {
             if (trades) trades.close();
         };
         
-        setTimeout(() => this.emit("load"), 2500);
+        setTimeout(() => this.emit("load"), 500);
     }
     
 }

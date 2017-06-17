@@ -24,7 +24,7 @@ exports.open = (options, cb) => {
         ));
         
         cb = null;
-    }, options.timeout || 2500);
+    }, options.timeout || 500);
     
     session(options).once("ready", sess => {
         clearTimeout(timeout);
