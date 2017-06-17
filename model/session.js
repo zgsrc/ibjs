@@ -96,13 +96,3 @@ class Session extends Events {
 }
 
 module.exports = Session;
-
-/*
-if (options.trace) {
-    ib.on("all", (name, data) => {
-        fs.appendFile(options.trace, (new Date()) + " | " + name + ": " + data + "\n", err => {
-            throw err;
-        });
-    });
-}
-*/

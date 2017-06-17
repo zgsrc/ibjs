@@ -128,9 +128,11 @@ function securities(session, description, cb) {
     console.log(description + " = " + JSON.stringify(summary));
     
     let list = [ ];
-    session.service.contractDetails(summary).on("data", contract => {
-        list.push(new Security(session, contract));
-    }).on("error", err => cb(err, list)).on("end", () => cb(null, list)).send();
+    session.service.contractDetails(summary)
+        .on("data", contract => list.push(new Security(session, contract)))
+        .on("error", err => cb(err, list))
+        .on("end", () => cb(null, list))
+        .send();
 }
 
 module.exports = securities;

@@ -50,6 +50,14 @@ const session = exports.session = options => {
         port: options.port || 4001
     });
     
+    if (options.trace) {
+        ib.on("all", (name, data) => {
+            fs.appendFile(options.trace, (new Date()) + " | " + name + ": " + data + "\n", err => {
+                throw err;
+            });
+        });
+    }
+    
     return new Session(new Service(ib, options.dispatch || new Dispatch()));
 };
 

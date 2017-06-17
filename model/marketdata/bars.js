@@ -109,3 +109,5 @@ class Bars extends MarketData {
     }
     
 }
+
+module.exports = Bars;

@@ -30,6 +30,18 @@ const terminal = exports.terminal = configuration => {
 
             let cmd = repl.start('> ');
             cmd.context.session = session;
+            cmd.context.$ = text => {
+                session.securities(text, (err, list) => {
+                    if (err) printError(err);
+                    else {
+                        list.map(l => {
+                            cmd.context.$[l.contract.summary.localSymbol] = l;
+                            console.log(l.contract.summary.localSymbol);
+                        });
+                    }
+                });
+            };
+            
             cmd.on("exit", () => session.close());
             
             session.on("disconnected", () => {
