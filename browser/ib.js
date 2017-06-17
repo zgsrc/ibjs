@@ -6,32 +6,34 @@ window.ib = {
     session: () => new Session(new Proxy(socket)),
     flags: require("../model/flags")
 };
-},{"../model/flags":7,"../model/session":16,"../service/proxy":20}],2:[function(require,module,exports){
+},{"../model/flags":7,"../model/session":17,"../service/proxy":20}],2:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
 
 class Account extends RealTime {
     
-    constructor(session, id) {
+    /* string id, boolean orders, boolean trades */
+    constructor(session, options) {
         super(session);
-        this.id = id;
-        this.positions = { };
-    }
-    
-    /* string id, object/boolean orders, object/boolean trades */
-    stream(options) {
-        if (Object.isNumber(options)) {
+        
+        if (Object.isString(options)) {
             options = { 
-                id: options 
+                id: options,
+                orders: true,
+                trades: true
             };
         }
         
-        if (options.id) {
-            this.id = options.id;
+        if (!Object.isString(options.id)) {
+            throw new Error("Account id is required.");
         }
         
-        let account = this.service.accountUpdates(this.id).on("data", data => {
+        this._exclude.push("positions", "orders", "trades");
+        
+        this.positions = new RealTime(session);
+        
+        let account = this.service.accountUpdates(options.id).on("data", data => {
             if (data.key) {
                 var value = data.value;
                 if (/^\-?[0-9]+(\.[0-9]+)?$/.test(value)) value = parseFloat(value);
@@ -56,7 +58,7 @@ class Account extends RealTime {
                 this.emit("update", { type: "position", field: data.contract.conId, value: data });
             }
             else {
-                this.emit("warning", "Unrecognized account update " + JSON.stringify(data));
+                this.emit("error", "Unrecognized account update " + JSON.stringify(data));
             }
         }).on("error", err => {
             this.emit("error", err);
@@ -64,29 +66,27 @@ class Account extends RealTime {
         
         let orders = null;
         if (options.orders) {
-            this.orders = this.session.orders();
-            this.orders.stream(options.orders);
+            this.orders = this.session.orders({ all: true, autoOpen: true, account: options.id });
         }
         
         let trades = null;
         if (options.trades) {
-            this.trades = this.session.trades();
-            this.trades.stream(options.trades);
+            this.trades = this.session.trades({ account: options.id });
         }
         
-        this.cancel = () => {
+        this.close = () => {
             account.cancel();
-            if (orders) orders.cancel();
-            if (trades) trades.cancel();
-            
-            return true;
-        }
+            if (orders) orders.close();
+            if (trades) trades.close();
+        };
+        
+        setTimeout(() => this.emit("load"), 500);
     }
     
 }
 
 module.exports = Account;
-},{"../realtime":15}],3:[function(require,module,exports){
+},{"../realtime":16}],3:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime"),
@@ -94,19 +94,15 @@ const RealTime = require("../realtime"),
 
 class Accounts extends RealTime {
     
-    constructor(session) {
-        super(session);
-    }
-    
     /* string group, array tags, boolean positions */
-    stream(options) {
+    constructor(session, options) {
+        super(session);
+
         if (options == null) {
             options = { positions: true };
         }
         
-        let summary = null, positions = null;
-            
-        summary = this.service.accountSummary(
+        let positions = null, summary = this.service.accountSummary(
             options.group || "All", 
             options.tags || Object.values(flags.ACCOUNT_TAGS).join(',')
         ).on("data", datum => {
@@ -150,31 +146,25 @@ class Accounts extends RealTime {
             this.emit("error", err);
         }).send();
         
-        this.cancel = () => {
+        this.close = () => {
             summary.cancel();
-            if (positions) {
-                positions.cancel();
-            }
-
-            return true;
-        }
+            if (positions) positions.cancel();
+        };
     }
     
 }
 
 module.exports = Accounts;
-},{"../flags":7,"../realtime":15}],4:[function(require,module,exports){
+},{"../flags":7,"../realtime":16}],4:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
 
 class Orders extends RealTime {
     
-    constructor(session) {
+    constructor(session, options) {
         super(session);
-    }
-    
-    stream(options) {
+
         if (options == null) {
             options = { all: true };
         }
@@ -184,7 +174,7 @@ class Orders extends RealTime {
         }
         
         let orders = options.all ? this.service.allOpenOrders() : this.service.openOrders();
-        this.cancel = () => orders.cancel();
+        this.close = () => orders.cancel();
         
         orders.on("data", data => {
             this[data.orderId] = data;
@@ -195,10 +185,6 @@ class Orders extends RealTime {
         }).send();
     }
     
-    autoOpenOrders(autoBind) {
-        this.service.autoOpenOrders(autoBind);
-    }
-    
     cancelAllOrders() {
         this.service.globalCancel();
     }
@@ -206,18 +192,16 @@ class Orders extends RealTime {
 }
 
 module.exports = Orders;
-},{"../realtime":15}],5:[function(require,module,exports){
+},{"../realtime":16}],5:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
 
 class Positions extends RealTime {
     
-    constructor(session) {
+    constructor(session, options) {
         super(session);
-    }
-    
-    stream(options) {
+
         let positions = this.service.positions().on("data", data => {
             if (!this[data.contract.conId]) {
                 this[data.contract.conId] = { };    
@@ -231,16 +215,13 @@ class Positions extends RealTime {
             this.emit("error", err);
         }).send();
         
-        this.cancel = () => {
-            positions.cancel();
-            return true;
-        };
+        this.close = () => positions.cancel();
     }
     
 }
 
 module.exports = Positions;
-},{"../realtime":15}],6:[function(require,module,exports){
+},{"../realtime":16}],6:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -249,12 +230,11 @@ class Trades extends RealTime {
     
     constructor(session, options) {
         super(session);
+
+        options = options || { };
+        
         this.filter = { };
         this._exclude.push("filter");
-    }
-    
-    stream(options) {
-        options = options || { };
         
         if (options.account) this.filter.acctCode = options.account;
         if (options.client) this.filter.clientId = options.client;
@@ -264,30 +244,26 @@ class Trades extends RealTime {
         if (options.symbol) this.filter.symbol = options.symbol;
         if (options.time) this.filter.time = options.time;
         
-        let request = this.service.executions(this.filter);
-        request.on("data", data => {
+        let trades = this.service.executions(this.filter).on("data", data => {
             if (!this[data.exec.permId]) {
                 this[data.exec.permId] = { };
             }
 
             this[data.exec.permId][data.exec.execId] = data;
-            this.emit("update");
+            this.emit("update", data);
         }).on("error", err => {
             this.emit("error", err);
         }).on("end", () => {
             this.emit("load");
         }).send();
         
-        this.cancel = () => {
-            request.cancel();
-            return true;
-        };
+        this.close = () => trades.cancel();
     }
     
 }
 
 module.exports = Trades;
-},{"../realtime":15}],7:[function(require,module,exports){
+},{"../realtime":16}],7:[function(require,module,exports){
 const TAGS = {
     accountType: "AccountType",
     netLiquidation: "NetLiquidation",
@@ -383,33 +359,94 @@ const SECURITY_TYPE = {
 };
 
 exports.SECURITY_TYPE = SECURITY_TYPE;
+
+const SIDE = {
+    buy: "BUY",
+    sell: "SELL",
+    short: "SSHORT"
+};
+
+exports.SIDE = SIDE;
+
+const ORDER_TYPE = {
+    limit: "LMT",
+    marketToLimit: "MTL",
+    marketWithProtection: "MKT PRT",
+    requestForQuote: "QUOTE",
+    stop: "STP",
+    stopLimit: "STP LMT",
+    trailingLimitIfTouched: "TRAIL LIT",
+    trailingMarketIfTouched: "TRAIL MIT",
+    trailingStop: "TRAIL",
+    trailingStopLimit: "TRAIL LIMIT",
+    market: "MKT",
+    marketIfTouched: "MIT",
+    marketOnClose: "MOC",
+    marketOnOpen: "MOO",
+    peggedToMarket: "PEG MKT",
+    relative: "REL",
+    boxTop: "BOX TOP",
+    limitOnClose: "LOC",
+    limitOnOpen: "LOO",
+    limitIfTouched: "LIT",
+    peggedToMidpoint: "PEG MID",
+    VWAP: "VWAP",
+    goodAfter: "GAT",
+    goodUntil: "GTD",
+    goodUntilCancelled: "GTC",
+    immediateOrCancel: "IOC",
+    oneCancelsAll: "OCA",
+    volatility: "VOL"
+};
+
+exports.ORDER_TYPE = ORDER_TYPE;
+
+const RULE80A = { 
+    individual: "I",
+    agency: "A",
+    agentOtherMember: "W",
+    individualPTIA: "J",
+    agencyPTIA: "U",
+    agentOtherMemberPTIA: "M",
+    individualPT: "K",
+    agencyPT: "Y",
+    agentOtherMemberPT: "N"
+};
+
+exports.RULE80A = RULE80A;
+
+const TIME_IN_FORCE = {
+    day: "DAY",
+    goodUntilCancelled: "GTC",
+    immediateOrCancel: "IOC",
+    goodUntil: "GTD"
+};
+
+exports.TIME_IN_FORCE = TIME_IN_FORCE;
 },{}],8:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
-const async = require("async"),
-      MarketData = require("./marketdata"),
+const MarketData = require("./marketdata"),
       studies = require("./studies");
 
 class Bars extends MarketData {
     
-    constructor(security, barSize) {
-        super(security);
+    constructor(session, contract, barSize) {
+        super(session, contract);
         
         this.cursor = Date.create();
         this.field = "TRADES";
         this.regularTradingHours = true;
         this.dateFormat = 1;
-        
         this.barSize = barSize;
-        
         this.series = [ ];
     }
     
     history(cb) {
-        let req = this.security.service.historicalData(
-            this.security.summary, 
+        let req = this.service.historicalData(
+            this.contract, 
             this.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : ""), 
             this.barSize.duration, 
             this.barSize.text, 
@@ -439,8 +476,8 @@ class Bars extends MarketData {
     }
     
     stream() {
-        let req = this.security.service.realTimeBars(
-            this.security.summary, 
+        let req = this.service.realTimeBars(
+            this.contract, 
             this.barSize.integer, 
             this.field, 
             this.regularTradingHours
@@ -455,15 +492,12 @@ class Bars extends MarketData {
         }).on("error", (err, cancel) => {
             if (err.timeout) {
                 cancel();
-                this.emit("warning", `${this.security.summary.localSymbol} ${this.barSize.text} streaming bars request timed out. (Outside market hours?)`);
+                this.emit("error", `${this.contract.localSymbol} ${this.barSize.text} streaming bars request timed out. (Outside market hours?)`);
             }
             else this.emit("error", err);
         }).send();
         
-        this.cancel = () => {
-            req.cancel();
-            return true;
-        };
+        this.close = () => req.cancel();
     }
     
     lookup(timestamp) { 
@@ -502,197 +536,121 @@ class Bars extends MarketData {
     
 }
 
+module.exports = Bars;
+},{"./marketdata":11,"./studies":15,"sugar":18}],9:[function(require,module,exports){
+"use strict";
+
+const MarketData = require("./marketdata"),
+      Bars = require("./bars");
+
 class Charts extends MarketData {
     
-    constructor(security) {
-        super(security);
+    constructor(session, contract) {
+        
+        super(session, contract);
     
-        this.ONE_SECOND = new Bars(this.security, {
+        this.ONE_SECOND = new Bars(session, contract, {
             text: "1 sec",
             integer: 1,
             duration: "1800 S"
-        });
-
-        this.ONE_SECOND
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
         
-        this.FIVE_SECONDS = new Bars(this.security, {
+        this.FIVE_SECONDS = new Bars(session, contract, {
             text: "5 secs",
             integer: 5,
             duration: "3600 S"
-        });
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
         
-        this.FIVE_SECONDS
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
-        
-        this.TEN_SECONDS = new Bars(this.security, {
+        this.TEN_SECONDS = new Bars(session, contract, {
             text: "10 secs",
             integer: 10,
             duration: "7200 S"
-        });
-        
-        this.TEN_SECONDS
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.FIFTEEN_SECONDS = new Bars(this.security, {
+        this.FIFTEEN_SECONDS = new Bars(session, contract, {
             text: "15 secs",
             integer: 15,
             duration: "10800 S"
-        });
-        
-        this.FIFTEEN_SECONDS
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.THIRTY_SECONDS = new Bars(this.security, {
+        this.THIRTY_SECONDS = new Bars(session, contract, {
             text: "30 secs",
             integer: 30,
             duration: "1 D"
-        });
-        
-        this.THIRTY_SECONDS
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.ONE_MINUTE = new Bars(this.security, {
+        this.ONE_MINUTE = new Bars(session, contract, {
             text: "1 min",
             integer: 60,
             duration: "2 D"
-        });
-        
-        this.ONE_MINUTE
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.TWO_MINUTES = new Bars(this.security, {
+        this.TWO_MINUTES = new Bars(session, contract, {
             text: "2 mins",
             integer: 120,
             duration: "3 D"
-        });
-        
-        this.TWO_MINUTES
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.THREE_MINUTES = new Bars(this.security, {
+        this.THREE_MINUTES = new Bars(session, contract, {
             text: "3 mins",
             integer: 180,
             duration: "4 D"
-        });
-        
-        this.THREE_MINUTES
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.FIVE_MINUTES = new Bars(this.security, {
+        this.FIVE_MINUTES = new Bars(session, contract, {
             text: "5 mins",
             integer: 300,
             duration: "1 W"
-        });
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
         
-        this.FIVE_MINUTES
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
-        
-        this.TEN_MINUTES = new Bars(this.security, {
+        this.TEN_MINUTES = new Bars(session, contract, {
             text: "10 mins",
             integer: 600,
             duration: "2 W"
-        });
-        
-        this.TEN_MINUTES
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.FIFTEEN_MINUTES = new Bars(this.security, {
+        this.FIFTEEN_MINUTES = new Bars(session, contract, {
             text: "15 mins",
             integer: 900,
             duration: "2 W"
-        });
-        
-        this.FIFTEEN_MINUTES
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.THIRTY_MINUTES = new Bars(this.security, {
+        this.THIRTY_MINUTES = new Bars(session, contract, {
             text: "30 mins",
             integer: 1800,
             duration: "1 M"
-        });
-        
-        this.THIRTY_MINUTES
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.ONE_HOUR = new Bars(this.security, {
+        this.ONE_HOUR = new Bars(session, contract, {
             text: "1 hour",
             integer: 3600,
             duration: "2 M"
-        });
-        
-        this.ONE_HOUR
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.TWO_HOURS = new Bars(this.security, {
+        this.TWO_HOURS = new Bars(session, contract, {
             text: "2 hour",
             integer: 7200,
             duration: "2 M"
-        });
-        
-        this.TWO_HOURS
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.FOUR_HOURS = new Bars(this.security, {
+        this.FOUR_HOURS = new Bars(session, contract, {
             text: "4 hour",
             integer: 14400,
             duration: "4 M"
-        });
-        
-        this.FOUR_HOURS
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.EIGHT_HOURS = new Bars(this.security, {
+        this.EIGHT_HOURS = new Bars(session, contract, {
             text: "4 hour",
             integer: 28800,
             duration: "8 M"
-        });
-        
-        this.EIGHT_HOURS
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
 
-        this.ONE_DAY = new Bars(this.security, {
+        this.ONE_DAY = new Bars(session, contract, {
             text: "1 day",
             integer: 3600 * 24,
             duration: "1 Y"
-        });
+        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
         
-        this.ONE_DAY
-            .on("error", err => this.emit("error", err))
-            .on("warning", msg => this.emit("warning", msg))
-            .on("update", data => this.emit("update", data));
     }
     
     cancel() {
@@ -718,111 +676,386 @@ class Charts extends MarketData {
 }
 
 module.exports = Charts;
-},{"./marketdata":11,"./studies":14,"async":17,"sugar":18}],9:[function(require,module,exports){
-"use strict";
-
-const async = require("async"),
-      MarketData = require("./marketdata"),
-      flags = require("../flags");
-
-const REPORT = flags.FUNDAMENTALS_REPORTS;
-
-class Fundamentals extends MarketData {
-    
-    constructor(security) {
-        super(security);
-        this.REPORT_TYPES = REPORT;
-    }
-    
-    loadSnapshot(cb) {
-        this.load("snapshot", cb);
-    }
-    
-    loadFinancials(cb) {
-        this.load("financials", cb);
-    }
-    
-    loadRatios(cb) {
-        this.load("ratios", cb);
-    }
-    
-    loadStatements(cb) {
-        this.load("statements", cb);
-    }
-    
-    loadConsensus(cb) {
-        this.load("consensus", cb);
-    }
-    
-    loadCalendar(cb) {
-        this.load("calendar", cb);
-    }
-    
-    load(type, cb) {
-        this.security.service.fundamentalData(this.security.summary, REPORT[type])
-            .on("data", (data, cancel) => {
-                this[type] = data;
-                if (cb) {
-                    cb(null, data);
-                }
-            
-                this.emit("update");
-                cancel();
-            }).on("end", cancel => {
-                if (cb) {
-                    cb(new Error("Could not load " + type + " fundamental data for " + this.security.summary.localSymbol + ". " + err.message));
-                }
-            
-                cancel();
-            }).on("error", (err, cancel) => {
-                if (cb) {
-                    cb(new Error("Could not load " + type + " fundamental data for " + this.security.summary.localSymbol + ". " + err.message));
-                }
-
-                cancel();
-            }).send();
-    }
-    
-    loadSome(types, cb) {
-        async.forEachSeries(
-            types,
-            (type, cb) => this.load(type, cb), 
-            err => {
-                cb ? cb(err) : null;
-                this.emit("load");
-            }
-        );
-    }
-    
-    loadAll(cb) {
-        let msg = "";
-        async.forEachSeries(
-            Object.keys(REPORT).exclude("ratios"), /* Ratios not working */
-            (type, cb) => this.load(type, err => {
-                if (err) msg += err.message + " ";
-                cb();
-            }), 
-            err => {
-                cb ? cb(msg.length ? new Error(msg.trim()) : null) : null;
-                this.emit("load");
-            }
-        );
-    }
-    
-}
-
-module.exports = Fundamentals;
-},{"../flags":7,"./marketdata":11,"async":17}],10:[function(require,module,exports){
+},{"./bars":8,"./marketdata":11}],10:[function(require,module,exports){
 "use strict";
 
 require("sugar");
 
-const RealTime = require("../realtime"),
-      Fundamentals = require("./fundamentals"),
-      Quote = require("./quote"),
-      OrderBook = require("./orderbook"),
-      Charts = require("./charts"),
+const MarketData = require("./marketdata");
+
+class Depth extends MarketData {
+    
+    constructor(session, contract) {
+        super(session, contract);
+        
+        this._exclude.push("_subscriptions");
+        this._subscriptions = [ ];
+        
+        this.exchanges = [ ];
+        this.bids = { };
+        this.offers = { };
+    }
+    
+    get validExchanges() {
+        return this.contract.validExchanges.split(',');
+    }
+    
+    streamExchange(exchange, rows) {
+        if (this.exchanges.indexOf(exchange) < 0) {
+            this.exchanges.push(exchange);
+            
+            let copy = Object.clone(this.contract);
+            copy.exchange = exchange;
+            
+            this.bids[exchange] = { };
+            this.offers[exchange] = { };
+
+            let req = this.security.service.mktDepth(copy, rows || 5).on("data", datum => {
+                if (datum.side == 1) this.bids[exchange][datum.position] = datum;
+                else this.offers[exchange][datum.position] = datum;
+                this.emit("update", datum);
+            }).on("error", (err, cancel) => {
+                this.emit("error", this.security.summary.localSymbol + " on " + exchange + " failed.");
+                this._subscriptions.remove(req);
+                this.exchanges.remove(exchange);
+                delete this.bids[exchange];
+                delete this.offers[exchange];
+                cancel();
+            }).send();
+            
+            this._subscriptions.push(req);
+        }
+    }
+    
+    closeExchange(exchange) {
+        let idx = this.exchanges.indexOf(exchange),
+            req = this._subscriptions[i];
+        
+        req.cancel();
+        
+        this._subscriptions.remove(req);
+        this.exchanges.remove(exchange);
+        delete this.bids[exchange];
+        delete this.offers[exchange];
+    }
+    
+    stream(exchanges, rows) {
+        if (Object.isNumber(exchanges)) {
+            rows = exchanges;
+            exchanges = null;
+        }
+        
+        if (exchanges == null) {
+            exchanges = validExchanges;
+        }
+        
+        exchanges.each(exchange => {
+            streamExchange(exchange, rows);
+        });
+    }
+    
+    close() {
+        this._subscriptions.map("cancel");
+    }
+    
+}
+
+module.exports = Depth;
+},{"./marketdata":11,"sugar":18}],11:[function(require,module,exports){
+"use strict";
+
+require("sugar");
+
+const RealTime = require("../realtime");
+
+class MarketData extends RealTime {
+    
+    constructor(session, contract) {
+        super(session);
+        Object.defineProperty(this, 'contract', { value: contract });
+    }
+    
+}
+
+module.exports = MarketData;
+},{"../realtime":16,"sugar":18}],12:[function(require,module,exports){
+"use strict";
+
+const MarketData = require("./marketdata"),
       flags = require("../flags");
+
+class Order extends MarketData {
+    
+    constructor(session, contract) {
+        super(session, contract);
+        this.ticket = { tif: "Day" };
+    }
+    
+    ////////////////////////////////////////
+    // QUANTITY
+    ////////////////////////////////////////
+    trade(qty, show) {
+        this.ticket.totalQuantity = Math.abs(qty);
+        this.ticket.action = qty > 0 ? "BUY" : "SELL";
+        
+        if (show != null) {
+            if (show == 0) this.hidden = true;
+            this.displaySize = Math.abs(show);
+        }
+        
+        return this;
+    }
+    
+    buy(qty, show) {
+        this.ticket.totalQuantity = qty;
+        this.ticket.action = "BUY";
+        
+        if (show != null) {
+            if (show == 0) this.hidden = true;
+            this.displaySize = Math.abs(show);
+        }
+        
+        return this;
+    }
+    
+    sell(qty, show) {
+        this.ticket.totalQuantity = qty;
+        this.ticket.action = "SELL";
+        
+        if (show != null) {
+            if (show == 0) this.hidden = true;
+            this.displaySize = Math.abs(show);
+        }
+        
+        return this;
+    }
+    
+    show(qty) {
+        if (show != null) {
+            if (show == 0) this.hidden = true;
+            this.displaySize = Math.abs(show);
+        }
+
+        return this;
+    }
+    
+    ////////////////////////////////////////
+    // PRICE
+    ////////////////////////////////////////
+    market() {
+        this.ticket.type = "MKT";
+        return this;
+    }
+    
+    marketWithProtection() {
+        this.ticket.type = "MKT PRT";
+        return this;
+    }
+    
+    marketThenLimit() {
+        this.ticket.type = "MTL";
+        return this;
+    }
+    
+    limit(price) {
+        this.ticket.type = "LMT";
+        this.ticket.lmtPrice = price;
+        return this;
+    }
+    
+    stop(trigger) {
+        this.ticket.type = "STP";
+        this.ticket.auxPrice = trigger;
+            
+        return this;
+    }
+    
+    stopLimit(trigger, limit) {
+        this.ticket.type = "STP LMT";
+        this.ticket.auxPrice = trigger;
+        this.ticket.lmtPrice = limit;
+            
+        return this;
+    }
+    
+    stopWithProtection(trigger) {
+        this.ticket.type = "STP PRT";
+        this.ticket.auxPrice = trigger;
+        return this;
+    }
+    
+    ////////////////////////////////////////
+    // TIMEFRAME
+    ////////////////////////////////////////
+    goodToday() {
+        this.ticket.tif = "Day";
+        return this;
+    }
+    
+    goodUntilCancelled() {
+        this.ticket.tif = "GTC";
+        return this;
+    }
+    
+    immediateOrCancel() {
+        this.ticket.tif = "IOC";
+        return this;
+    }
+    
+    outsideRegularTradingHours() { 
+        this.ticket.outsideRth = true; 
+        return this; 
+    }
+    
+    ////////////////////////////////////////
+    // EXECUTION
+    ////////////////////////////////////////
+    overridePercentageConstraints() {
+        this.ticket.overridePercentageConstraints = true;
+        return this;
+    }
+    
+    open() {
+        let me = this, 
+            nextId = this.service.nextValidId(1);
+        
+        nextId.on("data", id => {
+            nextId.cancel();
+            
+            let request = this.service.placeOrder(this.contract, this.ticket);
+            me.cancel = () => request.cancel();
+            
+            request.on("data", data => {
+                Object.merge(me, data, { resolve: true });
+            }).on("error", err => {
+                me.error = err;
+                me.emit("error", err);
+            }).send();
+        }).on("error", err => cb(err)).send();
+    }
+    
+    transmit() {
+        this.ticket.transmit = true;
+        this.open();
+    }
+    
+}
+
+module.exports = Order;
+},{"../flags":7,"./marketdata":11}],13:[function(require,module,exports){
+"use strict";
+
+require("sugar");
+
+const MarketData = require("./marketdata"),
+      flags = require("../flags"),
+      TICKS = flags.QUOTE_TICK_TYPES;
+
+class Quote extends MarketData {
+    
+    constructor(session, contract) {
+        super(session, contract);
+        this._fieldTypes = [ ];
+        this._exclude.push("_fieldTypes");
+    }
+    
+    addFieldTypes(fieldTypes) {
+        if (fieldTypes) {
+            this._fieldTypes.add(fieldTypes);
+        }
+        
+        return this;
+    }
+    
+    pricing() {
+        this._fieldTypes.add([ TICKS.markPrice, TICKS.auctionValues, TICKS.realTimeVolume ]);
+        return this;
+    }
+    
+    fundamentals() {
+        this._fieldTypes.add([ TICKS.dividends, TICKS.fundamentalValues, TICKS.fundamentalRatios, TICKS.miscellaneousStats ]);
+        return this;
+    }
+    
+    volatility() {
+        this._fieldTypes.add([ TICKS.historicalVolatility, TICKS.optionImpliedVolatility, TICKS.realtimeHistoricalVolatility ]);
+        return this;
+    }
+    
+    options() {
+        this._fieldTypes.add([ TICKS.optionVolume, TICKS.optionOpenInterest ]);
+        return this;
+    }
+    
+    short() {
+        this._fieldTypes.add([ TICKS.shortable, TICKS.inventory ]);
+        return this;
+    }
+    
+    news() {
+        this._fieldTypes.add([ TICKS.news ]);
+        return this;
+    }
+    
+    snapshot(cb) {
+        let state = { };
+        this.security.service.mktData(this.security.summary, this._fieldTypes.join(","), true)
+            .on("data", datum => {
+                datum = parseQuotePart(datum);
+                state[datum.key] = datum.value;
+            }).on("error", (err, cancel) => {
+                cb(err, state);
+                cb = null;
+                cancel();
+            }).on("end", cancel => {
+                cb(null, state);
+                cb = null;
+                cancel();
+            }).send();
+    }
+    
+    stream() {
+        let req = this.security.service.mktData(this.security.summary, this._fieldTypes.join(","), false);
+        
+        this.close = () => req.cancel();
+        
+        req.on("data", datum  => {
+            datum = parseQuotePart(datum);
+
+            let oldValue = this[datum.key];
+            this[datum.key] = datum.value;
+            this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
+        }).on("error", err => {
+            this.emit("error", err);
+        }).on("end", () => {
+            this.emit("load");
+        }).send();
+    }
+    
+}
+
+function parseQuotePart(datum) {
+    let key = datum.name, value = datum.value;
+    
+    if (!key || key == "") throw new Error("Tick key not found.");
+    if (value === null || value === "") throw new Error("No tick data value found.");
+    if (key == "LAST_TIMESTAMP") value = new Date(parseInt(value) * 1000);
+    
+    return { key: key.camelize(false), value: value };
+}
+
+module.exports = Quote;
+},{"../flags":7,"./marketdata":11,"sugar":18}],14:[function(require,module,exports){
+"use strict";
+
+require("sugar");
+
+const flags = require("../flags"),
+      MarketData = require("./marketdata"),
+      Quote = require("./quote"),
+      Depth = require("./depth"),
+      Charts = require("./charts"),
+      Order = require("./order");
 
 function parse(definition) {
     if (Object.isNumber(definition)) {
@@ -842,29 +1075,17 @@ function parse(definition) {
             definition.symbol = symbol;
             
             if (type == "OPT") {
-                if (side.startsWith("put") || side.startsWith("call")) {
-                    definition.right = side.toUpperCase();
-                }
-                else {
-                    throw new Error("Must specify 'put' or 'call' for option contracts.");
-                }
+                if (side.startsWith("put") || side.startsWith("call")) definition.right = side.toUpperCase();
+                else throw new Error("Must specify 'put' or 'call' for option contracts.");
             }
             
             if (date) {
                 let month = date.to(3),
                     year = date.from(3).trim();
 
-                if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) {
-                    year = year.from(1);
-                }
-                
-                if (year.length == 2) {
-                    year = "20" + year;
-                }
-                
-                if (year == "") {
-                    year = Date.create().fullYear();
-                }
+                if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) year = year.from(1);
+                if (year.length == 2) year = "20" + year;
+                if (year == "") year = Date.create().fullYear();
 
                 date = Date.create(month + " " + year).format("{yyyy}{MM}");
                 definition.expiry = date;
@@ -879,33 +1100,20 @@ function parse(definition) {
                 definition.secType = flags.SECURITY_TYPE[tokens[1].toLowerCase()];
                 tokens = tokens.from(2);
             }
-            else {
-                tokens = tokens.from(1);
-            }
-            
+            else tokens = tokens.from(1);
         }
         
         tokens.inGroupsOf(2).each(field => {
             if (field.length == 2 && field.all(a => a != null)) {
                 if (field[0].toLowerCase() == "in") {
                     definition.currency = field[1].toUpperCase();
-                    if (flags.CURRENCIES.indexOf(definition.currency) < 0) {
-                        throw new Error("Invalid currency " + definition.currency);
-                    }
+                    if (flags.CURRENCIES.indexOf(definition.currency) < 0) throw new Error("Invalid currency " + definition.currency);
                 }
-                else if (field[0].toLowerCase() == "on") {
-                    definition.exchange = field[1].toUpperCase();
-                }
-                else if (field[0].toLowerCase() == "at") {
-                    definition.strike = parseFloat(field[1]);
-                }
-                else {
-                    throw new Error("Unrecognized field " + field.join(' '));
-                }
+                else if (field[0].toLowerCase() == "on") definition.exchange = field[1].toUpperCase();
+                else if (field[0].toLowerCase() == "at") definition.strike = parseFloat(field[1]);
+                else throw new Error("Unrecognized field " + field.join(' '));
             }
-            else {
-                throw new Error("Unrecognized field " + field.join(' '));
-            }
+            else throw new Error("Unrecognized field " + field.join(' '));
         });
     }
 
@@ -915,19 +1123,11 @@ function parse(definition) {
         }
 
         if (definition.conId == null) {
-            if (!definition.secType && flags.CURRENCIES.indexOf(definition.symbol) >= 0) {
-                definition.secType = "CASH";
-            }
-            else {
-                definition.secType = definition.secType || "STK";
-            }
+            if (!definition.secType && flags.CURRENCIES.indexOf(definition.symbol) >= 0) definition.secType = "CASH";
+            else definition.secType = definition.secType || "STK";
 
-            if (definition.secType == "CASH") {
-                definition.exchange = "IDEALPRO";
-            }
-            else if (definition.secType == "STK" || definition.secType == "OPT") {
-                definition.exchange = definition.exchange || "SMART";
-            }
+            if (definition.secType == "CASH") definition.exchange = "IDEALPRO";
+            else if (definition.secType == "STK" || definition.secType == "OPT") definition.exchange = definition.exchange || "SMART";
 
             definition.currency = definition.currency || "USD";
         }
@@ -939,346 +1139,50 @@ function parse(definition) {
     }
 }
 
-class Security extends RealTime {
+class Security extends MarketData {
     
     constructor(session, contract) {
-        super(session);
-        Object.defineProperty(this, 'contract', { value: contract });
-        
-        if (this.contract.secType == "STOCK") {
-            this.fundamentals = new Fundamentals(this);
-        }
-        
-        this.quote = new Quote(this);
-        this.level2 = new OrderBook(this);
-        this.charts = new Charts(this);
+        super(session, contract);
+        this.quote = new Quote(session, contract);
+        this.depth = new Depth(session, contract);
+        this.charts = new Charts(session, contract);
     }
     
-    load(options, cb) {
-        let errors = [ ],
-            errorHandler = err => {
-                if (this.loaded) this.emit("error", err);
-                else errors.push(err);
-            };
-        
-        if (options.fundamentals && this.fundamentals) {
-            this.fundamentals.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
-        }   
-        
-        if (options.quote) {
-            this.quote.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
-        }
-        
-        if (options.level2) {
-            this.level2.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
-        }
-        
-        if (options.charts) {
-            this.charts.on("error", errorHandler).on("warning", msg => this.emit("warning", msg));
-        }
-
-        async.series([
-            cb => {
-                if (this.fundamentals) {
-                    if (options.fundamentals == "all") this.fundamentals.loadAll(cb);
-                    else if (Array.isArray(options.fundamentals)) this.fundamentals.loadSome(options.fundamentals, cb);
-                    else if (Object.isString(options.fundamentals)) this.fundamentals.load(options.fundamentals, cb);
-                    else cb();
-                }
-                else cb();
-            },
-            cb => {
-                if (this.quote) {
-                    if (Array.isArray(options.quote)) this.quote.fields = options.quote;
-                    this.quote.refresh(cb);
-                    if (options.quote != "snapshot") this.quote.stream();
-                }
-                else cb();
-            },
-            cb => {
-                if (this.level2) {
-                    if (options.level2.markets == "all") this.level2.streamAllValidExchanges(options.level2.rows || 10);
-                    else this.level2.stream(options.level2.markets, options.level2.rows || 10);
-                    this.level2.once("load", cb);
-                }
-                else cb();
-            },
-            cb => {
-                if (this.charts) {
-                    let sizes = Object.keys(options.charts).filter(k => options.charts[k]);
-                    async.forEachSeries(sizes, (size, cb) => {
-                        let periods = options.charts[k];
-                        this.charts[size].history(err => {
-                            if (!err && periods > 1) {
-                                async.forEach(
-                                    (1).upto(periods).exclude(1), 
-                                    (i, cb) => this.charts[size].history(cb), 
-                                    cb
-                                );
-                            }
-                            else cb(err);
-                        });
-                        
-                        this.charts[size].stream();
-                    }, cb);
-                }
-                else cb();
-            }
-        ], err => {
-            this.loaded = true;
-            if (err) {
-                err = new Error("Errors encountered during " + this.name + " symbol load.");
-                err.errors = errors;
-            }
-            
-            this.emit("load", err);
-            if (cb) cb(err);
-        });
+    fundamentals(type, cb) {
+        this.service.fundamentalData(this.contract.summary, flags.FUNDAMENTALS_REPORTS[type])
+            .on("data", data => cb(null, data))
+            .on("end", () => cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message)))
+            .on("error", err => cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message)))
+            .send();
     }
     
-    cancel() {
-        if (this.fundamentals) this.fundamentals.cancel();
-        if (this.quote) this.quote.cancel();
-        if (this.depth) this.depth.cancel();
-        if (this.charts) this.charts.cancel();
-        return true;
+    order() {
+        return new Order(this.session, this.contract);
+    }
+    
+    close() {
+        if (this.quote) this.quote.close();
+        if (this.depth) this.depth.close();
+        if (this.charts) this.charts.close();
     }
     
 }
 
-function contracts(session, description, cb) {
+function securities(session, description, cb) {
     let summary = description;
     try { summary = parse(description); }
     catch (ex) { cb(ex); return; }
-
-    console.log(description + " = " + JSON.stringify(summary));
     
     let list = [ ];
-    session.service.contractDetails(summary).on("data", contract => {
-        list.push(new Security(session, contract));
-    }).on("error", err => cb(err, list)).on("end", () => cb(null, list)).send();
+    session.service.contractDetails(summary)
+        .on("data", contract => list.push(new Security(session, contract)))
+        .on("error", err => cb(err, list))
+        .on("end", () => cb(null, list))
+        .send();
 }
 
-module.exports = contracts;
-},{"../flags":7,"../realtime":15,"./charts":8,"./fundamentals":9,"./orderbook":12,"./quote":13,"sugar":18}],11:[function(require,module,exports){
-"use strict";
-
-require("sugar");
-
-const RealTime = require("../realtime");
-
-class MarketData extends RealTime {
-    
-    constructor(security) {
-        super(security);
-        Object.defineProperty(this, 'security', { value: security });
-    }
-    
-}
-
-module.exports = MarketData;
-},{"../realtime":15,"sugar":18}],12:[function(require,module,exports){
-"use strict";
-
-require("sugar");
-
-const MarketData = require("./marketdata");
-
-class OrderBook extends MarketData {
-    
-    constructor(security) {
-        super(security);
-        this.requests = [ ];
-        this.exchanges = [ ];
-        this.bids = { };
-        this.offers = { };
-    }
-    
-    stream(exchanges, rows) {
-        if (!Array.isArray(exchanges)) {
-            exchanges = [ exchanges ];
-        }
-        
-        let exchangeList = Object.clone(exchanges);
-        
-        exchanges.each(exchange => {
-            if (this.exchanges.indexOf(exchange) < 0) {
-                let copy = Object.clone(this.security.summary);
-                copy.exchange = exchange;
-
-                this.exchanges.push(exchange);
-                this.bids[exchange] = { };
-                this.offers[exchange] = { };
-
-                let req = this.security.service.mktDepth(copy, rows || 5)
-
-                req.on("data", datum => {
-                    if (datum.side == 1) {
-                        this.bids[exchange][datum.position] = datum;
-                    }
-                    else {
-                        this.offers[exchange][datum.position] = datum;
-                    }
-                    
-                    exchangeList.remove(exchange);
-                    this.emit("update", datum);
-                }).on("error", (err, cancel) => {
-                    exchangeList.remove(exchange);
-                    this.emit("warning", this.security.summary.localSymbol + " on " + exchange + " failed.");
-                    this.requests.remove(req);
-                    this.exchanges.remove(exchange);
-                    delete this.bids[exchange];
-                    delete this.offers[exchange];
-                    cancel();
-                }).send();
-
-                this.requests.push(req);
-            }
-        });
-        
-        let watcher = setInterval(() => {            
-            if (exchangeList.length == 0) {
-                clearInterval(watcher);
-                this.loaded = true;
-                this.emit("load");
-            }
-        }, 100);
-        
-        setTimeout(() => {
-            if (!this.loaded) {
-                this.loaded = true;
-                
-                let err = new Error("Level 2 data timeout loading data.");
-                err.timeout = true;
-                
-                clearInterval(watcher);
-                
-                this.emit("error", err);
-                this.emit("load", err);
-            }
-        }, 15000);
-    }
-    
-    streamAllValidExchanges(rows) {
-        this.stream(this.security.validExchanges.split(','), rows);
-    }
-    
-    close(exchange) {
-        let idx = this.exchanges.indexOf(exchange),
-            req = this.requests[i];
-        
-        req.cancel();
-        
-        this.requests.remove(req);
-        this.exchanges.remove(exchange);
-        delete this.bids[exchange];
-        delete this.offers[exchange];
-    }
-    
-    cancel() {
-        this.requests.map("cancel");
-    }
-    
-}
-
-module.exports = OrderBook;
-},{"./marketdata":11,"sugar":18}],13:[function(require,module,exports){
-"use strict";
-
-require("sugar");
-
-const MarketData = require("./marketdata"),
-      flags = require("../flags");
-
-function parseQuotePart(datum) {
-    let key = datum.name, value = datum.value;
-    
-    if (!key || key == "") throw new Error("Tick key not found.");
-    if (value === null || value === "") throw new Error("No tick data value found.");
-    if (key == "LAST_TIMESTAMP") value = new Date(parseInt(value) * 1000);
-    
-    return { key: key.camelize(false), value: value };
-}
-
-const TICKS = flags.QUOTE_TICK_TYPES;
-
-class Quote extends MarketData {
-    
-    constructor(security) {
-        super(security);
-        this.fields = [ ];
-    }
-    
-    pricing() {
-        this.fields.add([ TICKS.markPrice, TICKS.auctionValues, TICKS.realTimeVolume ]);
-        return this;
-    }
-    
-    fundamentals() {
-        this.fields.add([ TICKS.dividends, TICKS.fundamentalValues, TICKS.fundamentalRatios, TICKS.miscellaneousStats ]);
-        return this;
-    }
-    
-    volatility() {
-        this.fields.add([ TICKS.historicalVolatility, TICKS.optionImpliedVolatility, TICKS.realtimeHistoricalVolatility ]);
-        return this;
-    }
-    
-    options() {
-        this.fields.add([ TICKS.optionVolume, TICKS.optionOpenInterest ]);
-        return this;
-    }
-    
-    short() {
-        this.fields.add([ TICKS.shortable, TICKS.inventory ]);
-        return this;
-    }
-    
-    news() {
-        this.fields.add([ TICKS.news ]);
-        return this;
-    }
-    
-    refresh(cb) {
-        this.security.service.mktData(this.security.summary, this.fields.join(","), true)
-            .on("data", datum => {
-                datum = parseQuotePart(datum);
-                this[datum.key] = datum.value;
-                this.emit("update");
-            }).on("error", (err, cancel) => {
-                this.emit("error", err);
-                if (cb) cb(err);
-                cancel();
-            }).on("end", cancel => {
-                this.emit("load");
-                if (cb) cb(null, this);
-                cancel();
-            }).send();
-    }
-    
-    stream() {
-        let req = this.security.service.mktData(this.security.summary, this.fields.join(","), false)
-            .on("data", datum  => {
-                datum = parseQuotePart(datum);
-                
-                let oldValue = this[datum.key];
-                this[datum.key] = datum.value;
-                this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
-            })
-            .on("error", err => {
-                this.emit("error", err);
-            }).send();
-        
-        this.cancel = () => {
-            req.cancel();
-            return true;
-        };
-    }
-    
-}
-
-module.exports = Quote;
-},{"../flags":7,"./marketdata":11,"sugar":18}],14:[function(require,module,exports){
+module.exports = securities;
+},{"../flags":7,"./charts":9,"./depth":10,"./marketdata":11,"./order":12,"./quote":13,"sugar":18}],15:[function(require,module,exports){
 require("sugar");
 
 const studies = { };
@@ -1286,7 +1190,7 @@ const studies = { };
 studies.SMA = window => window.map("close").average();
 
 module.exports = studies;
-},{"sugar":18}],15:[function(require,module,exports){
+},{"sugar":18}],16:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -1301,17 +1205,21 @@ class RealTime extends Events {
     }
     
     get fields() {
-        return Object.keys(this).exclude(/\_.*/, this._exclude, "cancel");
+        return Object.keys(this).exclude(/\_.*/).subtract(this._exclude).exclude("close").exclude("domain");
     }
     
-    cancel() {
+    each(fn) {
+        this.fields.forEach((e, i) => fn(this[e], e, i));
+    }
+    
+    close() {
         return false;
     }
     
 }
 
 module.exports = RealTime;
-},{"events":24}],16:[function(require,module,exports){
+},{"events":24}],17:[function(require,module,exports){
 "use strict";
 
 var Events = require("events"),
@@ -1320,7 +1228,7 @@ var Events = require("events"),
     Orders = require("./accounting/orders"),
     Trades = require("./accounting/trades"),
     Account = require("./accounting/account"),
-    lookup = require("./marketdata");
+    securities = require("./marketdata/security");
 
 class Session extends Events {
     
@@ -1328,6 +1236,7 @@ class Session extends Events {
         super();
         
         Object.defineProperty(this, 'service', { value: service });
+        
         this.connectivity = { };
         this.bulletins = [ ];
         this.state = "initializing";
@@ -1335,7 +1244,7 @@ class Session extends Events {
         this.service.socket.once("managedAccounts", data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
             this.state = "ready";
-            this.emit("ready");
+            this.emit("ready", this);
         });
         
         this.service.socket.on("connected", () => {
@@ -1348,9 +1257,11 @@ class Session extends Events {
                     name = name[1];
 
                     this.connectivity[name] = { status: status, time: new Date() };   
+                    this.emit("connectivity", this.connectivity[name]);
                 }
-                
-                this.emit("connectivity", data);
+                else {
+                    this.emit("connectivity", data);    
+                }
             });
             
             this.service.newsBulletins(true).on("data", data => {
@@ -1360,7 +1271,7 @@ class Session extends Events {
                 this.emit("error", err);
             }).send();
             
-            this.emit("connected");
+            this.emit("connected", this.service.socket);
             this.state = "connected";
         }).on("disconnected", () => {
             this.state = "disconnected";
@@ -1368,1315 +1279,46 @@ class Session extends Events {
         });
     }
     
+    get clientId() {
+        return this.service.socket.clientId;
+    }
+    
     close() {
         this.service.socket.disconnect();
     }
     
-    accounts() {
-        return new Accounts(this);
-    }
-    
-    positions() {
-        return new Positions(this);
-    }
-    
-    orders() {
-        return new Orders(this);
-    }
-    
-    autoOpenOrders(autoBind) {
-        this.service.autoOpenOrders(autoBind);
-    }
-    
-    cancelAllOrders() {
-        this.service.globalCancel();
+    account(options) {
+        if (options && !options.id) {
+            options.id = this.managedAccounts.first();
+        }
+        
+        return new Account(this, options || this.managedAccounts.first());
     }
 
-    trades() {
-        return new Trades(this);
+    accountSummary(options) {
+        return new Accounts(this, options);
     }
     
-    account(id) {
-        return new Account(this, id);
+    positions(options) {
+        return new Positions(this, options);
     }
     
+    orders(options) {
+        return new Orders(this, options);
+    }
+
+    trades(options) {
+        return new Trades(this, options);
+    }
+
     securities(description, cb) {
-        lookup(this, description, cb);
+        securities(this, description, cb);
     }
-
+    
 }
 
 module.exports = Session;
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata":10,"events":24}],17:[function(require,module,exports){
-(function (process,global){
-/*!
- * async
- * https://github.com/caolan/async
- *
- * Copyright 2010-2014 Caolan McMahon
- * Released under the MIT license
- */
-(function () {
-
-    var async = {};
-    function noop() {}
-    function identity(v) {
-        return v;
-    }
-    function toBool(v) {
-        return !!v;
-    }
-    function notId(v) {
-        return !v;
-    }
-
-    // global on the server, window in the browser
-    var previous_async;
-
-    // Establish the root object, `window` (`self`) in the browser, `global`
-    // on the server, or `this` in some virtual machines. We use `self`
-    // instead of `window` for `WebWorker` support.
-    var root = typeof self === 'object' && self.self === self && self ||
-            typeof global === 'object' && global.global === global && global ||
-            this;
-
-    if (root != null) {
-        previous_async = root.async;
-    }
-
-    async.noConflict = function () {
-        root.async = previous_async;
-        return async;
-    };
-
-    function only_once(fn) {
-        return function() {
-            if (fn === null) throw new Error("Callback was already called.");
-            fn.apply(this, arguments);
-            fn = null;
-        };
-    }
-
-    function _once(fn) {
-        return function() {
-            if (fn === null) return;
-            fn.apply(this, arguments);
-            fn = null;
-        };
-    }
-
-    //// cross-browser compatiblity functions ////
-
-    var _toString = Object.prototype.toString;
-
-    var _isArray = Array.isArray || function (obj) {
-        return _toString.call(obj) === '[object Array]';
-    };
-
-    // Ported from underscore.js isObject
-    var _isObject = function(obj) {
-        var type = typeof obj;
-        return type === 'function' || type === 'object' && !!obj;
-    };
-
-    function _isArrayLike(arr) {
-        return _isArray(arr) || (
-            // has a positive integer length property
-            typeof arr.length === "number" &&
-            arr.length >= 0 &&
-            arr.length % 1 === 0
-        );
-    }
-
-    function _arrayEach(arr, iterator) {
-        var index = -1,
-            length = arr.length;
-
-        while (++index < length) {
-            iterator(arr[index], index, arr);
-        }
-    }
-
-    function _map(arr, iterator) {
-        var index = -1,
-            length = arr.length,
-            result = Array(length);
-
-        while (++index < length) {
-            result[index] = iterator(arr[index], index, arr);
-        }
-        return result;
-    }
-
-    function _range(count) {
-        return _map(Array(count), function (v, i) { return i; });
-    }
-
-    function _reduce(arr, iterator, memo) {
-        _arrayEach(arr, function (x, i, a) {
-            memo = iterator(memo, x, i, a);
-        });
-        return memo;
-    }
-
-    function _forEachOf(object, iterator) {
-        _arrayEach(_keys(object), function (key) {
-            iterator(object[key], key);
-        });
-    }
-
-    function _indexOf(arr, item) {
-        for (var i = 0; i < arr.length; i++) {
-            if (arr[i] === item) return i;
-        }
-        return -1;
-    }
-
-    var _keys = Object.keys || function (obj) {
-        var keys = [];
-        for (var k in obj) {
-            if (obj.hasOwnProperty(k)) {
-                keys.push(k);
-            }
-        }
-        return keys;
-    };
-
-    function _keyIterator(coll) {
-        var i = -1;
-        var len;
-        var keys;
-        if (_isArrayLike(coll)) {
-            len = coll.length;
-            return function next() {
-                i++;
-                return i < len ? i : null;
-            };
-        } else {
-            keys = _keys(coll);
-            len = keys.length;
-            return function next() {
-                i++;
-                return i < len ? keys[i] : null;
-            };
-        }
-    }
-
-    // Similar to ES6's rest param (http://ariya.ofilabs.com/2013/03/es6-and-rest-parameter.html)
-    // This accumulates the arguments passed into an array, after a given index.
-    // From underscore.js (https://github.com/jashkenas/underscore/pull/2140).
-    function _restParam(func, startIndex) {
-        startIndex = startIndex == null ? func.length - 1 : +startIndex;
-        return function() {
-            var length = Math.max(arguments.length - startIndex, 0);
-            var rest = Array(length);
-            for (var index = 0; index < length; index++) {
-                rest[index] = arguments[index + startIndex];
-            }
-            switch (startIndex) {
-                case 0: return func.call(this, rest);
-                case 1: return func.call(this, arguments[0], rest);
-            }
-            // Currently unused but handle cases outside of the switch statement:
-            // var args = Array(startIndex + 1);
-            // for (index = 0; index < startIndex; index++) {
-            //     args[index] = arguments[index];
-            // }
-            // args[startIndex] = rest;
-            // return func.apply(this, args);
-        };
-    }
-
-    function _withoutIndex(iterator) {
-        return function (value, index, callback) {
-            return iterator(value, callback);
-        };
-    }
-
-    //// exported async module functions ////
-
-    //// nextTick implementation with browser-compatible fallback ////
-
-    // capture the global reference to guard against fakeTimer mocks
-    var _setImmediate = typeof setImmediate === 'function' && setImmediate;
-
-    var _delay = _setImmediate ? function(fn) {
-        // not a direct alias for IE10 compatibility
-        _setImmediate(fn);
-    } : function(fn) {
-        setTimeout(fn, 0);
-    };
-
-    if (typeof process === 'object' && typeof process.nextTick === 'function') {
-        async.nextTick = process.nextTick;
-    } else {
-        async.nextTick = _delay;
-    }
-    async.setImmediate = _setImmediate ? _delay : async.nextTick;
-
-
-    async.forEach =
-    async.each = function (arr, iterator, callback) {
-        return async.eachOf(arr, _withoutIndex(iterator), callback);
-    };
-
-    async.forEachSeries =
-    async.eachSeries = function (arr, iterator, callback) {
-        return async.eachOfSeries(arr, _withoutIndex(iterator), callback);
-    };
-
-
-    async.forEachLimit =
-    async.eachLimit = function (arr, limit, iterator, callback) {
-        return _eachOfLimit(limit)(arr, _withoutIndex(iterator), callback);
-    };
-
-    async.forEachOf =
-    async.eachOf = function (object, iterator, callback) {
-        callback = _once(callback || noop);
-        object = object || [];
-
-        var iter = _keyIterator(object);
-        var key, completed = 0;
-
-        while ((key = iter()) != null) {
-            completed += 1;
-            iterator(object[key], key, only_once(done));
-        }
-
-        if (completed === 0) callback(null);
-
-        function done(err) {
-            completed--;
-            if (err) {
-                callback(err);
-            }
-            // Check key is null in case iterator isn't exhausted
-            // and done resolved synchronously.
-            else if (key === null && completed <= 0) {
-                callback(null);
-            }
-        }
-    };
-
-    async.forEachOfSeries =
-    async.eachOfSeries = function (obj, iterator, callback) {
-        callback = _once(callback || noop);
-        obj = obj || [];
-        var nextKey = _keyIterator(obj);
-        var key = nextKey();
-        function iterate() {
-            var sync = true;
-            if (key === null) {
-                return callback(null);
-            }
-            iterator(obj[key], key, only_once(function (err) {
-                if (err) {
-                    callback(err);
-                }
-                else {
-                    key = nextKey();
-                    if (key === null) {
-                        return callback(null);
-                    } else {
-                        if (sync) {
-                            async.setImmediate(iterate);
-                        } else {
-                            iterate();
-                        }
-                    }
-                }
-            }));
-            sync = false;
-        }
-        iterate();
-    };
-
-
-
-    async.forEachOfLimit =
-    async.eachOfLimit = function (obj, limit, iterator, callback) {
-        _eachOfLimit(limit)(obj, iterator, callback);
-    };
-
-    function _eachOfLimit(limit) {
-
-        return function (obj, iterator, callback) {
-            callback = _once(callback || noop);
-            obj = obj || [];
-            var nextKey = _keyIterator(obj);
-            if (limit <= 0) {
-                return callback(null);
-            }
-            var done = false;
-            var running = 0;
-            var errored = false;
-
-            (function replenish () {
-                if (done && running <= 0) {
-                    return callback(null);
-                }
-
-                while (running < limit && !errored) {
-                    var key = nextKey();
-                    if (key === null) {
-                        done = true;
-                        if (running <= 0) {
-                            callback(null);
-                        }
-                        return;
-                    }
-                    running += 1;
-                    iterator(obj[key], key, only_once(function (err) {
-                        running -= 1;
-                        if (err) {
-                            callback(err);
-                            errored = true;
-                        }
-                        else {
-                            replenish();
-                        }
-                    }));
-                }
-            })();
-        };
-    }
-
-
-    function doParallel(fn) {
-        return function (obj, iterator, callback) {
-            return fn(async.eachOf, obj, iterator, callback);
-        };
-    }
-    function doParallelLimit(fn) {
-        return function (obj, limit, iterator, callback) {
-            return fn(_eachOfLimit(limit), obj, iterator, callback);
-        };
-    }
-    function doSeries(fn) {
-        return function (obj, iterator, callback) {
-            return fn(async.eachOfSeries, obj, iterator, callback);
-        };
-    }
-
-    function _asyncMap(eachfn, arr, iterator, callback) {
-        callback = _once(callback || noop);
-        arr = arr || [];
-        var results = _isArrayLike(arr) ? [] : {};
-        eachfn(arr, function (value, index, callback) {
-            iterator(value, function (err, v) {
-                results[index] = v;
-                callback(err);
-            });
-        }, function (err) {
-            callback(err, results);
-        });
-    }
-
-    async.map = doParallel(_asyncMap);
-    async.mapSeries = doSeries(_asyncMap);
-    async.mapLimit = doParallelLimit(_asyncMap);
-
-    // reduce only has a series version, as doing reduce in parallel won't
-    // work in many situations.
-    async.inject =
-    async.foldl =
-    async.reduce = function (arr, memo, iterator, callback) {
-        async.eachOfSeries(arr, function (x, i, callback) {
-            iterator(memo, x, function (err, v) {
-                memo = v;
-                callback(err);
-            });
-        }, function (err) {
-            callback(err, memo);
-        });
-    };
-
-    async.foldr =
-    async.reduceRight = function (arr, memo, iterator, callback) {
-        var reversed = _map(arr, identity).reverse();
-        async.reduce(reversed, memo, iterator, callback);
-    };
-
-    async.transform = function (arr, memo, iterator, callback) {
-        if (arguments.length === 3) {
-            callback = iterator;
-            iterator = memo;
-            memo = _isArray(arr) ? [] : {};
-        }
-
-        async.eachOf(arr, function(v, k, cb) {
-            iterator(memo, v, k, cb);
-        }, function(err) {
-            callback(err, memo);
-        });
-    };
-
-    function _filter(eachfn, arr, iterator, callback) {
-        var results = [];
-        eachfn(arr, function (x, index, callback) {
-            iterator(x, function (v) {
-                if (v) {
-                    results.push({index: index, value: x});
-                }
-                callback();
-            });
-        }, function () {
-            callback(_map(results.sort(function (a, b) {
-                return a.index - b.index;
-            }), function (x) {
-                return x.value;
-            }));
-        });
-    }
-
-    async.select =
-    async.filter = doParallel(_filter);
-
-    async.selectLimit =
-    async.filterLimit = doParallelLimit(_filter);
-
-    async.selectSeries =
-    async.filterSeries = doSeries(_filter);
-
-    function _reject(eachfn, arr, iterator, callback) {
-        _filter(eachfn, arr, function(value, cb) {
-            iterator(value, function(v) {
-                cb(!v);
-            });
-        }, callback);
-    }
-    async.reject = doParallel(_reject);
-    async.rejectLimit = doParallelLimit(_reject);
-    async.rejectSeries = doSeries(_reject);
-
-    function _createTester(eachfn, check, getResult) {
-        return function(arr, limit, iterator, cb) {
-            function done() {
-                if (cb) cb(getResult(false, void 0));
-            }
-            function iteratee(x, _, callback) {
-                if (!cb) return callback();
-                iterator(x, function (v) {
-                    if (cb && check(v)) {
-                        cb(getResult(true, x));
-                        cb = iterator = false;
-                    }
-                    callback();
-                });
-            }
-            if (arguments.length > 3) {
-                eachfn(arr, limit, iteratee, done);
-            } else {
-                cb = iterator;
-                iterator = limit;
-                eachfn(arr, iteratee, done);
-            }
-        };
-    }
-
-    async.any =
-    async.some = _createTester(async.eachOf, toBool, identity);
-
-    async.someLimit = _createTester(async.eachOfLimit, toBool, identity);
-
-    async.all =
-    async.every = _createTester(async.eachOf, notId, notId);
-
-    async.everyLimit = _createTester(async.eachOfLimit, notId, notId);
-
-    function _findGetResult(v, x) {
-        return x;
-    }
-    async.detect = _createTester(async.eachOf, identity, _findGetResult);
-    async.detectSeries = _createTester(async.eachOfSeries, identity, _findGetResult);
-    async.detectLimit = _createTester(async.eachOfLimit, identity, _findGetResult);
-
-    async.sortBy = function (arr, iterator, callback) {
-        async.map(arr, function (x, callback) {
-            iterator(x, function (err, criteria) {
-                if (err) {
-                    callback(err);
-                }
-                else {
-                    callback(null, {value: x, criteria: criteria});
-                }
-            });
-        }, function (err, results) {
-            if (err) {
-                return callback(err);
-            }
-            else {
-                callback(null, _map(results.sort(comparator), function (x) {
-                    return x.value;
-                }));
-            }
-
-        });
-
-        function comparator(left, right) {
-            var a = left.criteria, b = right.criteria;
-            return a < b ? -1 : a > b ? 1 : 0;
-        }
-    };
-
-    async.auto = function (tasks, concurrency, callback) {
-        if (typeof arguments[1] === 'function') {
-            // concurrency is optional, shift the args.
-            callback = concurrency;
-            concurrency = null;
-        }
-        callback = _once(callback || noop);
-        var keys = _keys(tasks);
-        var remainingTasks = keys.length;
-        if (!remainingTasks) {
-            return callback(null);
-        }
-        if (!concurrency) {
-            concurrency = remainingTasks;
-        }
-
-        var results = {};
-        var runningTasks = 0;
-
-        var hasError = false;
-
-        var listeners = [];
-        function addListener(fn) {
-            listeners.unshift(fn);
-        }
-        function removeListener(fn) {
-            var idx = _indexOf(listeners, fn);
-            if (idx >= 0) listeners.splice(idx, 1);
-        }
-        function taskComplete() {
-            remainingTasks--;
-            _arrayEach(listeners.slice(0), function (fn) {
-                fn();
-            });
-        }
-
-        addListener(function () {
-            if (!remainingTasks) {
-                callback(null, results);
-            }
-        });
-
-        _arrayEach(keys, function (k) {
-            if (hasError) return;
-            var task = _isArray(tasks[k]) ? tasks[k]: [tasks[k]];
-            var taskCallback = _restParam(function(err, args) {
-                runningTasks--;
-                if (args.length <= 1) {
-                    args = args[0];
-                }
-                if (err) {
-                    var safeResults = {};
-                    _forEachOf(results, function(val, rkey) {
-                        safeResults[rkey] = val;
-                    });
-                    safeResults[k] = args;
-                    hasError = true;
-
-                    callback(err, safeResults);
-                }
-                else {
-                    results[k] = args;
-                    async.setImmediate(taskComplete);
-                }
-            });
-            var requires = task.slice(0, task.length - 1);
-            // prevent dead-locks
-            var len = requires.length;
-            var dep;
-            while (len--) {
-                if (!(dep = tasks[requires[len]])) {
-                    throw new Error('Has nonexistent dependency in ' + requires.join(', '));
-                }
-                if (_isArray(dep) && _indexOf(dep, k) >= 0) {
-                    throw new Error('Has cyclic dependencies');
-                }
-            }
-            function ready() {
-                return runningTasks < concurrency && _reduce(requires, function (a, x) {
-                    return (a && results.hasOwnProperty(x));
-                }, true) && !results.hasOwnProperty(k);
-            }
-            if (ready()) {
-                runningTasks++;
-                task[task.length - 1](taskCallback, results);
-            }
-            else {
-                addListener(listener);
-            }
-            function listener() {
-                if (ready()) {
-                    runningTasks++;
-                    removeListener(listener);
-                    task[task.length - 1](taskCallback, results);
-                }
-            }
-        });
-    };
-
-
-
-    async.retry = function(times, task, callback) {
-        var DEFAULT_TIMES = 5;
-        var DEFAULT_INTERVAL = 0;
-
-        var attempts = [];
-
-        var opts = {
-            times: DEFAULT_TIMES,
-            interval: DEFAULT_INTERVAL
-        };
-
-        function parseTimes(acc, t){
-            if(typeof t === 'number'){
-                acc.times = parseInt(t, 10) || DEFAULT_TIMES;
-            } else if(typeof t === 'object'){
-                acc.times = parseInt(t.times, 10) || DEFAULT_TIMES;
-                acc.interval = parseInt(t.interval, 10) || DEFAULT_INTERVAL;
-            } else {
-                throw new Error('Unsupported argument type for \'times\': ' + typeof t);
-            }
-        }
-
-        var length = arguments.length;
-        if (length < 1 || length > 3) {
-            throw new Error('Invalid arguments - must be either (task), (task, callback), (times, task) or (times, task, callback)');
-        } else if (length <= 2 && typeof times === 'function') {
-            callback = task;
-            task = times;
-        }
-        if (typeof times !== 'function') {
-            parseTimes(opts, times);
-        }
-        opts.callback = callback;
-        opts.task = task;
-
-        function wrappedTask(wrappedCallback, wrappedResults) {
-            function retryAttempt(task, finalAttempt) {
-                return function(seriesCallback) {
-                    task(function(err, result){
-                        seriesCallback(!err || finalAttempt, {err: err, result: result});
-                    }, wrappedResults);
-                };
-            }
-
-            function retryInterval(interval){
-                return function(seriesCallback){
-                    setTimeout(function(){
-                        seriesCallback(null);
-                    }, interval);
-                };
-            }
-
-            while (opts.times) {
-
-                var finalAttempt = !(opts.times-=1);
-                attempts.push(retryAttempt(opts.task, finalAttempt));
-                if(!finalAttempt && opts.interval > 0){
-                    attempts.push(retryInterval(opts.interval));
-                }
-            }
-
-            async.series(attempts, function(done, data){
-                data = data[data.length - 1];
-                (wrappedCallback || opts.callback)(data.err, data.result);
-            });
-        }
-
-        // If a callback is passed, run this as a controll flow
-        return opts.callback ? wrappedTask() : wrappedTask;
-    };
-
-    async.waterfall = function (tasks, callback) {
-        callback = _once(callback || noop);
-        if (!_isArray(tasks)) {
-            var err = new Error('First argument to waterfall must be an array of functions');
-            return callback(err);
-        }
-        if (!tasks.length) {
-            return callback();
-        }
-        function wrapIterator(iterator) {
-            return _restParam(function (err, args) {
-                if (err) {
-                    callback.apply(null, [err].concat(args));
-                }
-                else {
-                    var next = iterator.next();
-                    if (next) {
-                        args.push(wrapIterator(next));
-                    }
-                    else {
-                        args.push(callback);
-                    }
-                    ensureAsync(iterator).apply(null, args);
-                }
-            });
-        }
-        wrapIterator(async.iterator(tasks))();
-    };
-
-    function _parallel(eachfn, tasks, callback) {
-        callback = callback || noop;
-        var results = _isArrayLike(tasks) ? [] : {};
-
-        eachfn(tasks, function (task, key, callback) {
-            task(_restParam(function (err, args) {
-                if (args.length <= 1) {
-                    args = args[0];
-                }
-                results[key] = args;
-                callback(err);
-            }));
-        }, function (err) {
-            callback(err, results);
-        });
-    }
-
-    async.parallel = function (tasks, callback) {
-        _parallel(async.eachOf, tasks, callback);
-    };
-
-    async.parallelLimit = function(tasks, limit, callback) {
-        _parallel(_eachOfLimit(limit), tasks, callback);
-    };
-
-    async.series = function(tasks, callback) {
-        _parallel(async.eachOfSeries, tasks, callback);
-    };
-
-    async.iterator = function (tasks) {
-        function makeCallback(index) {
-            function fn() {
-                if (tasks.length) {
-                    tasks[index].apply(null, arguments);
-                }
-                return fn.next();
-            }
-            fn.next = function () {
-                return (index < tasks.length - 1) ? makeCallback(index + 1): null;
-            };
-            return fn;
-        }
-        return makeCallback(0);
-    };
-
-    async.apply = _restParam(function (fn, args) {
-        return _restParam(function (callArgs) {
-            return fn.apply(
-                null, args.concat(callArgs)
-            );
-        });
-    });
-
-    function _concat(eachfn, arr, fn, callback) {
-        var result = [];
-        eachfn(arr, function (x, index, cb) {
-            fn(x, function (err, y) {
-                result = result.concat(y || []);
-                cb(err);
-            });
-        }, function (err) {
-            callback(err, result);
-        });
-    }
-    async.concat = doParallel(_concat);
-    async.concatSeries = doSeries(_concat);
-
-    async.whilst = function (test, iterator, callback) {
-        callback = callback || noop;
-        if (test()) {
-            var next = _restParam(function(err, args) {
-                if (err) {
-                    callback(err);
-                } else if (test.apply(this, args)) {
-                    iterator(next);
-                } else {
-                    callback.apply(null, [null].concat(args));
-                }
-            });
-            iterator(next);
-        } else {
-            callback(null);
-        }
-    };
-
-    async.doWhilst = function (iterator, test, callback) {
-        var calls = 0;
-        return async.whilst(function() {
-            return ++calls <= 1 || test.apply(this, arguments);
-        }, iterator, callback);
-    };
-
-    async.until = function (test, iterator, callback) {
-        return async.whilst(function() {
-            return !test.apply(this, arguments);
-        }, iterator, callback);
-    };
-
-    async.doUntil = function (iterator, test, callback) {
-        return async.doWhilst(iterator, function() {
-            return !test.apply(this, arguments);
-        }, callback);
-    };
-
-    async.during = function (test, iterator, callback) {
-        callback = callback || noop;
-
-        var next = _restParam(function(err, args) {
-            if (err) {
-                callback(err);
-            } else {
-                args.push(check);
-                test.apply(this, args);
-            }
-        });
-
-        var check = function(err, truth) {
-            if (err) {
-                callback(err);
-            } else if (truth) {
-                iterator(next);
-            } else {
-                callback(null);
-            }
-        };
-
-        test(check);
-    };
-
-    async.doDuring = function (iterator, test, callback) {
-        var calls = 0;
-        async.during(function(next) {
-            if (calls++ < 1) {
-                next(null, true);
-            } else {
-                test.apply(this, arguments);
-            }
-        }, iterator, callback);
-    };
-
-    function _queue(worker, concurrency, payload) {
-        if (concurrency == null) {
-            concurrency = 1;
-        }
-        else if(concurrency === 0) {
-            throw new Error('Concurrency must not be zero');
-        }
-        function _insert(q, data, pos, callback) {
-            if (callback != null && typeof callback !== "function") {
-                throw new Error("task callback must be a function");
-            }
-            q.started = true;
-            if (!_isArray(data)) {
-                data = [data];
-            }
-            if(data.length === 0 && q.idle()) {
-                // call drain immediately if there are no tasks
-                return async.setImmediate(function() {
-                    q.drain();
-                });
-            }
-            _arrayEach(data, function(task) {
-                var item = {
-                    data: task,
-                    callback: callback || noop
-                };
-
-                if (pos) {
-                    q.tasks.unshift(item);
-                } else {
-                    q.tasks.push(item);
-                }
-
-                if (q.tasks.length === q.concurrency) {
-                    q.saturated();
-                }
-            });
-            async.setImmediate(q.process);
-        }
-        function _next(q, tasks) {
-            return function(){
-                workers -= 1;
-
-                var removed = false;
-                var args = arguments;
-                _arrayEach(tasks, function (task) {
-                    _arrayEach(workersList, function (worker, index) {
-                        if (worker === task && !removed) {
-                            workersList.splice(index, 1);
-                            removed = true;
-                        }
-                    });
-
-                    task.callback.apply(task, args);
-                });
-                if (q.tasks.length + workers === 0) {
-                    q.drain();
-                }
-                q.process();
-            };
-        }
-
-        var workers = 0;
-        var workersList = [];
-        var q = {
-            tasks: [],
-            concurrency: concurrency,
-            payload: payload,
-            saturated: noop,
-            empty: noop,
-            drain: noop,
-            started: false,
-            paused: false,
-            push: function (data, callback) {
-                _insert(q, data, false, callback);
-            },
-            kill: function () {
-                q.drain = noop;
-                q.tasks = [];
-            },
-            unshift: function (data, callback) {
-                _insert(q, data, true, callback);
-            },
-            process: function () {
-                while(!q.paused && workers < q.concurrency && q.tasks.length){
-
-                    var tasks = q.payload ?
-                        q.tasks.splice(0, q.payload) :
-                        q.tasks.splice(0, q.tasks.length);
-
-                    var data = _map(tasks, function (task) {
-                        return task.data;
-                    });
-
-                    if (q.tasks.length === 0) {
-                        q.empty();
-                    }
-                    workers += 1;
-                    workersList.push(tasks[0]);
-                    var cb = only_once(_next(q, tasks));
-                    worker(data, cb);
-                }
-            },
-            length: function () {
-                return q.tasks.length;
-            },
-            running: function () {
-                return workers;
-            },
-            workersList: function () {
-                return workersList;
-            },
-            idle: function() {
-                return q.tasks.length + workers === 0;
-            },
-            pause: function () {
-                q.paused = true;
-            },
-            resume: function () {
-                if (q.paused === false) { return; }
-                q.paused = false;
-                var resumeCount = Math.min(q.concurrency, q.tasks.length);
-                // Need to call q.process once per concurrent
-                // worker to preserve full concurrency after pause
-                for (var w = 1; w <= resumeCount; w++) {
-                    async.setImmediate(q.process);
-                }
-            }
-        };
-        return q;
-    }
-
-    async.queue = function (worker, concurrency) {
-        var q = _queue(function (items, cb) {
-            worker(items[0], cb);
-        }, concurrency, 1);
-
-        return q;
-    };
-
-    async.priorityQueue = function (worker, concurrency) {
-
-        function _compareTasks(a, b){
-            return a.priority - b.priority;
-        }
-
-        function _binarySearch(sequence, item, compare) {
-            var beg = -1,
-                end = sequence.length - 1;
-            while (beg < end) {
-                var mid = beg + ((end - beg + 1) >>> 1);
-                if (compare(item, sequence[mid]) >= 0) {
-                    beg = mid;
-                } else {
-                    end = mid - 1;
-                }
-            }
-            return beg;
-        }
-
-        function _insert(q, data, priority, callback) {
-            if (callback != null && typeof callback !== "function") {
-                throw new Error("task callback must be a function");
-            }
-            q.started = true;
-            if (!_isArray(data)) {
-                data = [data];
-            }
-            if(data.length === 0) {
-                // call drain immediately if there are no tasks
-                return async.setImmediate(function() {
-                    q.drain();
-                });
-            }
-            _arrayEach(data, function(task) {
-                var item = {
-                    data: task,
-                    priority: priority,
-                    callback: typeof callback === 'function' ? callback : noop
-                };
-
-                q.tasks.splice(_binarySearch(q.tasks, item, _compareTasks) + 1, 0, item);
-
-                if (q.tasks.length === q.concurrency) {
-                    q.saturated();
-                }
-                async.setImmediate(q.process);
-            });
-        }
-
-        // Start with a normal queue
-        var q = async.queue(worker, concurrency);
-
-        // Override push to accept second parameter representing priority
-        q.push = function (data, priority, callback) {
-            _insert(q, data, priority, callback);
-        };
-
-        // Remove unshift function
-        delete q.unshift;
-
-        return q;
-    };
-
-    async.cargo = function (worker, payload) {
-        return _queue(worker, 1, payload);
-    };
-
-    function _console_fn(name) {
-        return _restParam(function (fn, args) {
-            fn.apply(null, args.concat([_restParam(function (err, args) {
-                if (typeof console === 'object') {
-                    if (err) {
-                        if (console.error) {
-                            console.error(err);
-                        }
-                    }
-                    else if (console[name]) {
-                        _arrayEach(args, function (x) {
-                            console[name](x);
-                        });
-                    }
-                }
-            })]));
-        });
-    }
-    async.log = _console_fn('log');
-    async.dir = _console_fn('dir');
-    /*async.info = _console_fn('info');
-    async.warn = _console_fn('warn');
-    async.error = _console_fn('error');*/
-
-    async.memoize = function (fn, hasher) {
-        var memo = {};
-        var queues = {};
-        var has = Object.prototype.hasOwnProperty;
-        hasher = hasher || identity;
-        var memoized = _restParam(function memoized(args) {
-            var callback = args.pop();
-            var key = hasher.apply(null, args);
-            if (has.call(memo, key)) {   
-                async.setImmediate(function () {
-                    callback.apply(null, memo[key]);
-                });
-            }
-            else if (has.call(queues, key)) {
-                queues[key].push(callback);
-            }
-            else {
-                queues[key] = [callback];
-                fn.apply(null, args.concat([_restParam(function (args) {
-                    memo[key] = args;
-                    var q = queues[key];
-                    delete queues[key];
-                    for (var i = 0, l = q.length; i < l; i++) {
-                        q[i].apply(null, args);
-                    }
-                })]));
-            }
-        });
-        memoized.memo = memo;
-        memoized.unmemoized = fn;
-        return memoized;
-    };
-
-    async.unmemoize = function (fn) {
-        return function () {
-            return (fn.unmemoized || fn).apply(null, arguments);
-        };
-    };
-
-    function _times(mapper) {
-        return function (count, iterator, callback) {
-            mapper(_range(count), iterator, callback);
-        };
-    }
-
-    async.times = _times(async.map);
-    async.timesSeries = _times(async.mapSeries);
-    async.timesLimit = function (count, limit, iterator, callback) {
-        return async.mapLimit(_range(count), limit, iterator, callback);
-    };
-
-    async.seq = function (/* functions... */) {
-        var fns = arguments;
-        return _restParam(function (args) {
-            var that = this;
-
-            var callback = args[args.length - 1];
-            if (typeof callback == 'function') {
-                args.pop();
-            } else {
-                callback = noop;
-            }
-
-            async.reduce(fns, args, function (newargs, fn, cb) {
-                fn.apply(that, newargs.concat([_restParam(function (err, nextargs) {
-                    cb(err, nextargs);
-                })]));
-            },
-            function (err, results) {
-                callback.apply(that, [err].concat(results));
-            });
-        });
-    };
-
-    async.compose = function (/* functions... */) {
-        return async.seq.apply(null, Array.prototype.reverse.call(arguments));
-    };
-
-
-    function _applyEach(eachfn) {
-        return _restParam(function(fns, args) {
-            var go = _restParam(function(args) {
-                var that = this;
-                var callback = args.pop();
-                return eachfn(fns, function (fn, _, cb) {
-                    fn.apply(that, args.concat([cb]));
-                },
-                callback);
-            });
-            if (args.length) {
-                return go.apply(this, args);
-            }
-            else {
-                return go;
-            }
-        });
-    }
-
-    async.applyEach = _applyEach(async.eachOf);
-    async.applyEachSeries = _applyEach(async.eachOfSeries);
-
-
-    async.forever = function (fn, callback) {
-        var done = only_once(callback || noop);
-        var task = ensureAsync(fn);
-        function next(err) {
-            if (err) {
-                return done(err);
-            }
-            task(next);
-        }
-        next();
-    };
-
-    function ensureAsync(fn) {
-        return _restParam(function (args) {
-            var callback = args.pop();
-            args.push(function () {
-                var innerArgs = arguments;
-                if (sync) {
-                    async.setImmediate(function () {
-                        callback.apply(null, innerArgs);
-                    });
-                } else {
-                    callback.apply(null, innerArgs);
-                }
-            });
-            var sync = true;
-            fn.apply(this, args);
-            sync = false;
-        });
-    }
-
-    async.ensureAsync = ensureAsync;
-
-    async.constant = _restParam(function(values) {
-        var args = [null].concat(values);
-        return function (callback) {
-            return callback.apply(this, args);
-        };
-    });
-
-    async.wrapSync =
-    async.asyncify = function asyncify(func) {
-        return _restParam(function (args) {
-            var callback = args.pop();
-            var result;
-            try {
-                result = func.apply(this, args);
-            } catch (e) {
-                return callback(e);
-            }
-            // if result is Promise object
-            if (_isObject(result) && typeof result.then === "function") {
-                result.then(function(value) {
-                    callback(null, value);
-                })["catch"](function(err) {
-                    callback(err.message ? err : new Error(err));
-                });
-            } else {
-                callback(null, result);
-            }
-        });
-    };
-
-    // Node.js
-    if (typeof module === 'object' && module.exports) {
-        module.exports = async;
-    }
-    // AMD / RequireJS
-    else if (typeof define === 'function' && define.amd) {
-        define([], function () {
-            return async;
-        });
-    }
-    // included directly via <script> tag
-    else {
-        root.async = async;
-    }
-
-}());
-
-}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":25}],18:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/security":14,"events":24}],18:[function(require,module,exports){
 (function (global,Buffer){
 /*
  *  Sugar v1.5.0
@@ -13831,191 +12473,5 @@ function isObject(arg) {
 function isUndefined(arg) {
   return arg === void 0;
 }
-
-},{}],25:[function(require,module,exports){
-// shim for using process in browser
-var process = module.exports = {};
-
-// cached from whatever global is present so that test runners that stub it
-// don't break things.  But we need to wrap it in a try catch in case it is
-// wrapped in strict mode code which doesn't define any globals.  It's inside a
-// function because try/catches deoptimize in certain engines.
-
-var cachedSetTimeout;
-var cachedClearTimeout;
-
-function defaultSetTimout() {
-    throw new Error('setTimeout has not been defined');
-}
-function defaultClearTimeout () {
-    throw new Error('clearTimeout has not been defined');
-}
-(function () {
-    try {
-        if (typeof setTimeout === 'function') {
-            cachedSetTimeout = setTimeout;
-        } else {
-            cachedSetTimeout = defaultSetTimout;
-        }
-    } catch (e) {
-        cachedSetTimeout = defaultSetTimout;
-    }
-    try {
-        if (typeof clearTimeout === 'function') {
-            cachedClearTimeout = clearTimeout;
-        } else {
-            cachedClearTimeout = defaultClearTimeout;
-        }
-    } catch (e) {
-        cachedClearTimeout = defaultClearTimeout;
-    }
-} ())
-function runTimeout(fun) {
-    if (cachedSetTimeout === setTimeout) {
-        //normal enviroments in sane situations
-        return setTimeout(fun, 0);
-    }
-    // if setTimeout wasn't available but was latter defined
-    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
-        cachedSetTimeout = setTimeout;
-        return setTimeout(fun, 0);
-    }
-    try {
-        // when when somebody has screwed with setTimeout but no I.E. maddness
-        return cachedSetTimeout(fun, 0);
-    } catch(e){
-        try {
-            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
-            return cachedSetTimeout.call(null, fun, 0);
-        } catch(e){
-            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
-            return cachedSetTimeout.call(this, fun, 0);
-        }
-    }
-
-
-}
-function runClearTimeout(marker) {
-    if (cachedClearTimeout === clearTimeout) {
-        //normal enviroments in sane situations
-        return clearTimeout(marker);
-    }
-    // if clearTimeout wasn't available but was latter defined
-    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
-        cachedClearTimeout = clearTimeout;
-        return clearTimeout(marker);
-    }
-    try {
-        // when when somebody has screwed with setTimeout but no I.E. maddness
-        return cachedClearTimeout(marker);
-    } catch (e){
-        try {
-            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
-            return cachedClearTimeout.call(null, marker);
-        } catch (e){
-            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
-            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
-            return cachedClearTimeout.call(this, marker);
-        }
-    }
-
-
-
-}
-var queue = [];
-var draining = false;
-var currentQueue;
-var queueIndex = -1;
-
-function cleanUpNextTick() {
-    if (!draining || !currentQueue) {
-        return;
-    }
-    draining = false;
-    if (currentQueue.length) {
-        queue = currentQueue.concat(queue);
-    } else {
-        queueIndex = -1;
-    }
-    if (queue.length) {
-        drainQueue();
-    }
-}
-
-function drainQueue() {
-    if (draining) {
-        return;
-    }
-    var timeout = runTimeout(cleanUpNextTick);
-    draining = true;
-
-    var len = queue.length;
-    while(len) {
-        currentQueue = queue;
-        queue = [];
-        while (++queueIndex < len) {
-            if (currentQueue) {
-                currentQueue[queueIndex].run();
-            }
-        }
-        queueIndex = -1;
-        len = queue.length;
-    }
-    currentQueue = null;
-    draining = false;
-    runClearTimeout(timeout);
-}
-
-process.nextTick = function (fun) {
-    var args = new Array(arguments.length - 1);
-    if (arguments.length > 1) {
-        for (var i = 1; i < arguments.length; i++) {
-            args[i - 1] = arguments[i];
-        }
-    }
-    queue.push(new Item(fun, args));
-    if (queue.length === 1 && !draining) {
-        runTimeout(drainQueue);
-    }
-};
-
-// v8 likes predictible objects
-function Item(fun, array) {
-    this.fun = fun;
-    this.array = array;
-}
-Item.prototype.run = function () {
-    this.fun.apply(null, this.array);
-};
-process.title = 'browser';
-process.browser = true;
-process.env = {};
-process.argv = [];
-process.version = ''; // empty string to avoid regexp issues
-process.versions = {};
-
-function noop() {}
-
-process.on = noop;
-process.addListener = noop;
-process.once = noop;
-process.off = noop;
-process.removeListener = noop;
-process.removeAllListeners = noop;
-process.emit = noop;
-process.prependListener = noop;
-process.prependOnceListener = noop;
-
-process.listeners = function (name) { return [] }
-
-process.binding = function (name) {
-    throw new Error('process.binding is not supported');
-};
-
-process.cwd = function () { return '/' };
-process.chdir = function (dir) {
-    throw new Error('process.chdir is not supported');
-};
-process.umask = function() { return 0; };
 
 },{}]},{},[1]);

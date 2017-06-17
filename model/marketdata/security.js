@@ -124,8 +124,6 @@ function securities(session, description, cb) {
     let summary = description;
     try { summary = parse(description); }
     catch (ex) { cb(ex); return; }
-
-    console.log(description + " = " + JSON.stringify(summary));
     
     let list = [ ];
     session.service.contractDetails(summary)
