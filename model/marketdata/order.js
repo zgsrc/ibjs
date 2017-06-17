@@ -1,14 +1,13 @@
 "use strict";
 
-const RealTime = require("../realtime"),
+const MarketData = require("./marketdata"),
       flags = require("../flags");
 
-class Order extends RealTime {
+class Order extends MarketData {
     
-    constructor(session, contract, defaults) {
-        super(service);
-        this.contract = contract;
-        this.ticket = defaults || { tif: "Day" };
+    constructor(session, contract) {
+        super(session, contract);
+        this.ticket = { tif: "Day" };
     }
     
     ////////////////////////////////////////

@@ -6,7 +6,8 @@ const flags = require("../flags"),
       MarketData = require("./marketdata"),
       Quote = require("./quote"),
       Depth = require("./depth"),
-      Charts = require("./charts");
+      Charts = require("./charts"),
+      Order = require("./order");
 
 function parse(definition) {
     if (Object.isNumber(definition)) {
@@ -142,6 +143,10 @@ class Security extends MarketData {
             }).on("error", (err, cancel) => {
                 cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message));
             }).send();
+    }
+    
+    order() {
+        return new Order(this.session, this.contract);
     }
     
     close() {
