@@ -27,29 +27,17 @@ function parse(definition) {
             definition.symbol = symbol;
             
             if (type == "OPT") {
-                if (side.startsWith("put") || side.startsWith("call")) {
-                    definition.right = side.toUpperCase();
-                }
-                else {
-                    throw new Error("Must specify 'put' or 'call' for option contracts.");
-                }
+                if (side.startsWith("put") || side.startsWith("call")) definition.right = side.toUpperCase();
+                else throw new Error("Must specify 'put' or 'call' for option contracts.");
             }
             
             if (date) {
                 let month = date.to(3),
                     year = date.from(3).trim();
 
-                if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) {
-                    year = year.from(1);
-                }
-                
-                if (year.length == 2) {
-                    year = "20" + year;
-                }
-                
-                if (year == "") {
-                    year = Date.create().fullYear();
-                }
+                if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) year = year.from(1);
+                if (year.length == 2) year = "20" + year;
+                if (year == "") year = Date.create().fullYear();
 
                 date = Date.create(month + " " + year).format("{yyyy}{MM}");
                 definition.expiry = date;
@@ -64,33 +52,20 @@ function parse(definition) {
                 definition.secType = flags.SECURITY_TYPE[tokens[1].toLowerCase()];
                 tokens = tokens.from(2);
             }
-            else {
-                tokens = tokens.from(1);
-            }
-            
+            else tokens = tokens.from(1);
         }
         
         tokens.inGroupsOf(2).each(field => {
             if (field.length == 2 && field.all(a => a != null)) {
                 if (field[0].toLowerCase() == "in") {
                     definition.currency = field[1].toUpperCase();
-                    if (flags.CURRENCIES.indexOf(definition.currency) < 0) {
-                        throw new Error("Invalid currency " + definition.currency);
-                    }
+                    if (flags.CURRENCIES.indexOf(definition.currency) < 0) throw new Error("Invalid currency " + definition.currency);
                 }
-                else if (field[0].toLowerCase() == "on") {
-                    definition.exchange = field[1].toUpperCase();
-                }
-                else if (field[0].toLowerCase() == "at") {
-                    definition.strike = parseFloat(field[1]);
-                }
-                else {
-                    throw new Error("Unrecognized field " + field.join(' '));
-                }
+                else if (field[0].toLowerCase() == "on") definition.exchange = field[1].toUpperCase();
+                else if (field[0].toLowerCase() == "at") definition.strike = parseFloat(field[1]);
+                else throw new Error("Unrecognized field " + field.join(' '));
             }
-            else {
-                throw new Error("Unrecognized field " + field.join(' '));
-            }
+            else throw new Error("Unrecognized field " + field.join(' '));
         });
     }
 
@@ -100,19 +75,11 @@ function parse(definition) {
         }
 
         if (definition.conId == null) {
-            if (!definition.secType && flags.CURRENCIES.indexOf(definition.symbol) >= 0) {
-                definition.secType = "CASH";
-            }
-            else {
-                definition.secType = definition.secType || "STK";
-            }
+            if (!definition.secType && flags.CURRENCIES.indexOf(definition.symbol) >= 0) definition.secType = "CASH";
+            else definition.secType = definition.secType || "STK";
 
-            if (definition.secType == "CASH") {
-                definition.exchange = "IDEALPRO";
-            }
-            else if (definition.secType == "STK" || definition.secType == "OPT") {
-                definition.exchange = definition.exchange || "SMART";
-            }
+            if (definition.secType == "CASH") definition.exchange = "IDEALPRO";
+            else if (definition.secType == "STK" || definition.secType == "OPT") definition.exchange = definition.exchange || "SMART";
 
             definition.currency = definition.currency || "USD";
         }
@@ -135,14 +102,10 @@ class Security extends MarketData {
     
     fundamentals(type, cb) {
         this.service.fundamentalData(this.contract.summary, flags.FUNDAMENTALS_REPORTS[type])
-            .on("data", (data, cancel) => {
-                this[type] = data;
-                cb(null, data);
-            }).on("end", cancel => {
-                cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message));
-            }).on("error", (err, cancel) => {
-                cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message));
-            }).send();
+            .on("data", data => cb(null, data))
+            .on("end", () => cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message)))
+            .on("error", err => cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message)))
+            .send();
     }
     
     order() {

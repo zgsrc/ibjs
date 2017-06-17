@@ -80,9 +80,10 @@ class Quote extends MarketData {
             let oldValue = this[datum.key];
             this[datum.key] = datum.value;
             this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
-        })
-        .on("error", err => {
+        }).on("error", err => {
             this.emit("error", err);
+        })on("end", () => {
+            this.emit("load");
         }).send();
     }
     
