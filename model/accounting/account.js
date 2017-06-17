@@ -16,6 +16,10 @@ class Account extends RealTime {
             };
         }
         
+        if (!Objects.isString(options.id)) {
+            throw new Error("Account id is required.");
+        }
+        
         this.positions = { };
         
         let account = this.service.accountUpdates(options.id).on("data", data => {
