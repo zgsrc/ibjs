@@ -23,6 +23,10 @@ function printError(err, prefix) {
 const terminal = exports.terminal = configuration => {
     process.on('uncaughtException', err => printError(err));
     
+    if (configuration) {
+        configuration = { port: configuration };
+    }
+    
     ib.open(configuration, (err, session) => {
         if (err) printError(err);
         else {
