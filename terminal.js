@@ -21,29 +21,23 @@ function printError(err, prefix) {
 }
 
 const terminal = exports.terminal = configuration => {
-    process.on('uncaughtException', err => {
-        printError(err);
-    });
+    process.on('uncaughtException', err => printError(err));
     
-    console.log("Starting".red);
-    let session = ib.open(configuration).on("connected", () => {
-        console.log("Connected".yellow);
-    }).on("error", err => {
-        printError(err);
-    }).on("ready", () => {
-        console.log("Ready".green);
-        console.log("Use the 'session' variable to access the session. Type .exit to quit.".gray);
-        
-        let cmd = repl.start('> ');
-        cmd.context.session = session;
-        cmd.on("exit", () => {
-            console.log("Disconnecting".yellow);
-            session.close();
-        });
-    }).on("disconnected", () => {
-        console.log("Disconnected".red);
-        process.exit(0);
+    ib.open(configuration, (err, session) => {
+        if (err) printError(err);
+        else {
+            console.log("Use the 'session' variable to access the session. Type .exit to quit.".gray);
+
+            let cmd = repl.start('> ');
+            cmd.context.session = session;
+            cmd.on("exit", () => session.close());
+            
+            session.on("disconnected", () => {
+                console.log("Disconnected".red);
+                process.exit(0);
+            });
+        }
     });
 };
 
-terminal();
+terminal(process.argv[2]);

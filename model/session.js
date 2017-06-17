@@ -22,7 +22,7 @@ class Session extends Events {
         this.service.socket.once("managedAccounts", data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
             this.state = "ready";
-            this.emit("ready");
+            this.emit("ready", this);
         });
         
         this.service.socket.on("connected", () => {
@@ -35,9 +35,11 @@ class Session extends Events {
                     name = name[1];
 
                     this.connectivity[name] = { status: status, time: new Date() };   
+                    this.emit("connectivity", this.connectivity[name]);
                 }
-                
-                this.emit("connectivity", data);
+                else {
+                    this.emit("connectivity", data);    
+                }
             });
             
             this.service.newsBulletins(true).on("data", data => {
@@ -47,7 +49,7 @@ class Session extends Events {
                 this.emit("error", err);
             }).send();
             
-            this.emit("connected");
+            this.emit("connected", this.service.socket);
             this.state = "connected";
         }).on("disconnected", () => {
             this.state = "disconnected";
@@ -71,7 +73,7 @@ class Session extends Events {
         return new Account(this, options || this.managedAccounts.first());
     }
 
-    accounts(options) {
+    accountSummary(options) {
         return new Accounts(this, options);
     }
     
@@ -94,3 +96,13 @@ class Session extends Events {
 }
 
 module.exports = Session;
+
+/*
+if (options.trace) {
+    ib.on("all", (name, data) => {
+        fs.appendFile(options.trace, (new Date()) + " | " + name + ": " + data + "\n", err => {
+            throw err;
+        });
+    });
+}
+*/

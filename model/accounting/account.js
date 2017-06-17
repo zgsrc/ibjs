@@ -4,7 +4,7 @@ const RealTime = require("../realtime");
 
 class Account extends RealTime {
     
-    /* string id, object/boolean orders, object/boolean trades */
+    /* string id, boolean orders, boolean trades */
     constructor(session, options) {
         super(session);
         
@@ -16,11 +16,13 @@ class Account extends RealTime {
             };
         }
         
-        if (!Objects.isString(options.id)) {
+        if (!Object.isString(options.id)) {
             throw new Error("Account id is required.");
         }
         
-        this.positions = { };
+        this._exclude.push("positions", "orders", "trades");
+        
+        this.positions = new RealTime(session);
         
         let account = this.service.accountUpdates(options.id).on("data", data => {
             if (data.key) {
@@ -47,7 +49,7 @@ class Account extends RealTime {
                 this.emit("update", { type: "position", field: data.contract.conId, value: data });
             }
             else {
-                this.emit("warning", "Unrecognized account update " + JSON.stringify(data));
+                this.emit("error", "Unrecognized account update " + JSON.stringify(data));
             }
         }).on("error", err => {
             this.emit("error", err);
@@ -68,6 +70,8 @@ class Account extends RealTime {
             if (orders) orders.close();
             if (trades) trades.close();
         };
+        
+        setTimeout(() => this.emit("load"), 2500);
     }
     
 }

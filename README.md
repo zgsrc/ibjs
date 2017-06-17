@@ -29,18 +29,14 @@ The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to m
 2. Make sure sure things work by running the terminal interface from the SDK directory.  Any issues encountered during startup will be reported and the terminal will exit.
 
         $ cd ib-sdk
-        $ npm start
+        $ npm start [port]
     
 3. If the SDK can establish a working connection and load the object model, the terminal will start successfully.
 
-
-        Starting
-        Connected
-        Ready
-        Use the 'ib' variable to access the environment. Type .exit to quit.
+        Use the 'session' variable to access the session. Type .exit to quit.
         > 
 
-Learn more about exploring the SDK using the terminal [here](./docs/terminal.md).
+Explore the SDK using the terminal.
 
 ## Programming
 
@@ -49,28 +45,37 @@ Learn more about exploring the SDK using the terminal [here](./docs/terminal.md)
 
 const sdk = require("ib-sdk");
 
-let session = sdk.open({ port: 4001 }).on("ready", () => {
-    
-    // IB news bulletins (margin calls, special labelling, etc)
-    let bulletins = session.bulletins;
-    session.on("bulletin", data => { });
-    
-    // Market data farm connections
-    let connectivity = session.connectivity;
-    session.on("connectivity", data => { });
-    
-    // Real time account access.  Best entry point for most use cases.
-    let account = session.account();
-    
-    // Multiple account or special purpose use cases
-    let accounts = session.accounts(),
-        positions = session.positions(),
-        orders = session.orders(),
-        trades = session.trades();
-    
-    // Close connection and fire 'disconnect' event
-    session.close();
-    
+sdk.open({ port: 4001 }, (err, session) => {
+    if (err) {
+        console.log(err);
+    }
+    else {
+        // IB news bulletins (margin calls, special labelling, etc)
+        let bulletins = session.bulletins;
+        session.on("bulletin", data => { });
+
+        // Market data farm connections
+        let connectivity = session.connectivity;
+        session.on("connectivity", data => { });
+
+        // Full balance, position, order, and trade history access
+        let account = session.account().on("load", () => {
+            console.log("Account:");
+            account.each((value, name) => console.log(`${name}: ${value}`));
+
+            console.log("Positions:");
+            account.positions.each(position => console.log(position));
+
+            console.log("Orders:");
+            account.orders.each(order => console.log(order));
+
+            console.log("Trades:");
+            account.trades.each(trade => console.log(trade));
+
+            // Close connection and fire 'disconnect' event
+            session.close();
+        }); 
+    }
 });
 ```
 
