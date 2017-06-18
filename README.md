@@ -4,8 +4,6 @@
 
 Interactive Brokers SDK is a framework build atop the [native javascript API](https://github.com/pilwon/node-ib).  Straightforward programmatic access to your portfolio and market data subscriptions.
 
-__Refactor of object model under way that introduces breaking changes.  Unstable API for the next week or so.__
-
 ## Installation
 
     npm install ib-sdk
@@ -40,48 +38,17 @@ Explore the SDK using the terminal.
 
 ## Programming
 
-```javascript
-"use strict";
+[Account](./examples/account.js)
 
-const sdk = require("ib-sdk");
+[Summary](./examples/summary.js)
 
-sdk.open({ port: 4001 }, (err, session) => {
-    if (err) {
-        console.log(err);
-    }
-    else {
-        // IB news bulletins (margin calls, special labelling, etc)
-        let bulletins = session.bulletins;
-        session.on("bulletin", data => { });
-
-        // Market data farm connections
-        let connectivity = session.connectivity;
-        session.on("connectivity", data => { });
-
-        // Full balance, position, order, and trade history access
-        let account = session.account().on("load", () => {
-            console.log("Account:");
-            account.each((value, name) => console.log(`${name}: ${value}`));
-
-            console.log("Positions:");
-            account.positions.each(position => console.log(position));
-
-            console.log("Orders:");
-            account.orders.each(order => console.log(order));
-
-            console.log("Trades:");
-            account.trades.each(trade => console.log(trade));
-
-            // Close connection and fire 'disconnect' event
-            session.close();
-        }); 
-    }
-});
-```
-
-## Advanced
+[System](./examples/system.js)
 
 [Symbols](./docs/symbols.md)
+
+[Security](./examples/security.js)
+
+## Advanced
 
 [Service](./docs/service.md)
 
