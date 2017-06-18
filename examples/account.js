@@ -7,14 +7,6 @@ sdk.open((err, session) => {
         console.log(err);
     }
     else {
-        // IB news bulletins (margin calls, special labelling, etc)
-        let bulletins = session.bulletins;
-        session.on("bulletin", data => { });
-
-        // Market data farm connections
-        let connectivity = session.connectivity;
-        session.on("connectivity", data => { });
-
         // Full balance, position, order, and trade history access
         let account = session.account().on("load", () => {
             console.log("Account:");
