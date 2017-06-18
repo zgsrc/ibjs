@@ -10,23 +10,31 @@ class Bars extends MarketData {
     constructor(session, contract, barSize) {
         super(session, contract);
         
-        this.cursor = Date.create();
-        this.field = "TRADES";
-        this.regularTradingHours = true;
-        this.dateFormat = 1;
-        this.barSize = barSize;
+        this.options = {
+            cursor: Date.create(),
+            field: "TRADES",
+            regularTradingHours: true,
+            dateFormat: 1,
+            barSize: barSize
+        };
+        
         this.series = [ ];
+    }
+    
+    set(options) {
+        this.options = Object.merge(this.options, options);
+        return this;
     }
     
     history(cb) {
         let req = this.service.historicalData(
             this.contract.summary, 
-            this.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : ""), 
-            this.barSize.duration, 
-            this.barSize.text, 
-            this.field, 
-            this.regularTradingHours ? 1 : 0,
-            this.dateFormat
+            this.options.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : ""), 
+            this.options.barSize.duration, 
+            this.options.barSize.text, 
+            this.options.field, 
+            this.options.regularTradingHours ? 1 : 0,
+            this.options.dateFormat
         );
         
         let length = this.series.length;
@@ -43,7 +51,7 @@ class Bars extends MarketData {
                 range = [ newRecords.min(), newRecords.max() ];
             
             this.series = this.series.unique().sortBy("timestamp");
-            this.cursor = this.series.first().date;
+            this.options.cursor = this.series.first().date;
             this.emit("load", range);
             if (cb) cb();
         }).send();
@@ -52,9 +60,9 @@ class Bars extends MarketData {
     stream() {
         let req = this.service.realTimeBars(
             this.contract.summary, 
-            this.barSize.integer, 
-            this.field, 
-            this.regularTradingHours
+            this.options.barSize.integer, 
+            this.options.field, 
+            this.options.regularTradingHours
         );
         
         req.on("data", data => {
@@ -62,11 +70,10 @@ class Bars extends MarketData {
             data.timestamp = data.date.getTime();
             this.series.push(data);
             this.emit("update", data);
-            this.emit("afterUpdate");
         }).on("error", (err, cancel) => {
             if (err.timeout) {
                 cancel();
-                this.emit("error", `${this.contract.localSymbol} ${this.barSize.text} streaming bars request timed out. (Outside market hours?)`);
+                this.emit("error", `${this.contract.localSymbol} ${this.options.barSize.text} streaming bars request timed out. (Outside market hours?)`);
             }
             else this.emit("error", err);
         }).send();
