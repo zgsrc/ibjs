@@ -1019,6 +1019,8 @@ class Quote extends MarketData {
                 cb = null;
                 cancel();
             }).send();
+        
+        return this;
     }
     
     stream() {
@@ -1037,6 +1039,8 @@ class Quote extends MarketData {
         }).on("end", () => {
             this.emit("load");
         }).send();
+        
+        return this;
     }
     
 }
