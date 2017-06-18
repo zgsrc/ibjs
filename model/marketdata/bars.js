@@ -20,7 +20,7 @@ class Bars extends MarketData {
     
     history(cb) {
         let req = this.service.historicalData(
-            this.contract, 
+            this.contract.summary, 
             this.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : ""), 
             this.barSize.duration, 
             this.barSize.text, 
@@ -51,7 +51,7 @@ class Bars extends MarketData {
     
     stream() {
         let req = this.service.realTimeBars(
-            this.contract, 
+            this.contract.summary, 
             this.barSize.integer, 
             this.field, 
             this.regularTradingHours
