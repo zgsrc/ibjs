@@ -436,23 +436,31 @@ class Bars extends MarketData {
     constructor(session, contract, barSize) {
         super(session, contract);
         
-        this.cursor = Date.create();
-        this.field = "TRADES";
-        this.regularTradingHours = true;
-        this.dateFormat = 1;
-        this.barSize = barSize;
+        this.options = {
+            cursor: Date.create(),
+            field: "TRADES",
+            regularTradingHours: true,
+            dateFormat: 1,
+            barSize: barSize
+        };
+        
         this.series = [ ];
+    }
+    
+    set(options) {
+        this.options = Object.merge(this.options, options);
+        return this;
     }
     
     history(cb) {
         let req = this.service.historicalData(
-            this.contract, 
-            this.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : ""), 
-            this.barSize.duration, 
-            this.barSize.text, 
-            this.field, 
-            this.regularTradingHours ? 1 : 0,
-            this.dateFormat
+            this.contract.summary, 
+            this.options.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : ""), 
+            this.options.barSize.duration, 
+            this.options.barSize.text, 
+            this.options.field, 
+            this.options.regularTradingHours ? 1 : 0,
+            this.options.dateFormat
         );
         
         let length = this.series.length;
@@ -469,7 +477,7 @@ class Bars extends MarketData {
                 range = [ newRecords.min(), newRecords.max() ];
             
             this.series = this.series.unique().sortBy("timestamp");
-            this.cursor = this.series.first().date;
+            this.options.cursor = this.series.first().date;
             this.emit("load", range);
             if (cb) cb();
         }).send();
@@ -477,10 +485,10 @@ class Bars extends MarketData {
     
     stream() {
         let req = this.service.realTimeBars(
-            this.contract, 
-            this.barSize.integer, 
-            this.field, 
-            this.regularTradingHours
+            this.contract.summary, 
+            this.options.barSize.integer, 
+            this.options.field, 
+            this.options.regularTradingHours
         );
         
         req.on("data", data => {
@@ -488,11 +496,10 @@ class Bars extends MarketData {
             data.timestamp = data.date.getTime();
             this.series.push(data);
             this.emit("update", data);
-            this.emit("afterUpdate");
         }).on("error", (err, cancel) => {
             if (err.timeout) {
                 cancel();
-                this.emit("error", `${this.contract.localSymbol} ${this.barSize.text} streaming bars request timed out. (Outside market hours?)`);
+                this.emit("error", `${this.contract.localSymbol} ${this.options.barSize.text} streaming bars request timed out. (Outside market hours?)`);
             }
             else this.emit("error", err);
         }).send();
@@ -509,6 +516,10 @@ class Bars extends MarketData {
     study(name, length, calculator) {
         if (Object.isString(calculator)) {
             calculator = studies[calculator];
+        }
+        
+        if (calculator == null) {
+            throw new Error("No study named " + name);
         }
         
         for (let i = 0; i < this.series.length; i++) {
@@ -548,104 +559,97 @@ class Charts extends MarketData {
     constructor(session, contract) {
         
         super(session, contract);
-    
-        this.ONE_SECOND = new Bars(session, contract, {
-            text: "1 sec",
-            integer: 1,
-            duration: "1800 S"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
         
-        this.FIVE_SECONDS = new Bars(session, contract, {
-            text: "5 secs",
-            integer: 5,
-            duration: "3600 S"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
+        this.seconds = {
+            one: new Bars(session, contract, {
+                text: "1 sec",
+                integer: 1,
+                duration: "1800 S"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            five: new Bars(session, contract, {
+                text: "5 secs",
+                integer: 5,
+                duration: "3600 S"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            ten: new Bars(session, contract, {
+                text: "10 secs",
+                integer: 10,
+                duration: "7200 S"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            fifteen: new Bars(session, contract, {
+                text: "15 secs",
+                integer: 15,
+                duration: "10800 S"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            thirty: new Bars(session, contract, {
+                text: "30 secs",
+                integer: 30,
+                duration: "1 D"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data))
+        };
         
-        this.TEN_SECONDS = new Bars(session, contract, {
-            text: "10 secs",
-            integer: 10,
-            duration: "7200 S"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.FIFTEEN_SECONDS = new Bars(session, contract, {
-            text: "15 secs",
-            integer: 15,
-            duration: "10800 S"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.THIRTY_SECONDS = new Bars(session, contract, {
-            text: "30 secs",
-            integer: 30,
-            duration: "1 D"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.ONE_MINUTE = new Bars(session, contract, {
-            text: "1 min",
-            integer: 60,
-            duration: "2 D"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.TWO_MINUTES = new Bars(session, contract, {
-            text: "2 mins",
-            integer: 120,
-            duration: "3 D"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.THREE_MINUTES = new Bars(session, contract, {
-            text: "3 mins",
-            integer: 180,
-            duration: "4 D"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.FIVE_MINUTES = new Bars(session, contract, {
-            text: "5 mins",
-            integer: 300,
-            duration: "1 W"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
+        this.minutes = { 
+            one: new Bars(session, contract, {
+                text: "1 min",
+                integer: 60,
+                duration: "2 D"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            two: new Bars(session, contract, {
+                text: "2 mins",
+                integer: 120,
+                duration: "3 D"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            three: new Bars(session, contract, {
+                text: "3 mins",
+                integer: 180,
+                duration: "4 D"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            five:  new Bars(session, contract, {
+                text: "5 mins",
+                integer: 300,
+                duration: "1 W"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            ten: new Bars(session, contract, {
+                text: "10 mins",
+                integer: 600,
+                duration: "2 W"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            fifteen: new Bars(session, contract, {
+                text: "15 mins",
+                integer: 900,
+                duration: "2 W"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            thirty: new Bars(session, contract, {
+                text: "30 mins",
+                integer: 1800,
+                duration: "1 M"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data))
+        };
         
-        this.TEN_MINUTES = new Bars(session, contract, {
-            text: "10 mins",
-            integer: 600,
-            duration: "2 W"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
+        this.hours = {
+            one: new Bars(session, contract, {
+                text: "1 hour",
+                integer: 3600,
+                duration: "2 M"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            two: new Bars(session, contract, {
+                text: "2 hour",
+                integer: 7200,
+                duration: "2 M"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            four: new Bars(session, contract, {
+                text: "4 hour",
+                integer: 14400,
+                duration: "4 M"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
+            eight: new Bars(session, contract, {
+                text: "4 hour",
+                integer: 28800,
+                duration: "8 M"
+            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data))
+        };
 
-        this.FIFTEEN_MINUTES = new Bars(session, contract, {
-            text: "15 mins",
-            integer: 900,
-            duration: "2 W"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.THIRTY_MINUTES = new Bars(session, contract, {
-            text: "30 mins",
-            integer: 1800,
-            duration: "1 M"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.ONE_HOUR = new Bars(session, contract, {
-            text: "1 hour",
-            integer: 3600,
-            duration: "2 M"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.TWO_HOURS = new Bars(session, contract, {
-            text: "2 hour",
-            integer: 7200,
-            duration: "2 M"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.FOUR_HOURS = new Bars(session, contract, {
-            text: "4 hour",
-            integer: 14400,
-            duration: "4 M"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.EIGHT_HOURS = new Bars(session, contract, {
-            text: "4 hour",
-            integer: 28800,
-            duration: "8 M"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
-
-        this.ONE_DAY = new Bars(session, contract, {
+        this.daily = new Bars(session, contract, {
             text: "1 day",
             integer: 3600 * 24,
             duration: "1 Y"
@@ -653,24 +657,27 @@ class Charts extends MarketData {
         
     }
     
-    cancel() {
-        this.ONE_SECOND.cancel();
-        this.FIVE_SECONDS.cancel();
-        this.TEN_SECONDS.cancel();
-        this.FIFTEEN_SECONDS.cancel();
-        this.THIRTY_SECONDS.cancel();
-        this.ONE_MINUTE.cancel();
-        this.TWO_MINUTES.cancel();
-        this.THREE_MINUTES.cancel();
-        this.FIVE_MINUTES.cancel();
-        this.TEN_MINUTES.cancel();
-        this.FIFTEEN_MINUTES.cancel();
-        this.THIRTY_MINUTES.cancel();
-        this.ONE_HOUR.cancel();
-        this.TWO_HOURS.cancel();
-        this.FOUR_HOURS.cancel();
-        this.EIGHT_HOURS.cancel();
-        this.ONE_DAY.cancel();
+    close() {
+        this.seconds.one.close();
+        this.seconds.two.close();
+        this.seconds.five.close();
+        this.seconds.ten.close();
+        this.seconds.fifteen.close();
+        this.seconds.thirty.close();
+        
+        this.minutes.one.close();
+        this.minutes.two.close();
+        this.minutes.five.close();
+        this.minutes.ten.close();
+        this.minutes.fifteen.close();
+        this.minutes.thirty.close();
+        
+        this.hours.one.close();
+        this.hours.two.close();
+        this.hours.four.close();
+        this.hours.eight.close();
+        
+        this.daily.close();
     }
     
 }
@@ -704,18 +711,18 @@ class Depth extends MarketData {
         if (this.exchanges.indexOf(exchange) < 0) {
             this.exchanges.push(exchange);
             
-            let copy = Object.clone(this.contract);
+            let copy = Object.clone(this.contract.summary);
             copy.exchange = exchange;
             
             this.bids[exchange] = { };
             this.offers[exchange] = { };
 
-            let req = this.security.service.mktDepth(copy, rows || 5).on("data", datum => {
+            let req = this.session.service.mktDepth(copy, rows || 5).on("data", datum => {
                 if (datum.side == 1) this.bids[exchange][datum.position] = datum;
                 else this.offers[exchange][datum.position] = datum;
                 this.emit("update", datum);
             }).on("error", (err, cancel) => {
-                this.emit("error", this.security.summary.localSymbol + " on " + exchange + " failed.");
+                this.emit("error", this.contract.summary.localSymbol + " on " + exchange + " failed.");
                 this._subscriptions.remove(req);
                 this.exchanges.remove(exchange);
                 delete this.bids[exchange];
@@ -746,11 +753,11 @@ class Depth extends MarketData {
         }
         
         if (exchanges == null) {
-            exchanges = validExchanges;
+            exchanges = this.validExchanges;
         }
         
         exchanges.each(exchange => {
-            streamExchange(exchange, rows);
+            this.streamExchange(exchange, rows);
         });
     }
     
@@ -999,7 +1006,7 @@ class Quote extends MarketData {
     
     snapshot(cb) {
         let state = { };
-        this.security.service.mktData(this.security.summary, this._fieldTypes.join(","), true)
+        this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true)
             .on("data", datum => {
                 datum = parseQuotePart(datum);
                 state[datum.key] = datum.value;
@@ -1015,7 +1022,7 @@ class Quote extends MarketData {
     }
     
     stream() {
-        let req = this.security.service.mktData(this.security.summary, this._fieldTypes.join(","), false);
+        let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false);
         
         this.close = () => req.cancel();
         

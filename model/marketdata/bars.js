@@ -92,6 +92,10 @@ class Bars extends MarketData {
             calculator = studies[calculator];
         }
         
+        if (calculator == null) {
+            throw new Error("No study named " + name);
+        }
+        
         for (let i = 0; i < this.series.length; i++) {
             this.series[i][name] = calculator(this.series.from(i).to(length));
         }
