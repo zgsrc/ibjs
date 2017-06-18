@@ -54,7 +54,7 @@ class Quote extends MarketData {
     
     snapshot(cb) {
         let state = { };
-        this.security.service.mktData(this.security.summary, this._fieldTypes.join(","), true)
+        this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true)
             .on("data", datum => {
                 datum = parseQuotePart(datum);
                 state[datum.key] = datum.value;
@@ -70,7 +70,7 @@ class Quote extends MarketData {
     }
     
     stream() {
-        let req = this.security.service.mktData(this.security.summary, this._fieldTypes.join(","), false);
+        let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false);
         
         this.close = () => req.cancel();
         

@@ -25,18 +25,18 @@ class Depth extends MarketData {
         if (this.exchanges.indexOf(exchange) < 0) {
             this.exchanges.push(exchange);
             
-            let copy = Object.clone(this.contract);
+            let copy = Object.clone(this.contract.summary);
             copy.exchange = exchange;
             
             this.bids[exchange] = { };
             this.offers[exchange] = { };
 
-            let req = this.security.service.mktDepth(copy, rows || 5).on("data", datum => {
+            let req = this.session.service.mktDepth(copy, rows || 5).on("data", datum => {
                 if (datum.side == 1) this.bids[exchange][datum.position] = datum;
                 else this.offers[exchange][datum.position] = datum;
                 this.emit("update", datum);
             }).on("error", (err, cancel) => {
-                this.emit("error", this.security.summary.localSymbol + " on " + exchange + " failed.");
+                this.emit("error", this.contract.summary.localSymbol + " on " + exchange + " failed.");
                 this._subscriptions.remove(req);
                 this.exchanges.remove(exchange);
                 delete this.bids[exchange];
@@ -67,11 +67,11 @@ class Depth extends MarketData {
         }
         
         if (exchanges == null) {
-            exchanges = validExchanges;
+            exchanges = this.validExchanges;
         }
         
         exchanges.each(exchange => {
-            streamExchange(exchange, rows);
+            this.streamExchange(exchange, rows);
         });
     }
     
