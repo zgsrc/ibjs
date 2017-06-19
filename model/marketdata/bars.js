@@ -42,18 +42,20 @@ class Bars extends MarketData {
             record.date = Date.create(record.date);
             record.timestamp = record.date.getTime();
             this.series.push(record);
-            this.emit("update", record);
         }).on("error", err => {
-            this.emit("error", err);
             if (cb) cb(err);
+            else this.emit("error", err);
         }).on("end", () => {
             let newRecords = this.series.from(length).map("timestamp"),
                 range = [ newRecords.min(), newRecords.max() ];
             
             this.series = this.series.unique().sortBy("timestamp");
             this.options.cursor = this.series.first().date;
-            this.emit("load", range);
+            
             if (cb) cb();
+            else this.emit("load", range);
+            
+            this.emit("update", range);
         }).send();
     }
     
