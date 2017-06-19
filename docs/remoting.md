@@ -5,7 +5,7 @@
 __Server__
 ```javascript
 let app = require('http').createServer(handler),
-    session = sdk.connect({ host: "localhost", port: 4001 }),
+    session = sdk.session({ host: "localhost", port: 4001 }),
     io = require('socket.io')(app);
     
 session.service.socket.on("connected", () => {
