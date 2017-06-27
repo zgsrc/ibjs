@@ -8,7 +8,9 @@ sdk.open((err, session) => {
     }
     else {
         // Full balance, position, order, and trade history access
-        let account = session.account().on("load", () => {
+        let account = session.account();
+        
+        account.on("load", () => {
             console.log("Account:");
             account.each((value, name) => console.log(`${name}: ${value}`));
 

@@ -38,21 +38,17 @@ Explore the SDK using the terminal.
 
 ## Programming
 
-[Account](./examples/account.js)
+Each session is associated with one or more accounts.  The most common case is access to a single [account](./examples/account.js).  Other use cases can benefit from the lightweight [account summary](./examples/summary.js) model.
 
-[Summary](./examples/summary.js)
+Market data is made available through [security](./examples/security.js) objects.  Use the SDK's [symbol](./docs/symbols.md) syntax to lookup financial instruments. 
 
-[System](./examples/system.js)
-
-[Symbols](./docs/symbols.md)
-
-[Security](./examples/security.js)
+Manage [system](./examples/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.
 
 ## Advanced
 
-[Service](./docs/service.md)
+The programming model is built on top of the [service](./docs/service.md) module, which makes interacting with the IB API pub/sub paradigm easier.
 
-[Remoting](./docs/remoting.md)
+[Remoting](./docs/remoting.md) is made possible by proxying events over a compatible messaging system, such as [Socket.io](https://socket.io).
 
 ## License
 

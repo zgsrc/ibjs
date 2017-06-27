@@ -57,6 +57,8 @@ class Bars extends MarketData {
             
             this.emit("update", range);
         }).send();
+        
+        return this;
     }
     
     stream() {
@@ -81,7 +83,8 @@ class Bars extends MarketData {
         }).send();
         
         this.close = () => req.cancel();
-        return this ;
+        
+        return this;
     }
     
     lookup(timestamp) { 
@@ -120,6 +123,8 @@ class Bars extends MarketData {
             let window = this.series.from(-length);
             data[name] = calculator(window);
         });
+        
+        return this;
     }
     
 }
