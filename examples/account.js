@@ -7,9 +7,17 @@ sdk.open((err, session) => {
         console.log(err);
     }
     else {
-        // Full balance, position, order, and trade history access
+        // By default, the first value in session.managedAccounts array is used.
         let account = session.account();
         
+        // Otherwise you can supply options manually
+        account = session.account({
+            id: session.managedAccounts[0],
+            orders: true,
+            trades: true
+        });
+        
+        // Best effort (timer-based) to let a consistent initial state load.
         account.on("load", () => {
             console.log("Account:");
             account.each((value, name) => console.log(`${name}: ${value}`));

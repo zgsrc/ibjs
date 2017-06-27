@@ -40,7 +40,7 @@ Explore the SDK using the terminal.
 
 Each session is associated with one or more accounts.  The most common case is access to a single [account](./examples/account.js).  Other use cases can benefit from the lightweight [account summary](./examples/summary.js) model.
 
-Market data is made available through [security](./examples/security.js) objects.  Use the SDK's [symbol](./docs/symbols.md) syntax to lookup financial instruments. 
+Use the SDK's [symbol](./docs/symbols.md) syntax to create [security](./examples/security.js) objects from which you can access market data and initiate [orders](./docs/orders.md).
 
 Manage [system](./examples/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.
 
