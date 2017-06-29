@@ -20,7 +20,8 @@ exports.open = (options, cb) => {
     let timeout = setTimeout(() => {
         cb(new Error(
             "Connection timeout. Make sure TWS or IB Gateway is running and you are logged in. " + 
-            "Then check IB software is configured to accept API connections over the correct port."
+            "Then check IB software is configured to accept API connections over the correct port. " +
+            "If all else fails, try restarting TWS or IB Gateway."
         ));
         
         cb = null;

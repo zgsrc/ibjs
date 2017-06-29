@@ -4,7 +4,7 @@ const Events = require("events");
 
 class Request extends Events {
     
-    constructor(dispatch, id, call, send, cancel, timeout) {
+    constructor(dispatch, id, call, send, cancel, timeout, oneOff) {
         super();
         
         this.dispatch = dispatch;
@@ -16,6 +16,50 @@ class Request extends Events {
         }
         else {
             this.send = () => {
+                if (timeout) {
+                    if (!Object.isNumber(timeout) || timeout <= 0) {
+                        throw new Error("Timeout must be a positive number.");
+                    }
+
+                    this.timeout = setTimeout(() => {
+                        this.cancel();
+
+                        let timeoutError = new Error("Request " + (this.call || this.id) + " timed out.");
+                        timeoutError.timeout = timeout;
+                        this.emit("error", timeoutError, () => this.cancel());
+                    }, timeout);
+
+                    this.once("data", () => {
+                        if (oneOff) {
+                            this.cancel();
+                        }
+                        else if (this.timeout) {
+                            clearTimeout(this.timeout);
+                            delete this.timeout;
+                        }
+                    });
+
+                    this.once("end", () => {
+                        if (oneOff) {
+                            this.cancel();
+                        }
+                        else if (this.timeout) {
+                            clearTimeout(this.timeout);
+                            delete this.timeout;
+                        }
+                    });
+
+                    this.once("error", () => {
+                        if (oneOff) {
+                            this.cancel();
+                        }
+                        else if (this.timeout) {
+                            clearTimeout(this.timeout);
+                            delete this.timeout;
+                        }
+                    });
+                }
+                
                 send(this);
                 return this;
             };
@@ -51,41 +95,6 @@ class Request extends Events {
                 
                 this.cancel = () => { };
             };
-        }
-        
-        if (timeout) {
-            if (!Object.isNumber(timeout) || timeout <= 0) {
-                throw new Error("Timeout must be a positive number.");
-            }
-            
-            this.timeout = setTimeout(() => {
-                this.cancel();
-                
-                let timeoutError = new Error("Request " + (this.call || this.id) + " timed out.");
-                timeoutError.timeout = timeout;
-                this.emit("error", timeoutError, () => this.cancel());
-            }, timeout);
-            
-            this.on("data", () => {
-                if (this.timeout) {
-                    clearTimeout(this.timeout);
-                    delete this.timeout;
-                }
-            });
-            
-            this.on("end", () => {
-                if (this.timeout) {
-                    clearTimeout(this.timeout);
-                    delete this.timeout;
-                }
-            });
-            
-            this.on("error", () => {
-                if (this.timeout) {
-                    clearTimeout(this.timeout);
-                    delete this.timeout;
-                }
-            });
         }
     }
     

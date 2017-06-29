@@ -1,5 +1,7 @@
 "use strict";
 
+require('sugar');
+
 var Events = require("events"),
     Accounts = require("./accounting/accounts"),
     Positions = require("./accounting/positions"),
@@ -18,6 +20,7 @@ class Session extends Events {
         this.connectivity = { };
         this.bulletins = [ ];
         this.state = "initializing";
+        this.displayGroups = [ ];
         
         this.service.socket.once("managedAccounts", data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
@@ -47,6 +50,20 @@ class Session extends Events {
                 this.emit("bulletin", data);
             }).on("error", err => {
                 this.emit("error", err);
+            }).send();
+            
+            this.service.queryDisplayGroups().on("data", groups => {
+                groups.forEach((group, index) => {
+                    let displayGroup = this.service.subscribeToGroupEvents(group);
+                    displayGroup.group = group;
+                    displayGroup.index = index;
+                    displayGroup.on("data", contract => displayGroup.contract = contract);
+                    displayGroup.update = contract => this.service.updateDisplayGroup(displayGroup.id, contract);
+                    
+                    this.displayGroups.push(displayGroup);
+                    
+                    displayGroup.send();
+                });
             }).send();
             
             this.emit("connected", this.service.socket);

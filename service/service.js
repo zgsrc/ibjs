@@ -2,8 +2,7 @@
 
 require("sugar");
 
-const IB = require("ib"),
-      tickTypeToString = IB.util.tickTypeToString,
+const tickTypeToString = require("ib").util.tickTypeToString,
       parseXML = require('xml2js').parseString,
       Dispatch = require("./dispatch"),
       relay = require("./relay");
@@ -49,6 +48,8 @@ class Service {
         this.fundamentalData = instance("reqFundamentalData", null, 10000, ib, dispatch);
         
         this.historicalData = instance("reqHistoricalData", null, 10000, ib, dispatch);
+        
+        this.headTimestamp = instance("reqHeadTimestamp", null, 5000, ib, dispatch);
         
         this.realTimeBars = instance("reqRealTimeBars", "cancelRealTimeBars", 5000, ib, dispatch);
         
@@ -104,7 +105,7 @@ class Service {
         
         this.subscribeToGroupEvents = instance("subscribeToGroupEvents", "unsubscribeFromGroupEvents", 5000, ib, dispatch);
         
-        this.updateDisplayGroup = instance("updateDisplayGroup", null, 5000, ib, dispatch);
+        this.updateDisplayGroup = ib.updateDisplayGroup;
         
     }
     
@@ -190,6 +191,10 @@ function attach(ib, dispatch) {
                 hasGaps: hasGaps 
             });
         }
+    });
+    
+    ib.on('headTimestamp', function(reqId, timestamp) {
+        dispatch.data(reqId, timstamp);
     });
     
     ib.on('realtimeBar', function(reqId, date, open, high, low, close, volume, wap, count) {
@@ -422,7 +427,7 @@ function attach(ib, dispatch) {
     });
     
     ib.on('displayGroupList', function(reqId, groups) {
-        dispatch.data(reqId, groups);
+        dispatch.data(reqId, groups ? groups.split("|") : [ ]);
     });
     
     ib.on('displayGroupUpdated', function(reqId, contractInfo) {

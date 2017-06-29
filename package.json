@@ -1,12 +1,12 @@
 {
   "name": "ib-sdk",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Interactive Brokers SDK framework build atop the native javascript API.",
   "main": "index.js",
   "dependencies": {
     "async": "^1.5.2",
     "colors": "^1.1.2",
-    "ib": "^0.1.24",
+    "ib": "git+https://github.com/triploc/node-ib.git",
     "sugar": "^1.5.0",
     "xml2js": "^0.4.17"
   },
@@ -20,7 +20,7 @@
     "trading api"
   ],
   "author": "Jonathan Hollinger",
-  "license": "ISC",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/triploc/ib-sdk.git"
