@@ -4,7 +4,6 @@
   "description": "Interactive Brokers SDK framework build atop the native javascript API.",
   "main": "index.js",
   "dependencies": {
-    "async": "^1.5.2",
     "colors": "^1.1.2",
     "ib": "git+https://github.com/triploc/node-ib.git",
     "sugar": "^1.5.0",
