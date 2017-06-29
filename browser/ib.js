@@ -426,8 +426,6 @@ exports.TIME_IN_FORCE = TIME_IN_FORCE;
 },{}],8:[function(require,module,exports){
 "use strict";
 
-require("sugar");
-
 const MarketData = require("./marketdata"),
       studies = require("./studies");
 
@@ -556,8 +554,12 @@ class Bars extends MarketData {
 }
 
 module.exports = Bars;
-},{"./marketdata":11,"./studies":15,"sugar":18}],9:[function(require,module,exports){
+},{"./marketdata":11,"./studies":15}],9:[function(require,module,exports){
 "use strict";
+
+require("sugar");
+
+Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
 
 const MarketData = require("./marketdata"),
       Bars = require("./bars");
@@ -567,6 +569,10 @@ class Charts extends MarketData {
     constructor(session, contract) {
         
         super(session, contract);
+        
+        this.service.headTimestamp(this.contract.summary, "TRADES", 0, 1).once("data", data => {
+            this.earliestDataTimestamp = Date.create(data);
+        }).send();
         
         this.seconds = {
             one: new Bars(session, contract, {
@@ -691,7 +697,7 @@ class Charts extends MarketData {
 }
 
 module.exports = Charts;
-},{"./bars":8,"./marketdata":11}],10:[function(require,module,exports){
+},{"./bars":8,"./marketdata":11,"sugar":18}],10:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1241,6 +1247,8 @@ module.exports = RealTime;
 },{"events":24}],17:[function(require,module,exports){
 "use strict";
 
+require('sugar');
+
 var Events = require("events"),
     Accounts = require("./accounting/accounts"),
     Positions = require("./accounting/positions"),
@@ -1259,6 +1267,7 @@ class Session extends Events {
         this.connectivity = { };
         this.bulletins = [ ];
         this.state = "initializing";
+        this.displayGroups = [ ];
         
         this.service.socket.once("managedAccounts", data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
@@ -1288,6 +1297,20 @@ class Session extends Events {
                 this.emit("bulletin", data);
             }).on("error", err => {
                 this.emit("error", err);
+            }).send();
+            
+            this.service.queryDisplayGroups().on("data", groups => {
+                groups.forEach((group, index) => {
+                    let displayGroup = this.service.subscribeToGroupEvents(group);
+                    displayGroup.group = group;
+                    displayGroup.index = index;
+                    displayGroup.on("data", contract => displayGroup.contract = contract);
+                    displayGroup.update = contract => this.service.updateDisplayGroup(displayGroup.id, contract);
+                    
+                    this.displayGroups.push(displayGroup);
+                    
+                    displayGroup.send();
+                });
             }).send();
             
             this.emit("connected", this.service.socket);
@@ -1337,7 +1360,7 @@ class Session extends Events {
 }
 
 module.exports = Session;
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/security":14,"events":24}],18:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/security":14,"events":24,"sugar":18}],18:[function(require,module,exports){
 (function (global,Buffer){
 /*
  *  Sugar v1.5.0
@@ -12078,7 +12101,7 @@ const Events = require("events");
 
 class Request extends Events {
     
-    constructor(dispatch, id, call, send, cancel, timeout) {
+    constructor(dispatch, id, call, send, cancel, timeout, oneOff) {
         super();
         
         this.dispatch = dispatch;
@@ -12090,6 +12113,50 @@ class Request extends Events {
         }
         else {
             this.send = () => {
+                if (timeout) {
+                    if (!Object.isNumber(timeout) || timeout <= 0) {
+                        throw new Error("Timeout must be a positive number.");
+                    }
+
+                    this.timeout = setTimeout(() => {
+                        this.cancel();
+
+                        let timeoutError = new Error("Request " + (this.call || this.id) + " timed out.");
+                        timeoutError.timeout = timeout;
+                        this.emit("error", timeoutError, () => this.cancel());
+                    }, timeout);
+
+                    this.once("data", () => {
+                        if (oneOff) {
+                            this.cancel();
+                        }
+                        else if (this.timeout) {
+                            clearTimeout(this.timeout);
+                            delete this.timeout;
+                        }
+                    });
+
+                    this.once("end", () => {
+                        if (oneOff) {
+                            this.cancel();
+                        }
+                        else if (this.timeout) {
+                            clearTimeout(this.timeout);
+                            delete this.timeout;
+                        }
+                    });
+
+                    this.once("error", () => {
+                        if (oneOff) {
+                            this.cancel();
+                        }
+                        else if (this.timeout) {
+                            clearTimeout(this.timeout);
+                            delete this.timeout;
+                        }
+                    });
+                }
+                
                 send(this);
                 return this;
             };
@@ -12125,41 +12192,6 @@ class Request extends Events {
                 
                 this.cancel = () => { };
             };
-        }
-        
-        if (timeout) {
-            if (!Object.isNumber(timeout) || timeout <= 0) {
-                throw new Error("Timeout must be a positive number.");
-            }
-            
-            this.timeout = setTimeout(() => {
-                this.cancel();
-                
-                let timeoutError = new Error("Request " + (this.call || this.id) + " timed out.");
-                timeoutError.timeout = timeout;
-                this.emit("error", timeoutError, () => this.cancel());
-            }, timeout);
-            
-            this.on("data", () => {
-                if (this.timeout) {
-                    clearTimeout(this.timeout);
-                    delete this.timeout;
-                }
-            });
-            
-            this.on("end", () => {
-                if (this.timeout) {
-                    clearTimeout(this.timeout);
-                    delete this.timeout;
-                }
-            });
-            
-            this.on("error", () => {
-                if (this.timeout) {
-                    clearTimeout(this.timeout);
-                    delete this.timeout;
-                }
-            });
         }
     }
     
