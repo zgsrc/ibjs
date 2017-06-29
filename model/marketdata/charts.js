@@ -1,5 +1,9 @@
 "use strict";
 
+require("sugar");
+
+Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
+
 const MarketData = require("./marketdata"),
       Bars = require("./bars");
 
@@ -8,6 +12,10 @@ class Charts extends MarketData {
     constructor(session, contract) {
         
         super(session, contract);
+        
+        this.service.headTimestamp(this.contract.summary, "TRADES", 0, 1).once("data", data => {
+            this.earliestDataTimestamp = Date.create(data);
+        }).send();
         
         this.seconds = {
             one: new Bars(session, contract, {

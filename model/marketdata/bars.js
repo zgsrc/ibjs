@@ -1,7 +1,5 @@
 "use strict";
 
-require("sugar");
-
 const MarketData = require("./marketdata"),
       studies = require("./studies");
 
@@ -19,12 +17,6 @@ class Bars extends MarketData {
         };
         
         this.series = [ ];
-        
-        this.service.headTimestamp().on("data", data => {
-            this.earliestDataTimestamp = Date.create(data);
-        }).on("error", err => {
-            this.emit("error", err);
-        }).send();
     }
     
     set(options) {

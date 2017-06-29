@@ -194,7 +194,7 @@ function attach(ib, dispatch) {
     });
     
     ib.on('headTimestamp', function(reqId, timestamp) {
-        dispatch.data(reqId, timstamp);
+        dispatch.data(reqId, timestamp);
     });
     
     ib.on('realtimeBar', function(reqId, date, open, high, low, close, volume, wap, count) {
