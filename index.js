@@ -7,6 +7,7 @@ const fs = require("fs"),
       Proxy = exports.Proxy = require("./service/proxy"),
       Session = exports.Session = require("./model/session"),
       flags = exports.flags = require("./model/flags"),
+      studies = exports.studies = require("./model/marketdata/studies"),
       id = exports.id = 0;
 
 exports.open = (options, cb) => {
