@@ -42,6 +42,11 @@ class Quote extends MarketData {
         return this;
     }
     
+    futures() {
+        this._fieldTypes.add([ TICKS.futuresOpenInterest ]);
+        return this;
+    }
+    
     short() {
         this._fieldTypes.add([ TICKS.shortable, TICKS.inventory ]);
         return this;
@@ -99,6 +104,17 @@ function parseQuotePart(datum) {
     if (!key || key == "") throw new Error("Tick key not found.");
     if (value === null || value === "") throw new Error("No tick data value found.");
     if (key == "LAST_TIMESTAMP") value = new Date(parseInt(value) * 1000);
+    if (key == "RT_VOLUME") {
+        value = value.split(";");
+        value = {
+            price: parseFloat(value[0]),
+            size: parseInt(value[1]),
+            time: new Date(parseInt(value[2])),
+            volume: parseInt(value[3]),
+            vwap: parseFloat(value[4]),
+            marketMaker: new Boolean(value[5])
+        };
+    }
     
     return { key: key.camelize(false), value: value };
 }

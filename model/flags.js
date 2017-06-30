@@ -36,6 +36,7 @@ const TICKS = {
     fundamentalValues: 47,
     optionVolume: 100,
     optionOpenInterest: 101,
+    futuresOpenInterest: 588,
     historicalVolatility: 104,
     optionImpliedVolatility: 106,
     indexFuturePremium: 162,
