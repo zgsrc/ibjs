@@ -65,10 +65,10 @@ class Account extends RealTime {
             this.trades = this.session.trades({ account: options.id });
         }
         
-        this.close = () => {
+        this.cancel = () => {
             account.cancel();
-            if (orders) orders.close();
-            if (trades) trades.close();
+            if (orders) orders.cancel();
+            if (trades) trades.cancel();
         };
         
         setTimeout(() => this.emit("load"), 500);

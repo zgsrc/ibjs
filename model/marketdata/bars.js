@@ -81,7 +81,7 @@ class Bars extends MarketData {
             else this.emit("error", err);
         }).send();
         
-        this.close = () => req.cancel();
+        this.cancel = () => req.cancel();
         
         return this;
     }

@@ -46,9 +46,11 @@ class Depth extends MarketData {
             
             this._subscriptions.push(req);
         }
+        
+        return this;
     }
     
-    closeExchange(exchange) {
+    cancelExchange(exchange) {
         let idx = this.exchanges.indexOf(exchange),
             req = this._subscriptions[i];
         
@@ -58,6 +60,8 @@ class Depth extends MarketData {
         this.exchanges.remove(exchange);
         delete this.bids[exchange];
         delete this.offers[exchange];
+        
+        return this;
     }
     
     stream(exchanges, rows) {
@@ -73,9 +77,11 @@ class Depth extends MarketData {
         exchanges.each(exchange => {
             this.streamExchange(exchange, rows);
         });
+        
+        return this;
     }
     
-    close() {
+    cancel() {
         this._subscriptions.map("cancel");
     }
     

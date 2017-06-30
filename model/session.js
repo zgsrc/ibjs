@@ -80,8 +80,9 @@ class Session extends Events {
         return this.service.socket.clientId;
     }
     
-    close() {
+    close(exit) {
         this.service.socket.disconnect();
+        if (exit) process.exit();
     }
     
     account(options) {

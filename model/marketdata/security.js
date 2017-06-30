@@ -112,10 +112,10 @@ class Security extends MarketData {
         return new Order(this.session, this.contract);
     }
     
-    close() {
-        if (this.quote) this.quote.close();
-        if (this.depth) this.depth.close();
-        if (this.charts) this.charts.close();
+    cancel() {
+        if (this.quote) this.quote.cancel();
+        if (this.depth) this.depth.cancel();
+        if (this.charts) this.charts.cancel();
     }
     
 }

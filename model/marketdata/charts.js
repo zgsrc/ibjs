@@ -114,27 +114,27 @@ class Charts extends MarketData {
         
     }
     
-    close() {
-        this.seconds.one.close();
-        this.seconds.two.close();
-        this.seconds.five.close();
-        this.seconds.ten.close();
-        this.seconds.fifteen.close();
-        this.seconds.thirty.close();
+    cancel() {
+        this.seconds.one.cancel();
+        this.seconds.two.cancel();
+        this.seconds.five.cancel();
+        this.seconds.ten.cancel();
+        this.seconds.fifteen.cancel();
+        this.seconds.thirty.cancel();
         
-        this.minutes.one.close();
-        this.minutes.two.close();
-        this.minutes.five.close();
-        this.minutes.ten.close();
-        this.minutes.fifteen.close();
-        this.minutes.thirty.close();
+        this.minutes.one.cancel();
+        this.minutes.two.cancel();
+        this.minutes.five.cancel();
+        this.minutes.ten.cancel();
+        this.minutes.fifteen.cancel();
+        this.minutes.thirty.cancel();
         
-        this.hours.one.close();
-        this.hours.two.close();
-        this.hours.four.close();
-        this.hours.eight.close();
+        this.hours.one.cancel();
+        this.hours.two.cancel();
+        this.hours.four.cancel();
+        this.hours.eight.cancel();
         
-        this.daily.close();
+        this.daily.cancel();
     }
     
 }

@@ -57,7 +57,7 @@ class Accounts extends RealTime {
             this.emit("error", err);
         }).send();
         
-        this.close = () => {
+        this.cancel = () => {
             summary.cancel();
             if (positions) positions.cancel();
         };

@@ -20,7 +20,7 @@ class Positions extends RealTime {
             this.emit("error", err);
         }).send();
         
-        this.close = () => positions.cancel();
+        this.cancel = () => positions.cancel();
     }
     
 }

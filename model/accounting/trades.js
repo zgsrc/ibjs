@@ -33,7 +33,7 @@ class Trades extends RealTime {
             this.emit("load");
         }).send();
         
-        this.close = () => trades.cancel();
+        this.cancel = () => trades.cancel();
     }
     
 }

@@ -74,7 +74,7 @@ class Quote extends MarketData {
     stream() {
         let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false);
         
-        this.close = () => req.cancel();
+        this.cancel = () => req.cancel();
         
         req.on("data", datum  => {
             datum = parseQuotePart(datum);
