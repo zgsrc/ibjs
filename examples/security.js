@@ -39,6 +39,11 @@ sdk.open((err, session) => {
                 AAPL.charts.minutes.five.stream().on("update", data => {
                     console.log(data);
                 });
+                
+                AAPL.charts.minutes.five.study("SMA20", 20, "SMA");
+                
+                sdk.studies.CUSTOM = window => window.sum("volume");
+                AAPL.charts.minutes.five.study("CUMVOL20", 20, "CUSTOM");
             }
         });
         
