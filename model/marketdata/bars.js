@@ -25,7 +25,7 @@ class Bars extends MarketData {
         return this;
     }
     
-    history(cb) {
+    history(cb, retry) {
         let req = this.service.historicalData(
             this.contract.summary, 
             this.options.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : ""), 
@@ -41,10 +41,15 @@ class Bars extends MarketData {
             record.date = Date.create(record.date);
             record.timestamp = record.date.getTime();
             this.series.push(record);
-        }).on("error", err => {
-            if (cb) cb(err);
-            else this.emit("error", err);
-        }).on("end", () => {
+        }).once("error", err => {
+            if (!retry && err.timeout) {
+                this.history(cb, true);
+            }
+            else {
+                if (cb) cb(err);
+                else this.emit("error", err);
+            }
+        }).once("end", () => {
             let newRecords = this.series.from(length).map("timestamp"),
                 range = [ newRecords.min(), newRecords.max() ];
             
@@ -53,8 +58,6 @@ class Bars extends MarketData {
             
             if (cb) cb();
             else this.emit("load", range);
-            
-            this.emit("update", range);
         }).send();
         
         return this;
