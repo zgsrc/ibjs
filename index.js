@@ -53,9 +53,9 @@ const session = exports.session = options => {
     
     if (options.trace) {
         ib.on("all", (name, data) => {
-            fs.appendFile(options.trace, (new Date()) + " | " + name + ": " + data + "\n", err => {
-                throw err;
-            });
+            let msg = (new Date()) + " | " + name + ": " + data + "\n";
+            fs.appendFile(options.trace, msg, err => throw err);
+            console.log(msg);
         });
     }
     

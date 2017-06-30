@@ -55,14 +55,16 @@ class Session extends Events {
             this.service.queryDisplayGroups().on("data", groups => {
                 groups.forEach((group, index) => {
                     let displayGroup = this.service.subscribeToGroupEvents(group);
-                    displayGroup.group = group;
-                    displayGroup.index = index;
-                    displayGroup.on("data", contract => displayGroup.contract = contract);
-                    displayGroup.update = contract => this.service.updateDisplayGroup(displayGroup.id, contract);
-                    
                     this.displayGroups.push(displayGroup);
                     
-                    displayGroup.send();
+                    displayGroup.group = group;
+                    displayGroup.index = index;
+                    displayGroup.update = contract => this.service.updateDisplayGroup(displayGroup.id, contract);
+                    
+                    displayGroup.on("data", contract => {
+                        displayGroup.contract = contract;
+                        this.emit("displayGroupUpdated", displayGroup);
+                    }).send();
                 });
             }).send();
             

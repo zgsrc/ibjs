@@ -14,6 +14,13 @@ sdk.open({ port: 4001 }, (err, session) => {
         // Market data farm connections
         let connectivity = session.connectivity;
         session.on("connectivity", data => console.log(data));
+        
+        // Access display groups
+        session.displayGroups.forEach(group => console.log(group.contract));
+        session.on("displayGroupUpdated", group => console.log(group.contract));
+        
+        // Update display group
+        session.displayGroups[0].update(8314);
 
         // Close connection and fire 'disconnect' event
         setTimeout(() => session.close(), 2500);

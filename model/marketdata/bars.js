@@ -1,7 +1,8 @@
 "use strict";
 
 const MarketData = require("./marketdata"),
-      studies = require("./studies");
+      studies = require("./studies"),
+      fs = require("fs");
 
 class Bars extends MarketData {
     

@@ -42,7 +42,7 @@ Each session is associated with one or more accounts.  The most common case is a
 
 Use the SDK's [symbol](./docs/symbols.md) syntax to create [security](./examples/security.js) objects from which you can access market data and initiate [orders](./docs/orders.md).
 
-Manage [system](./examples/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.
+Manage [system](./examples/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interest with display groups.
 
 ## Advanced
 
