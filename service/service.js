@@ -107,6 +107,8 @@ class Service {
         
         this.updateDisplayGroup = ib.updateDisplayGroup;
         
+        this.matchingSymbols = instance("matchingSymbols", "reqMatchingSymbols", null, ib, dispatch);
+        
     }
     
 }
@@ -432,6 +434,10 @@ function attach(ib, dispatch) {
     
     ib.on('displayGroupUpdated', function(reqId, contractInfo) {
         dispatch.data(reqId, contractInfo);
+    });
+    
+    ib.on('sampleSymbols', function(reqId, data) {
+        dispatch.data(reqId, data);
     });
 
 }

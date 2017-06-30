@@ -1,7 +1,7 @@
 "use strict";
 
 const fs = require("fs"),
-      IB = require("ib"),
+      IB = require("../node-ib"),
       Service = exports.Service = require("./service/service"),
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),
@@ -54,7 +54,7 @@ const session = exports.session = options => {
     if (options.trace) {
         ib.on("all", (name, data) => {
             let msg = (new Date()) + " | " + name + ": " + data + "\n";
-            fs.appendFile(options.trace, msg, err => throw err);
+            fs.appendFile(options.trace, msg, err => { throw err });
             console.log(msg);
         });
     }

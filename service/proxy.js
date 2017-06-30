@@ -53,6 +53,8 @@ class Proxy {
         
         this.historicalData = request("historicalData", 20000, socket, dispatch);
         
+        this.headTimestamp = request("headTimestamp", 20000, socket, dispatch);
+        
         this.realTimeBars = request("realTimeBars", 10000, socket, dispatch);
         
         this.mktData = request("mktData", 10000, socket, dispatch);
@@ -86,8 +88,6 @@ class Proxy {
         this.queryDisplayGroups = request("queryDisplayGroups", 10000, socket, dispatch);
         
         this.subscribeToGroupEvents = request("subscribeToGroupEvents", 10000, socket, dispatch);
-        
-        this.updateDisplayGroup = request("updateDisplayGroup", 10000, socket, dispatch);
         
     }
     

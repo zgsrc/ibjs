@@ -427,7 +427,8 @@ exports.TIME_IN_FORCE = TIME_IN_FORCE;
 "use strict";
 
 const MarketData = require("./marketdata"),
-      studies = require("./studies");
+      studies = require("./studies"),
+      fs = require("fs");
 
 class Bars extends MarketData {
     
@@ -554,7 +555,7 @@ class Bars extends MarketData {
 }
 
 module.exports = Bars;
-},{"./marketdata":11,"./studies":15}],9:[function(require,module,exports){
+},{"./marketdata":11,"./studies":15,"fs":23}],9:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1244,7 +1245,7 @@ class RealTime extends Events {
 }
 
 module.exports = RealTime;
-},{"events":24}],17:[function(require,module,exports){
+},{"events":25}],17:[function(require,module,exports){
 "use strict";
 
 require('sugar');
@@ -1302,14 +1303,16 @@ class Session extends Events {
             this.service.queryDisplayGroups().on("data", groups => {
                 groups.forEach((group, index) => {
                     let displayGroup = this.service.subscribeToGroupEvents(group);
-                    displayGroup.group = group;
-                    displayGroup.index = index;
-                    displayGroup.on("data", contract => displayGroup.contract = contract);
-                    displayGroup.update = contract => this.service.updateDisplayGroup(displayGroup.id, contract);
-                    
                     this.displayGroups.push(displayGroup);
                     
-                    displayGroup.send();
+                    displayGroup.group = group;
+                    displayGroup.index = index;
+                    displayGroup.update = contract => this.service.updateDisplayGroup(displayGroup.id, contract);
+                    
+                    displayGroup.on("data", contract => {
+                        displayGroup.contract = contract;
+                        this.emit("displayGroupUpdated", displayGroup);
+                    }).send();
                 });
             }).send();
             
@@ -1360,7 +1363,7 @@ class Session extends Events {
 }
 
 module.exports = Session;
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/security":14,"events":24,"sugar":18}],18:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/security":14,"events":25,"sugar":18}],18:[function(require,module,exports){
 (function (global,Buffer){
 /*
  *  Sugar v1.5.0
@@ -11859,7 +11862,7 @@ module.exports = Session;
 
 }).call(this);
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"buffer":23}],19:[function(require,module,exports){
+},{"buffer":24}],19:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -11988,6 +11991,8 @@ class Proxy {
         
         this.historicalData = request("historicalData", 20000, socket, dispatch);
         
+        this.headTimestamp = request("headTimestamp", 20000, socket, dispatch);
+        
         this.realTimeBars = request("realTimeBars", 10000, socket, dispatch);
         
         this.mktData = request("mktData", 10000, socket, dispatch);
@@ -12021,8 +12026,6 @@ class Proxy {
         this.queryDisplayGroups = request("queryDisplayGroups", 10000, socket, dispatch);
         
         this.subscribeToGroupEvents = request("subscribeToGroupEvents", 10000, socket, dispatch);
-        
-        this.updateDisplayGroup = request("updateDisplayGroup", 10000, socket, dispatch);
         
     }
     
@@ -12219,9 +12222,11 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":24}],23:[function(require,module,exports){
+},{"events":25}],23:[function(require,module,exports){
 
 },{}],24:[function(require,module,exports){
+arguments[4][23][0].apply(exports,arguments)
+},{"dup":23}],25:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
