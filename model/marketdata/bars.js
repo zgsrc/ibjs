@@ -79,7 +79,7 @@ class Bars extends MarketData {
         }).on("error", (err, cancel) => {
             if (err.timeout) {
                 cancel();
-                this.emit("error", `${this.contract.localSymbol} ${this.options.barSize.text} streaming bars request timed out. (Outside market hours?)`);
+                this.emit("error", `${this.contract.summary.localSymbol} ${this.options.barSize.text} streaming bars request timed out. (Outside market hours?)`);
             }
             else this.emit("error", err);
         }).send();
@@ -109,21 +109,31 @@ class Bars extends MarketData {
         }
         
         this.on("load", timestamps => {
-            let start = this.series.findIndex(i => i.timestamp <= timestamps.min()),
-                end = this.series.findIndex(i => i.timestamp > timestamps.max());
-            
-            if (start < 0) start = 0;
-            if (end < 0) end = this.series.length - 1;
-            
-            start.upto(end).each(i => {
-                let window = this.series.from(i).to(length);
-                this.series[i + length - 1][name] = calculator(window);
-            });
+            try {
+                let start = this.series.findIndex(i => i.timestamp <= timestamps.min()),
+                    end = this.series.findIndex(i => i.timestamp > timestamps.max());
+
+                if (start < 0) start = 0;
+                if (end < 0) end = this.series.length - 1;
+
+                start.upto(end).each(i => {
+                    let window = this.series.from(i).to(length);
+                    this.series[i + length - 1][name] = calculator(window);
+                });
+            }
+            catch (ex) {
+                this.emit("error", ex);
+            }
         });
         
         this.on("update", data => {
-            let window = this.series.from(-length);
-            data[name] = calculator(window);
+            try {
+                let window = this.series.from(-length);
+                data[name] = calculator(window);
+            }
+            catch (ex) {
+                this.emit("error", ex);
+            }
         });
         
         return this;

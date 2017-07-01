@@ -36,7 +36,7 @@ class Depth extends MarketData {
                 else this.offers[exchange][datum.position] = datum;
                 this.emit("update", datum);
             }).on("error", (err, cancel) => {
-                this.emit("error", this.contract.summary.localSymbol + " on " + exchange + " failed.");
+                this.emit("error", this.contract.summary.localSymbol + " level 2 quotes on " + exchange + " failed.");
                 this._subscriptions.remove(req);
                 this.exchanges.remove(exchange);
                 delete this.bids[exchange];
