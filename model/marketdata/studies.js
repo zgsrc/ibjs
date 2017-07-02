@@ -1,4 +1,4 @@
-require("sugar");
+require("sugar").extend();
 
 const studies = { };
 

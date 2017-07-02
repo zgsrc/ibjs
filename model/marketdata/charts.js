@@ -1,6 +1,6 @@
 "use strict";
 
-require("sugar");
+require("sugar").extend();
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
 

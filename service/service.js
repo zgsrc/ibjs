@@ -1,6 +1,6 @@
 "use strict";
 
-require("sugar");
+require("sugar").extend();
 
 const tickTypeToString = require("ib").util.tickTypeToString,
       parseXML = require('xml2js').parseString,

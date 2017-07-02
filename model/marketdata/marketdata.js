@@ -1,6 +1,6 @@
 "use strict";
 
-require("sugar");
+require("sugar").extend();
 
 const RealTime = require("../realtime");
 
