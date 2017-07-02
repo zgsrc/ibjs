@@ -16793,6 +16793,14 @@ class Proxy {
         
         this.subscribeToGroupEvents = request("subscribeToGroupEvents", 10000, socket, dispatch);
         
+        this.updateDisplayGroup = function(ref, contract) {
+            socket.emit("request", {
+                fn: "updateDisplayGroup",
+                args: [ contract ],
+                ref: ref
+            });
+        };
+        
     }
     
 }
