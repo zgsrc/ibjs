@@ -105,7 +105,9 @@ class Bars extends MarketData {
         }
         
         for (let i = 0; i < this.series.length; i++) {
-            this.series[i][name] = calculator(this.series.from(i).to(length));
+            if (i + this.series.length - 1 < this.series.length) {
+                this.series[i + this.series.length - 1][name] = calculator(this.series.from(i).to(length));
+            }
         }
         
         this.on("load", timestamps => {
