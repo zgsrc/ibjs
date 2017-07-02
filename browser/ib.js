@@ -574,7 +574,7 @@ module.exports = Bars;
 },{"./marketdata":11,"./studies":15,"fs":813}],9:[function(require,module,exports){
 "use strict";
 
-require("sugar");
+require("sugar").extend();
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
 
@@ -717,7 +717,7 @@ module.exports = Charts;
 },{"./bars":8,"./marketdata":11,"sugar":454}],10:[function(require,module,exports){
 "use strict";
 
-require("sugar");
+require("sugar").extend();
 
 const MarketData = require("./marketdata");
 
@@ -808,7 +808,7 @@ module.exports = Depth;
 },{"./marketdata":11,"sugar":454}],11:[function(require,module,exports){
 "use strict";
 
-require("sugar");
+require("sugar").extend();
 
 const RealTime = require("../realtime");
 
@@ -989,7 +989,7 @@ module.exports = Order;
 },{"../flags":7,"./marketdata":11}],13:[function(require,module,exports){
 "use strict";
 
-require("sugar");
+require("sugar").extend();
 
 const MarketData = require("./marketdata"),
       flags = require("../flags"),
@@ -1112,7 +1112,7 @@ module.exports = Quote;
 },{"../flags":7,"./marketdata":11,"sugar":454}],14:[function(require,module,exports){
 "use strict";
 
-require("sugar");
+require("sugar").extend();
 
 const flags = require("../flags"),
       MarketData = require("./marketdata"),
@@ -1253,7 +1253,7 @@ function securities(session, description, cb) {
 
 module.exports = securities;
 },{"../flags":7,"./charts":9,"./depth":10,"./marketdata":11,"./order":12,"./quote":13,"sugar":454}],15:[function(require,module,exports){
-require("sugar");
+require("sugar").extend();
 
 const studies = { };
 
