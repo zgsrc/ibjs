@@ -6,7 +6,7 @@ window.ib = {
     session: () => new Session(new Proxy(socket)),
     flags: require("../model/flags")
 };
-},{"../model/flags":7,"../model/session":17,"../service/proxy":20}],2:[function(require,module,exports){
+},{"../model/flags":7,"../model/session":17,"../service/proxy":810}],2:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -74,10 +74,10 @@ class Account extends RealTime {
             this.trades = this.session.trades({ account: options.id });
         }
         
-        this.close = () => {
+        this.cancel = () => {
             account.cancel();
-            if (orders) orders.close();
-            if (trades) trades.close();
+            if (orders) orders.cancel();
+            if (trades) trades.cancel();
         };
         
         setTimeout(() => this.emit("load"), 500);
@@ -146,7 +146,7 @@ class Accounts extends RealTime {
             this.emit("error", err);
         }).send();
         
-        this.close = () => {
+        this.cancel = () => {
             summary.cancel();
             if (positions) positions.cancel();
         };
@@ -174,7 +174,7 @@ class Orders extends RealTime {
         }
         
         let orders = options.all ? this.service.allOpenOrders() : this.service.openOrders();
-        this.close = () => orders.cancel();
+        this.cancel = () => orders.cancel();
         
         orders.on("data", data => {
             this[data.orderId] = data;
@@ -215,7 +215,7 @@ class Positions extends RealTime {
             this.emit("error", err);
         }).send();
         
-        this.close = () => positions.cancel();
+        this.cancel = () => positions.cancel();
     }
     
 }
@@ -257,7 +257,7 @@ class Trades extends RealTime {
             this.emit("load");
         }).send();
         
-        this.close = () => trades.cancel();
+        this.cancel = () => trades.cancel();
     }
     
 }
@@ -302,6 +302,7 @@ const TICKS = {
     fundamentalValues: 47,
     optionVolume: 100,
     optionOpenInterest: 101,
+    futuresOpenInterest: 588,
     historicalVolatility: 104,
     optionImpliedVolatility: 106,
     indexFuturePremium: 162,
@@ -451,7 +452,7 @@ class Bars extends MarketData {
         return this;
     }
     
-    history(cb) {
+    history(cb, retry) {
         let req = this.service.historicalData(
             this.contract.summary, 
             this.options.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : ""), 
@@ -467,10 +468,15 @@ class Bars extends MarketData {
             record.date = Date.create(record.date);
             record.timestamp = record.date.getTime();
             this.series.push(record);
-        }).on("error", err => {
-            if (cb) cb(err);
-            else this.emit("error", err);
-        }).on("end", () => {
+        }).once("error", err => {
+            if (!retry && err.timeout) {
+                this.history(cb, true);
+            }
+            else {
+                if (cb) cb(err);
+                else this.emit("error", err);
+            }
+        }).once("end", () => {
             let newRecords = this.series.from(length).map("timestamp"),
                 range = [ newRecords.min(), newRecords.max() ];
             
@@ -479,8 +485,6 @@ class Bars extends MarketData {
             
             if (cb) cb();
             else this.emit("load", range);
-            
-            this.emit("update", range);
         }).send();
         
         return this;
@@ -502,12 +506,12 @@ class Bars extends MarketData {
         }).on("error", (err, cancel) => {
             if (err.timeout) {
                 cancel();
-                this.emit("error", `${this.contract.localSymbol} ${this.options.barSize.text} streaming bars request timed out. (Outside market hours?)`);
+                this.emit("error", `${this.contract.summary.localSymbol} ${this.options.barSize.text} streaming bars request timed out. (Outside market hours?)`);
             }
             else this.emit("error", err);
         }).send();
         
-        this.close = () => req.cancel();
+        this.cancel = () => req.cancel();
         
         return this;
     }
@@ -528,25 +532,37 @@ class Bars extends MarketData {
         }
         
         for (let i = 0; i < this.series.length; i++) {
-            this.series[i][name] = calculator(this.series.from(i).to(length));
+            if (i + length - 1 < this.series.length) {
+                this.series[i + length - 1][name] = calculator(this.series.from(i).to(length));
+            }
         }
         
         this.on("load", timestamps => {
-            let start = this.series.findIndex(i => i.timestamp <= timestamps.min()),
-                end = this.series.findIndex(i => i.timestamp > timestamps.max());
-            
-            if (start < 0) start = 0;
-            if (end < 0) end = this.series.length - 1;
-            
-            start.upto(end).each(i => {
-                let window = this.series.from(i).to(length);
-                this.series[i + length - 1][name] = calculator(window);
-            });
+            try {
+                let start = this.series.findIndex(i => i.timestamp <= timestamps.min()),
+                    end = this.series.findIndex(i => i.timestamp > timestamps.max());
+
+                if (start < 0) start = 0;
+                if (end < 0) end = this.series.length - 1;
+
+                start.upto(end).each(i => {
+                    let window = this.series.from(i).to(length);
+                    this.series[i + length - 1][name] = calculator(window);
+                });
+            }
+            catch (ex) {
+                this.emit("error", ex);
+            }
         });
         
         this.on("update", data => {
-            let window = this.series.from(-length);
-            data[name] = calculator(window);
+            try {
+                let window = this.series.from(-length);
+                data[name] = calculator(window);
+            }
+            catch (ex) {
+                this.emit("error", ex);
+            }
         });
         
         return this;
@@ -555,7 +571,7 @@ class Bars extends MarketData {
 }
 
 module.exports = Bars;
-},{"./marketdata":11,"./studies":15,"fs":23}],9:[function(require,module,exports){
+},{"./marketdata":11,"./studies":15,"fs":813}],9:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -672,33 +688,33 @@ class Charts extends MarketData {
         
     }
     
-    close() {
-        this.seconds.one.close();
-        this.seconds.two.close();
-        this.seconds.five.close();
-        this.seconds.ten.close();
-        this.seconds.fifteen.close();
-        this.seconds.thirty.close();
+    cancel() {
+        this.seconds.one.cancel();
+        this.seconds.two.cancel();
+        this.seconds.five.cancel();
+        this.seconds.ten.cancel();
+        this.seconds.fifteen.cancel();
+        this.seconds.thirty.cancel();
         
-        this.minutes.one.close();
-        this.minutes.two.close();
-        this.minutes.five.close();
-        this.minutes.ten.close();
-        this.minutes.fifteen.close();
-        this.minutes.thirty.close();
+        this.minutes.one.cancel();
+        this.minutes.two.cancel();
+        this.minutes.five.cancel();
+        this.minutes.ten.cancel();
+        this.minutes.fifteen.cancel();
+        this.minutes.thirty.cancel();
         
-        this.hours.one.close();
-        this.hours.two.close();
-        this.hours.four.close();
-        this.hours.eight.close();
+        this.hours.one.cancel();
+        this.hours.two.cancel();
+        this.hours.four.cancel();
+        this.hours.eight.cancel();
         
-        this.daily.close();
+        this.daily.cancel();
     }
     
 }
 
 module.exports = Charts;
-},{"./bars":8,"./marketdata":11,"sugar":18}],10:[function(require,module,exports){
+},{"./bars":8,"./marketdata":11,"sugar":454}],10:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -737,7 +753,7 @@ class Depth extends MarketData {
                 else this.offers[exchange][datum.position] = datum;
                 this.emit("update", datum);
             }).on("error", (err, cancel) => {
-                this.emit("error", this.contract.summary.localSymbol + " on " + exchange + " failed.");
+                this.emit("error", this.contract.summary.localSymbol + " level 2 quotes on " + exchange + " failed.");
                 this._subscriptions.remove(req);
                 this.exchanges.remove(exchange);
                 delete this.bids[exchange];
@@ -747,9 +763,11 @@ class Depth extends MarketData {
             
             this._subscriptions.push(req);
         }
+        
+        return this;
     }
     
-    closeExchange(exchange) {
+    cancelExchange(exchange) {
         let idx = this.exchanges.indexOf(exchange),
             req = this._subscriptions[i];
         
@@ -759,6 +777,8 @@ class Depth extends MarketData {
         this.exchanges.remove(exchange);
         delete this.bids[exchange];
         delete this.offers[exchange];
+        
+        return this;
     }
     
     stream(exchanges, rows) {
@@ -774,16 +794,18 @@ class Depth extends MarketData {
         exchanges.each(exchange => {
             this.streamExchange(exchange, rows);
         });
+        
+        return this;
     }
     
-    close() {
+    cancel() {
         this._subscriptions.map("cancel");
     }
     
 }
 
 module.exports = Depth;
-},{"./marketdata":11,"sugar":18}],11:[function(require,module,exports){
+},{"./marketdata":11,"sugar":454}],11:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -800,7 +822,7 @@ class MarketData extends RealTime {
 }
 
 module.exports = MarketData;
-},{"../realtime":16,"sugar":18}],12:[function(require,module,exports){
+},{"../realtime":16,"sugar":454}],12:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -1009,6 +1031,11 @@ class Quote extends MarketData {
         return this;
     }
     
+    futures() {
+        this._fieldTypes.add([ TICKS.futuresOpenInterest ]);
+        return this;
+    }
+    
     short() {
         this._fieldTypes.add([ TICKS.shortable, TICKS.inventory ]);
         return this;
@@ -1041,7 +1068,7 @@ class Quote extends MarketData {
     stream() {
         let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false);
         
-        this.close = () => req.cancel();
+        this.cancel = () => req.cancel();
         
         req.on("data", datum  => {
             datum = parseQuotePart(datum);
@@ -1066,12 +1093,23 @@ function parseQuotePart(datum) {
     if (!key || key == "") throw new Error("Tick key not found.");
     if (value === null || value === "") throw new Error("No tick data value found.");
     if (key == "LAST_TIMESTAMP") value = new Date(parseInt(value) * 1000);
+    if (key == "RT_VOLUME") {
+        value = value.split(";");
+        value = {
+            price: parseFloat(value[0]),
+            size: parseInt(value[1]),
+            time: new Date(parseInt(value[2])),
+            volume: parseInt(value[3]),
+            vwap: parseFloat(value[4]),
+            marketMaker: new Boolean(value[5])
+        };
+    }
     
     return { key: key.camelize(false), value: value };
 }
 
 module.exports = Quote;
-},{"../flags":7,"./marketdata":11,"sugar":18}],14:[function(require,module,exports){
+},{"../flags":7,"./marketdata":11,"sugar":454}],14:[function(require,module,exports){
 "use strict";
 
 require("sugar");
@@ -1169,9 +1207,15 @@ class Security extends MarketData {
     
     constructor(session, contract) {
         super(session, contract);
+        
         this.quote = new Quote(session, contract);
+        this.quote.on("error", err => this.emit("error", err));
+        
         this.depth = new Depth(session, contract);
+        this.depth.on("error", err => this.emit("error", err));
+        
         this.charts = new Charts(session, contract);
+        this.charts.on("error", err => this.emit("error", err));
     }
     
     fundamentals(type, cb) {
@@ -1186,10 +1230,10 @@ class Security extends MarketData {
         return new Order(this.session, this.contract);
     }
     
-    close() {
-        if (this.quote) this.quote.close();
-        if (this.depth) this.depth.close();
-        if (this.charts) this.charts.close();
+    cancel() {
+        if (this.quote) this.quote.cancel();
+        if (this.depth) this.depth.cancel();
+        if (this.charts) this.charts.cancel();
     }
     
 }
@@ -1208,15 +1252,57 @@ function securities(session, description, cb) {
 }
 
 module.exports = securities;
-},{"../flags":7,"./charts":9,"./depth":10,"./marketdata":11,"./order":12,"./quote":13,"sugar":18}],15:[function(require,module,exports){
+},{"../flags":7,"./charts":9,"./depth":10,"./marketdata":11,"./order":12,"./quote":13,"sugar":454}],15:[function(require,module,exports){
 require("sugar");
 
 const studies = { };
 
+// Simple moving average
 studies.SMA = window => window.map("close").average();
 
+// Price channel
+studies.PC = window => { 
+    return { upper: window.max("high"), lower: window.min("low") } 
+};
+
+// Momentum
+studies.MOM = window => window.last().close - window.first().close;
+studies.ROC = window => ((window.last().close / window.first().close) - 1) * 100;
+
+// Average mean price
+studies.AMP = window => (window.last().high + window.last().low + window.last().close) / 3;
+studies.AMP_SMA = window => window.map("AMP").average();
+
+// Money Flow
+studies.MF = window => window.last().AMP * window.last().volume;
+studies.MR = window => window.filter(s => s.MF > 0).sum() / window.filter(s => s.MF < 0).sum();
+studies.MFI = window => 100 - (100 / (1 + window.last().MR));
+
+// Accelerations Bands
+studies.ABANDS = window => {
+    return {
+        upper: window.map(s => s.high * (1 + 4 * (s.high - s.low) / (s.high + s.low))).average(),
+        middle: window.map("close").average(),
+        lower: window.map(s => s.low * (1 - 4 * (s.high - s.low) / (s.high + s.low))).average()
+    };
+};
+
+// Accumulations/Distributions
+studies.AD = window => window.map(s => ((((s.close - s.low) - (s.high - s.close)) / (s.high - s.low)) * s.volume)).sum();
+
+// Aroon
+studies.AR = window => {
+    let ar = {
+        up: window.indexOf(window.max("high")) / window.length * 100,
+        down: window.indexOf(window.min("low")) / window.length * 100
+    };
+    
+    ar.oscillator = ar.up - ar.down;
+    return ar;
+};
+
 module.exports = studies;
-},{"sugar":18}],16:[function(require,module,exports){
+},{"sugar":454}],16:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -1231,21 +1317,22 @@ class RealTime extends Events {
     }
     
     get fields() {
-        return Object.keys(this).exclude(/\_.*/).subtract(this._exclude).exclude("close").exclude("domain");
+        return Object.keys(this).exclude(/\_.*/).subtract(this._exclude).exclude("cancel").exclude("domain");
     }
     
     each(fn) {
         this.fields.forEach((e, i) => fn(this[e], e, i));
     }
     
-    close() {
+    cancel() {
         return false;
     }
     
 }
 
 module.exports = RealTime;
-},{"events":25}],17:[function(require,module,exports){
+},{"events":815}],17:[function(require,module,exports){
+(function (process){
 "use strict";
 
 require('sugar');
@@ -1328,8 +1415,9 @@ class Session extends Events {
         return this.service.socket.clientId;
     }
     
-    close() {
+    close(exit) {
         this.service.socket.disconnect();
+        if (exit) process.exit();
     }
     
     account(options) {
@@ -1363,10 +1451,11 @@ class Session extends Events {
 }
 
 module.exports = Session;
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/security":14,"events":25,"sugar":18}],18:[function(require,module,exports){
-(function (global,Buffer){
+}).call(this,require('_process'))
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/security":14,"_process":816,"events":815,"sugar":454}],18:[function(require,module,exports){
+(function (global){
 /*
- *  Sugar v1.5.0
+ *  Sugar v2.0.4
  *
  *  Freely distributable and licensed under the MIT-style license.
  *  Copyright (c) Andrew Plummer
@@ -1376,10493 +1465,15170 @@ module.exports = Session;
 (function() {
   'use strict';
 
-    /***
-     * @module Core
-     * @description Core method extension and restoration.
-     ***/
+  /***
+   * @module Core
+   * @description Core functionality including the ability to define methods and
+   *              extend onto natives.
+   *
+   ***/
 
-    // The global context
-    var globalContext = typeof global !== 'undefined' && global.Object ? global : this;
+  // The global to export.
+  var Sugar;
 
-    // Internal hasOwnProperty
-    var internalHasOwnProperty = Object.prototype.hasOwnProperty;
+  // The name of Sugar in the global namespace.
+  var SUGAR_GLOBAL = 'Sugar';
 
-    // Property descriptors exist in IE8 but will error when trying to define a property on
-    // native objects. IE8 does not have defineProperies, however, so this check saves a try/catch block.
-    var propertyDescriptorSupport = !!(Object.defineProperty && Object.defineProperties);
+  // Natives available on initialization. Letting Object go first to ensure its
+  // global is set by the time the rest are checking for chainable Object methods.
+  var NATIVE_NAMES = 'Object Number String Array Date RegExp Function';
 
-    // Natives by name.
-    var natives = 'Boolean,Number,String,Array,Date,RegExp,Function'.split(',');
+  // Static method flag
+  var STATIC   = 0x1;
 
-    // A hash of all methods by Native class
-    var SugarMethods = {};
+  // Instance method flag
+  var INSTANCE = 0x2;
 
-    // Class extending methods
+  // IE8 has a broken defineProperty but no defineProperties so this saves a try/catch.
+  var PROPERTY_DESCRIPTOR_SUPPORT = !!(Object.defineProperty && Object.defineProperties);
 
-    function initializeClasses() {
-      initializeClass(Object);
-      iterateOverObject(natives, function(i, name) {
-        initializeClass(globalContext[name]);
-      });
+  // The global context. Rhino uses a different "global" keyword so
+  // do an extra check to be sure that it's actually the global context.
+  var globalContext = typeof global !== 'undefined' && global.Object === Object ? global : this;
+
+  // Is the environment node?
+  var hasExports = typeof module !== 'undefined' && module.exports;
+
+  // Whether object instance methods can be mapped to the prototype.
+  var allowObjectPrototype = false;
+
+  // A map from Array to SugarArray.
+  var namespacesByName = {};
+
+  // A map from [object Object] to namespace.
+  var namespacesByClassString = {};
+
+  // Defining properties.
+  var defineProperty = PROPERTY_DESCRIPTOR_SUPPORT ?  Object.defineProperty : definePropertyShim;
+
+  // A default chainable class for unknown types.
+  var DefaultChainable = getNewChainableClass('Chainable');
+
+
+  // Global methods
+
+  function setupGlobal() {
+    Sugar = globalContext[SUGAR_GLOBAL];
+    if (Sugar) {
+      // Reuse already defined Sugar global object.
+      return;
     }
-
-    function initializeClass(klass) {
-      extend(klass, {
-        'extend': function(methods, instance) {
-          extend(klass, methods, instance !== false);
-        },
-        'sugarRestore': function(methods) {
-          restore(klass, methods);
-        },
-        'sugarRevert': function(methods) {
-          revert(klass, methods);
-        }
-      }, false);
-    }
-
-    function extend(klass, methods, instance, polyfill) {
-      var extendee;
-      instance = instance !== false;
-      extendee = instance ? klass.prototype : klass;
-      iterateOverObject(methods, function(name, prop) {
-        var existing = extendee[name],
-            original = checkOriginalMethod(klass, name);
-        if (typeof polyfill === 'function' && existing) {
-          prop = wrapExisting(existing, prop, polyfill);
-        }
-        storeMethod(klass, name, instance, existing, prop, polyfill);
-        if (polyfill !== true || !existing) {
-          setProperty(extendee, name, prop);
-        }
-      });
-    }
-
-    function alias(klass, target, source) {
-      var method = SugarMethods[klass][source];
-      var obj = {};
-      obj[target] = method.fn;
-      extend(klass, obj, method.instance);
-    }
-
-    function restore(klass, methods) {
-      return batchMethodExecute(klass, methods, function(target, name, m) {
-        setProperty(target, name, m.fn);
-      });
-    }
-
-    function revert(klass, methods) {
-      return batchMethodExecute(klass, methods, function(target, name, m) {
-        var original = checkOriginalMethod(klass, name);
-        if (m.original) {
-          setProperty(target, name, m.original);
-        } else {
-          delete target[name];
+    Sugar = function(arg) {
+      forEachProperty(Sugar, function(sugarNamespace, name) {
+        // Although only the only enumerable properties on the global
+        // object are Sugar namespaces, environments that can't set
+        // non-enumerable properties will step through the utility methods
+        // as well here, so use this check to only allow true namespaces.
+        if (hasOwn(namespacesByName, name)) {
+          sugarNamespace.extend(arg);
         }
       });
-    }
-
-    function batchMethodExecute(klass, methods, fn) {
-      var all = !methods, changed = false;
-      if (typeof methods === 'string') methods = [methods];
-      iterateOverObject(SugarMethods[klass], function(name, m) {
-        if (all || methods.indexOf(name) !== -1) {
-          changed = true;
-          fn(m.instance ? klass.prototype : klass, name, m);
-        }
-      });
-      return changed;
-    }
-
-    function checkOriginalMethod(klass, name) {
-      var methods = SugarMethods[klass];
-      var method = methods && methods[name];
-      return method && method.original;
-    }
-
-    function wrapExisting(originalFn, extendedFn, condition) {
-      return function(a) {
-        return condition.apply(this, arguments) ?
-               extendedFn.apply(this, arguments) :
-               originalFn.apply(this, arguments);
+      return Sugar;
+    };
+    if (hasExports) {
+      module.exports = Sugar;
+    } else {
+      try {
+        globalContext[SUGAR_GLOBAL] = Sugar;
+      } catch (e) {
+        // Contexts such as QML have a read-only global context.
       }
     }
+    forEachProperty(NATIVE_NAMES.split(' '), function(name) {
+      createNamespace(name);
+    });
+    setGlobalProperties();
+  }
 
-    function wrapInstanceMethod(fn) {
-      return function(obj) {
-        var args = arguments, newArgs = [], i;
-        for(i = 1;i < args.length;i++) {
-          newArgs.push(args[i]);
+  /***
+   * @method createNamespace(name)
+   * @returns SugarNamespace
+   * @namespace Sugar
+   * @short Creates a new Sugar namespace.
+   * @extra This method is for plugin developers who want to define methods to be
+   *        used with natives that Sugar does not handle by default. The new
+   *        namespace will appear on the `Sugar` global with all the methods of
+   *        normal namespaces, including the ability to define new methods. When
+   *        extended, any defined methods will be mapped to `name` in the global
+   *        context.
+   *
+   * @example
+   *
+   *   Sugar.createNamespace('Boolean');
+   *
+   * @param {string} name - The namespace name.
+   *
+   ***/
+  function createNamespace(name) {
+
+    // Is the current namespace Object?
+    var isObject = name === 'Object';
+
+    // A Sugar namespace is also a chainable class: Sugar.Array, etc.
+    var sugarNamespace = getNewChainableClass(name, true);
+
+    /***
+     * @method extend([opts])
+     * @returns Sugar
+     * @namespace Sugar
+     * @short Extends Sugar defined methods onto natives.
+     * @extra This method can be called on individual namespaces like
+     *        `Sugar.Array` or on the `Sugar` global itself, in which case
+     *        [opts] will be forwarded to each `extend` call. For more,
+     *        see `extending`.
+     *
+     * @options
+     *
+     *   methods           An array of method names to explicitly extend.
+     *
+     *   except            An array of method names or global namespaces (`Array`,
+     *                     `String`) to explicitly exclude. Namespaces should be the
+     *                     actual global objects, not strings.
+     *
+     *   namespaces        An array of global namespaces (`Array`, `String`) to
+     *                     explicitly extend. Namespaces should be the actual
+     *                     global objects, not strings.
+     *
+     *   enhance           A shortcut to disallow all "enhance" flags at once
+     *                     (flags listed below). For more, see `enhanced methods`.
+     *                     Default is `true`.
+     *
+     *   enhanceString     A boolean allowing String enhancements. Default is `true`.
+     *
+     *   enhanceArray      A boolean allowing Array enhancements. Default is `true`.
+     *
+     *   objectPrototype   A boolean allowing Sugar to extend Object.prototype
+     *                     with instance methods. This option is off by default
+     *                     and should generally not be used except with caution.
+     *                     For more, see `object methods`.
+     *
+     * @example
+     *
+     *   Sugar.Array.extend();
+     *   Sugar.extend();
+     *
+     * @option {Array<string>} [methods]
+     * @option {Array<string|NativeConstructor>} [except]
+     * @option {Array<NativeConstructor>} [namespaces]
+     * @option {boolean} [enhance]
+     * @option {boolean} [enhanceString]
+     * @option {boolean} [enhanceArray]
+     * @option {boolean} [objectPrototype]
+     * @param {ExtendOptions} [opts]
+     *
+     ***
+     * @method extend([opts])
+     * @returns SugarNamespace
+     * @namespace SugarNamespace
+     * @short Extends Sugar defined methods for a specific namespace onto natives.
+     * @param {ExtendOptions} [opts]
+     *
+     ***/
+    var extend = function (opts) {
+
+      var nativeClass = globalContext[name], nativeProto = nativeClass.prototype;
+      var staticMethods = {}, instanceMethods = {}, methodsByName;
+
+      function objectRestricted(name, target) {
+        return isObject && target === nativeProto &&
+               (!allowObjectPrototype || name === 'get' || name === 'set');
+      }
+
+      function arrayOptionExists(field, val) {
+        var arr = opts[field];
+        if (arr) {
+          for (var i = 0, el; el = arr[i]; i++) {
+            if (el === val) {
+              return true;
+            }
+          }
         }
-        return fn.apply(obj, newArgs);
+        return false;
+      }
+
+      function arrayOptionExcludes(field, val) {
+        return opts[field] && !arrayOptionExists(field, val);
+      }
+
+      function disallowedByFlags(methodName, target, flags) {
+        // Disallowing methods by flag currently only applies if methods already
+        // exist to avoid enhancing native methods, as aliases should still be
+        // extended (i.e. Array#all should still be extended even if Array#every
+        // is being disallowed by a flag).
+        if (!target[methodName] || !flags) {
+          return false;
+        }
+        for (var i = 0; i < flags.length; i++) {
+          if (opts[flags[i]] === false) {
+            return true;
+          }
+        }
+      }
+
+      function namespaceIsExcepted() {
+        return arrayOptionExists('except', nativeClass) ||
+               arrayOptionExcludes('namespaces', nativeClass);
+      }
+
+      function methodIsExcepted(methodName) {
+        return arrayOptionExists('except', methodName);
+      }
+
+      function canExtend(methodName, method, target) {
+        return !objectRestricted(methodName, target) &&
+               !disallowedByFlags(methodName, target, method.flags) &&
+               !methodIsExcepted(methodName);
+      }
+
+      opts = opts || {};
+      methodsByName = opts.methods;
+
+      if (namespaceIsExcepted()) {
+        return;
+      } else if (isObject && typeof opts.objectPrototype === 'boolean') {
+        // Store "objectPrototype" flag for future reference.
+        allowObjectPrototype = opts.objectPrototype;
+      }
+
+      forEachProperty(methodsByName || sugarNamespace, function(method, methodName) {
+        if (methodsByName) {
+          // If we have method names passed in an array,
+          // then we need to flip the key and value here
+          // and find the method in the Sugar namespace.
+          methodName = method;
+          method = sugarNamespace[methodName];
+        }
+        if (hasOwn(method, 'instance') && canExtend(methodName, method, nativeProto)) {
+          instanceMethods[methodName] = method.instance;
+        }
+        if(hasOwn(method, 'static') && canExtend(methodName, method, nativeClass)) {
+          staticMethods[methodName] = method;
+        }
+      });
+
+      // Accessing the extend target each time instead of holding a reference as
+      // it may have been overwritten (for example Date by Sinon). Also need to
+      // access through the global to allow extension of user-defined namespaces.
+      extendNative(nativeClass, staticMethods);
+      extendNative(nativeProto, instanceMethods);
+
+      if (!methodsByName) {
+        // If there are no method names passed, then
+        // all methods in the namespace will be extended
+        // to the native. This includes all future defined
+        // methods, so add a flag here to check later.
+        setProperty(sugarNamespace, 'active', true);
+      }
+      return sugarNamespace;
+    };
+
+    function defineWithOptionCollect(methodName, instance, args) {
+      setProperty(sugarNamespace, methodName, function(arg1, arg2, arg3) {
+        var opts = collectDefineOptions(arg1, arg2, arg3);
+        defineMethods(sugarNamespace, opts.methods, instance, args, opts.last);
+        return sugarNamespace;
+      });
+    }
+
+    /***
+     * @method defineStatic(methods)
+     * @returns SugarNamespace
+     * @namespace SugarNamespace
+     * @short Defines static methods on the namespace that can later be extended
+     *        onto the native globals.
+     * @extra Accepts either a single object mapping names to functions, or name
+     *        and function as two arguments. If `extend` was previously called
+     *        with no arguments, the method will be immediately mapped to its
+     *        native when defined.
+     *
+     * @example
+     *
+     *   Sugar.Number.defineStatic({
+     *     isOdd: function (num) {
+     *       return num % 2 === 1;
+     *     }
+     *   });
+     *
+     * @signature defineStatic(methodName, methodFn)
+     * @param {Object} methods - Methods to be defined.
+     * @param {string} methodName - Name of a single method to be defined.
+     * @param {Function} methodFn - Function body of a single method to be defined.
+     ***/
+    defineWithOptionCollect('defineStatic', STATIC);
+
+    /***
+     * @method defineInstance(methods)
+     * @returns SugarNamespace
+     * @namespace SugarNamespace
+     * @short Defines methods on the namespace that can later be extended as
+     *        instance methods onto the native prototype.
+     * @extra Accepts either a single object mapping names to functions, or name
+     *        and function as two arguments. All functions should accept the
+     *        native for which they are mapped as their first argument, and should
+     *        never refer to `this`. If `extend` was previously called with no
+     *        arguments, the method will be immediately mapped to its native when
+     *        defined.
+     *
+     *        Methods cannot accept more than 4 arguments in addition to the
+     *        native (5 arguments total). Any additional arguments will not be
+     *        mapped. If the method needs to accept unlimited arguments, use
+     *        `defineInstanceWithArguments`. Otherwise if more options are
+     *        required, use an options object instead.
+     *
+     * @example
+     *
+     *   Sugar.Number.defineInstance({
+     *     square: function (num) {
+     *       return num * num;
+     *     }
+     *   });
+     *
+     * @signature defineInstance(methodName, methodFn)
+     * @param {Object} methods - Methods to be defined.
+     * @param {string} methodName - Name of a single method to be defined.
+     * @param {Function} methodFn - Function body of a single method to be defined.
+     ***/
+    defineWithOptionCollect('defineInstance', INSTANCE);
+
+    /***
+     * @method defineInstanceAndStatic(methods)
+     * @returns SugarNamespace
+     * @namespace SugarNamespace
+     * @short A shortcut to define both static and instance methods on the namespace.
+     * @extra This method is intended for use with `Object` instance methods. Sugar
+     *        will not map any methods to `Object.prototype` by default, so defining
+     *        instance methods as static helps facilitate their proper use.
+     *
+     * @example
+     *
+     *   Sugar.Object.defineInstanceAndStatic({
+     *     isAwesome: function (obj) {
+     *       // check if obj is awesome!
+     *     }
+     *   });
+     *
+     * @signature defineInstanceAndStatic(methodName, methodFn)
+     * @param {Object} methods - Methods to be defined.
+     * @param {string} methodName - Name of a single method to be defined.
+     * @param {Function} methodFn - Function body of a single method to be defined.
+     ***/
+    defineWithOptionCollect('defineInstanceAndStatic', INSTANCE | STATIC);
+
+
+    /***
+     * @method defineStaticWithArguments(methods)
+     * @returns SugarNamespace
+     * @namespace SugarNamespace
+     * @short Defines static methods that collect arguments.
+     * @extra This method is identical to `defineStatic`, except that when defined
+     *        methods are called, they will collect any arguments past `n - 1`,
+     *        where `n` is the number of arguments that the method accepts.
+     *        Collected arguments will be passed to the method in an array
+     *        as the last argument defined on the function.
+     *
+     * @example
+     *
+     *   Sugar.Number.defineStaticWithArguments({
+     *     addAll: function (num, args) {
+     *       for (var i = 0; i < args.length; i++) {
+     *         num += args[i];
+     *       }
+     *       return num;
+     *     }
+     *   });
+     *
+     * @signature defineStaticWithArguments(methodName, methodFn)
+     * @param {Object} methods - Methods to be defined.
+     * @param {string} methodName - Name of a single method to be defined.
+     * @param {Function} methodFn - Function body of a single method to be defined.
+     ***/
+    defineWithOptionCollect('defineStaticWithArguments', STATIC, true);
+
+    /***
+     * @method defineInstanceWithArguments(methods)
+     * @returns SugarNamespace
+     * @namespace SugarNamespace
+     * @short Defines instance methods that collect arguments.
+     * @extra This method is identical to `defineInstance`, except that when
+     *        defined methods are called, they will collect any arguments past
+     *        `n - 1`, where `n` is the number of arguments that the method
+     *        accepts. Collected arguments will be passed to the method as the
+     *        last argument defined on the function.
+     *
+     * @example
+     *
+     *   Sugar.Number.defineInstanceWithArguments({
+     *     addAll: function (num, args) {
+     *       for (var i = 0; i < args.length; i++) {
+     *         num += args[i];
+     *       }
+     *       return num;
+     *     }
+     *   });
+     *
+     * @signature defineInstanceWithArguments(methodName, methodFn)
+     * @param {Object} methods - Methods to be defined.
+     * @param {string} methodName - Name of a single method to be defined.
+     * @param {Function} methodFn - Function body of a single method to be defined.
+     ***/
+    defineWithOptionCollect('defineInstanceWithArguments', INSTANCE, true);
+
+    /***
+     * @method defineStaticPolyfill(methods)
+     * @returns SugarNamespace
+     * @namespace SugarNamespace
+     * @short Defines static methods that are mapped onto the native if they do
+     *        not already exist.
+     * @extra Intended only for use creating polyfills that follow the ECMAScript
+     *        spec. Accepts either a single object mapping names to functions, or
+     *        name and function as two arguments.
+     *
+     * @example
+     *
+     *   Sugar.Object.defineStaticPolyfill({
+     *     keys: function (obj) {
+     *       // get keys!
+     *     }
+     *   });
+     *
+     * @signature defineStaticPolyfill(methodName, methodFn)
+     * @param {Object} methods - Methods to be defined.
+     * @param {string} methodName - Name of a single method to be defined.
+     * @param {Function} methodFn - Function body of a single method to be defined.
+     ***/
+    setProperty(sugarNamespace, 'defineStaticPolyfill', function(arg1, arg2, arg3) {
+      var opts = collectDefineOptions(arg1, arg2, arg3);
+      extendNative(globalContext[name], opts.methods, true, opts.last);
+      return sugarNamespace;
+    });
+
+    /***
+     * @method defineInstancePolyfill(methods)
+     * @returns SugarNamespace
+     * @namespace SugarNamespace
+     * @short Defines instance methods that are mapped onto the native prototype
+     *        if they do not already exist.
+     * @extra Intended only for use creating polyfills that follow the ECMAScript
+     *        spec. Accepts either a single object mapping names to functions, or
+     *        name and function as two arguments. This method differs from
+     *        `defineInstance` as there is no static signature (as the method
+     *        is mapped as-is to the native), so it should refer to its `this`
+     *        object.
+     *
+     * @example
+     *
+     *   Sugar.Array.defineInstancePolyfill({
+     *     indexOf: function (arr, el) {
+     *       // index finding code here!
+     *     }
+     *   });
+     *
+     * @signature defineInstancePolyfill(methodName, methodFn)
+     * @param {Object} methods - Methods to be defined.
+     * @param {string} methodName - Name of a single method to be defined.
+     * @param {Function} methodFn - Function body of a single method to be defined.
+     ***/
+    setProperty(sugarNamespace, 'defineInstancePolyfill', function(arg1, arg2, arg3) {
+      var opts = collectDefineOptions(arg1, arg2, arg3);
+      extendNative(globalContext[name].prototype, opts.methods, true, opts.last);
+      // Map instance polyfills to chainable as well.
+      forEachProperty(opts.methods, function(fn, methodName) {
+        defineChainableMethod(sugarNamespace, methodName, fn);
+      });
+      return sugarNamespace;
+    });
+
+    /***
+     * @method alias(toName, from)
+     * @returns SugarNamespace
+     * @namespace SugarNamespace
+     * @short Aliases one Sugar method to another.
+     *
+     * @example
+     *
+     *   Sugar.Array.alias('all', 'every');
+     *
+     * @signature alias(toName, fn)
+     * @param {string} toName - Name for new method.
+     * @param {string|Function} from - Method to alias, or string shortcut.
+     ***/
+    setProperty(sugarNamespace, 'alias', function(name, source) {
+      var method = typeof source === 'string' ? sugarNamespace[source] : source;
+      setMethod(sugarNamespace, name, method);
+      return sugarNamespace;
+    });
+
+    // Each namespace can extend only itself through its .extend method.
+    setProperty(sugarNamespace, 'extend', extend);
+
+    // Cache the class to namespace relationship for later use.
+    namespacesByName[name] = sugarNamespace;
+    namespacesByClassString['[object ' + name + ']'] = sugarNamespace;
+
+    mapNativeToChainable(name);
+    mapObjectChainablesToNamespace(sugarNamespace);
+
+
+    // Export
+    return Sugar[name] = sugarNamespace;
+  }
+
+  function setGlobalProperties() {
+    setProperty(Sugar, 'extend', Sugar);
+    setProperty(Sugar, 'toString', toString);
+    setProperty(Sugar, 'createNamespace', createNamespace);
+
+    setProperty(Sugar, 'util', {
+      'hasOwn': hasOwn,
+      'getOwn': getOwn,
+      'setProperty': setProperty,
+      'classToString': classToString,
+      'defineProperty': defineProperty,
+      'forEachProperty': forEachProperty,
+      'mapNativeToChainable': mapNativeToChainable
+    });
+  }
+
+  function toString() {
+    return SUGAR_GLOBAL;
+  }
+
+
+  // Defining Methods
+
+  function defineMethods(sugarNamespace, methods, type, args, flags) {
+    forEachProperty(methods, function(method, methodName) {
+      var instanceMethod, staticMethod = method;
+      if (args) {
+        staticMethod = wrapMethodWithArguments(method);
+      }
+      if (flags) {
+        staticMethod.flags = flags;
+      }
+
+      // A method may define its own custom implementation, so
+      // make sure that's not the case before creating one.
+      if (type & INSTANCE && !method.instance) {
+        instanceMethod = wrapInstanceMethod(method, args);
+        setProperty(staticMethod, 'instance', instanceMethod);
+      }
+
+      if (type & STATIC) {
+        setProperty(staticMethod, 'static', true);
+      }
+
+      setMethod(sugarNamespace, methodName, staticMethod);
+
+      if (sugarNamespace.active) {
+        // If the namespace has been activated (.extend has been called),
+        // then map this method as well.
+        sugarNamespace.extend(methodName);
+      }
+    });
+  }
+
+  function collectDefineOptions(arg1, arg2, arg3) {
+    var methods, last;
+    if (typeof arg1 === 'string') {
+      methods = {};
+      methods[arg1] = arg2;
+      last = arg3;
+    } else {
+      methods = arg1;
+      last = arg2;
+    }
+    return {
+      last: last,
+      methods: methods
+    };
+  }
+
+  function wrapInstanceMethod(fn, args) {
+    return args ? wrapMethodWithArguments(fn, true) : wrapInstanceMethodFixed(fn);
+  }
+
+  function wrapMethodWithArguments(fn, instance) {
+    // Functions accepting enumerated arguments will always have "args" as the
+    // last argument, so subtract one from the function length to get the point
+    // at which to start collecting arguments. If this is an instance method on
+    // a prototype, then "this" will be pushed into the arguments array so start
+    // collecting 1 argument earlier.
+    var startCollect = fn.length - 1 - (instance ? 1 : 0);
+    return function() {
+      var args = [], collectedArgs = [], len;
+      if (instance) {
+        args.push(this);
+      }
+      len = Math.max(arguments.length, startCollect);
+      // Optimized: no leaking arguments
+      for (var i = 0; i < len; i++) {
+        if (i < startCollect) {
+          args.push(arguments[i]);
+        } else {
+          collectedArgs.push(arguments[i]);
+        }
+      }
+      args.push(collectedArgs);
+      return fn.apply(this, args);
+    };
+  }
+
+  function wrapInstanceMethodFixed(fn) {
+    switch(fn.length) {
+      // Wrapped instance methods will always be passed the instance
+      // as the first argument, but requiring the argument to be defined
+      // may cause confusion here, so return the same wrapped function regardless.
+      case 0:
+      case 1:
+        return function() {
+          return fn(this);
+        };
+      case 2:
+        return function(a) {
+          return fn(this, a);
+        };
+      case 3:
+        return function(a, b) {
+          return fn(this, a, b);
+        };
+      case 4:
+        return function(a, b, c) {
+          return fn(this, a, b, c);
+        };
+      case 5:
+        return function(a, b, c, d) {
+          return fn(this, a, b, c, d);
+        };
+    }
+  }
+
+  // Method helpers
+
+  function extendNative(target, source, polyfill, override) {
+    forEachProperty(source, function(method, name) {
+      if (polyfill && !override && target[name]) {
+        // Method exists, so bail.
+        return;
+      }
+      setProperty(target, name, method);
+    });
+  }
+
+  function setMethod(sugarNamespace, methodName, method) {
+    sugarNamespace[methodName] = method;
+    if (method.instance) {
+      defineChainableMethod(sugarNamespace, methodName, method.instance, true);
+    }
+  }
+
+
+  // Chainables
+
+  function getNewChainableClass(name) {
+    var fn = function SugarChainable(obj, arg) {
+      if (!(this instanceof fn)) {
+        return new fn(obj, arg);
+      }
+      if (this.constructor !== fn) {
+        // Allow modules to define their own constructors.
+        obj = this.constructor.apply(obj, arguments);
+      }
+      this.raw = obj;
+    };
+    setProperty(fn, 'toString', function() {
+      return SUGAR_GLOBAL + name;
+    });
+    setProperty(fn.prototype, 'valueOf', function() {
+      return this.raw;
+    });
+    return fn;
+  }
+
+  function defineChainableMethod(sugarNamespace, methodName, fn) {
+    var wrapped = wrapWithChainableResult(fn), existing, collision, dcp;
+    dcp = DefaultChainable.prototype;
+    existing = dcp[methodName];
+
+    // If the method was previously defined on the default chainable, then a
+    // collision exists, so set the method to a disambiguation function that will
+    // lazily evaluate the object and find it's associated chainable. An extra
+    // check is required to avoid false positives from Object inherited methods.
+    collision = existing && existing !== Object.prototype[methodName];
+
+    // The disambiguation function is only required once.
+    if (!existing || !existing.disambiguate) {
+      dcp[methodName] = collision ? disambiguateMethod(methodName) : wrapped;
+    }
+
+    // The target chainable always receives the wrapped method. Additionally,
+    // if the target chainable is Sugar.Object, then map the wrapped method
+    // to all other namespaces as well if they do not define their own method
+    // of the same name. This way, a Sugar.Number will have methods like
+    // isEqual that can be called on any object without having to traverse up
+    // the prototype chain and perform disambiguation, which costs cycles.
+    // Note that the "if" block below actually does nothing on init as Object
+    // goes first and no other namespaces exist yet. However it needs to be
+    // here as Object instance methods defined later also need to be mapped
+    // back onto existing namespaces.
+    sugarNamespace.prototype[methodName] = wrapped;
+    if (sugarNamespace === Sugar.Object) {
+      mapObjectChainableToAllNamespaces(methodName, wrapped);
+    }
+  }
+
+  function mapObjectChainablesToNamespace(sugarNamespace) {
+    forEachProperty(Sugar.Object && Sugar.Object.prototype, function(val, methodName) {
+      if (typeof val === 'function') {
+        setObjectChainableOnNamespace(sugarNamespace, methodName, val);
+      }
+    });
+  }
+
+  function mapObjectChainableToAllNamespaces(methodName, fn) {
+    forEachProperty(namespacesByName, function(sugarNamespace) {
+      setObjectChainableOnNamespace(sugarNamespace, methodName, fn);
+    });
+  }
+
+  function setObjectChainableOnNamespace(sugarNamespace, methodName, fn) {
+    var proto = sugarNamespace.prototype;
+    if (!hasOwn(proto, methodName)) {
+      proto[methodName] = fn;
+    }
+  }
+
+  function wrapWithChainableResult(fn) {
+    return function() {
+      return new DefaultChainable(fn.apply(this.raw, arguments));
+    };
+  }
+
+  function disambiguateMethod(methodName) {
+    var fn = function() {
+      var raw = this.raw, sugarNamespace, fn;
+      if (raw != null) {
+        // Find the Sugar namespace for this unknown.
+        sugarNamespace = namespacesByClassString[classToString(raw)];
+      }
+      if (!sugarNamespace) {
+        // If no sugarNamespace can be resolved, then default
+        // back to Sugar.Object so that undefined and other
+        // non-supported types can still have basic object
+        // methods called on them, such as type checks.
+        sugarNamespace = Sugar.Object;
+      }
+
+      fn = new sugarNamespace(raw)[methodName];
+
+      if (fn.disambiguate) {
+        // If the method about to be called on this chainable is
+        // itself a disambiguation method, then throw an error to
+        // prevent infinite recursion.
+        throw new TypeError('Cannot resolve namespace for ' + raw);
+      }
+
+      return fn.apply(this, arguments);
+    };
+    fn.disambiguate = true;
+    return fn;
+  }
+
+  function mapNativeToChainable(name, methodNames) {
+    var sugarNamespace = namespacesByName[name],
+        nativeProto = globalContext[name].prototype;
+
+    if (!methodNames && ownPropertyNames) {
+      methodNames = ownPropertyNames(nativeProto);
+    }
+
+    forEachProperty(methodNames, function(methodName) {
+      if (nativeMethodProhibited(methodName)) {
+        // Sugar chainables have their own constructors as well as "valueOf"
+        // methods, so exclude them here. The __proto__ argument should be trapped
+        // by the function check below, however simply accessing this property on
+        // Object.prototype causes QML to segfault, so pre-emptively excluding it.
+        return;
+      }
+      try {
+        var fn = nativeProto[methodName];
+        if (typeof fn !== 'function') {
+          // Bail on anything not a function.
+          return;
+        }
+      } catch (e) {
+        // Function.prototype has properties that
+        // will throw errors when accessed.
+        return;
+      }
+      defineChainableMethod(sugarNamespace, methodName, fn);
+    });
+  }
+
+  function nativeMethodProhibited(methodName) {
+    return methodName === 'constructor' ||
+           methodName === 'valueOf' ||
+           methodName === '__proto__';
+  }
+
+
+  // Util
+
+  // Internal references
+  var ownPropertyNames = Object.getOwnPropertyNames,
+      internalToString = Object.prototype.toString,
+      internalHasOwnProperty = Object.prototype.hasOwnProperty;
+
+  // Defining this as a variable here as the ES5 module
+  // overwrites it to patch DONTENUM.
+  var forEachProperty = function (obj, fn) {
+    for(var key in obj) {
+      if (!hasOwn(obj, key)) continue;
+      if (fn.call(obj, obj[key], key, obj) === false) break;
+    }
+  };
+
+  function definePropertyShim(obj, prop, descriptor) {
+    obj[prop] = descriptor.value;
+  }
+
+  function setProperty(target, name, value, enumerable) {
+    defineProperty(target, name, {
+      value: value,
+      enumerable: !!enumerable,
+      configurable: true,
+      writable: true
+    });
+  }
+
+  // PERF: Attempts to speed this method up get very Heisenbergy. Quickly
+  // returning based on typeof works for primitives, but slows down object
+  // types. Even === checks on null and undefined (no typeof) will end up
+  // basically breaking even. This seems to be as fast as it can go.
+  function classToString(obj) {
+    return internalToString.call(obj);
+  }
+
+  function hasOwn(obj, prop) {
+    return !!obj && internalHasOwnProperty.call(obj, prop);
+  }
+
+  function getOwn(obj, prop) {
+    if (hasOwn(obj, prop)) {
+      return obj[prop];
+    }
+  }
+
+  setupGlobal();
+
+}).call(this);
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{}],19:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayClone = require('./internal/arrayClone'),
+    arrayAppend = require('./internal/arrayAppend');
+
+Sugar.Array.defineInstance({
+
+  'add': function(arr, item, index) {
+    return arrayAppend(arrayClone(arr), item, index);
+  }
+
+});
+
+module.exports = Sugar.Array.add;
+},{"./internal/arrayAppend":48,"./internal/arrayClone":49,"sugar-core":18}],20:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayAppend = require('./internal/arrayAppend');
+
+Sugar.Array.defineInstance({
+
+  'append': function(arr, item, index) {
+    return arrayAppend(arr, item, index);
+  }
+
+});
+
+module.exports = Sugar.Array.append;
+},{"./internal/arrayAppend":48,"sugar-core":18}],21:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getEntriesForIndexes = require('../common/internal/getEntriesForIndexes');
+
+Sugar.Array.defineInstance({
+
+  'at': function(arr, index, loop) {
+    return getEntriesForIndexes(arr, index, loop);
+  }
+
+});
+
+module.exports = Sugar.Array.at;
+},{"../common/internal/getEntriesForIndexes":133,"sugar-core":18}],22:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    average = require('../enumerable/internal/average');
+
+Sugar.Array.defineInstance({
+
+  'average': function(arr, map) {
+    return average(arr, map);
+  }
+
+});
+
+module.exports = Sugar.Array.average;
+},{"../enumerable/internal/average":408,"sugar-core":18}],23:[function(require,module,exports){
+'use strict';
+
+var setArrayChainableConstructor = require('../internal/setArrayChainableConstructor');
+
+setArrayChainableConstructor();
+},{"../internal/setArrayChainableConstructor":70}],24:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayClone = require('./internal/arrayClone');
+
+Sugar.Array.defineInstance({
+
+  'clone': function(arr) {
+    return arrayClone(arr);
+  }
+
+});
+
+module.exports = Sugar.Array.clone;
+},{"./internal/arrayClone":49,"sugar-core":18}],25:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayCompact = require('./internal/arrayCompact');
+
+Sugar.Array.defineInstance({
+
+  'compact': function(arr, all) {
+    return arrayCompact(arr, all);
+  }
+
+});
+
+module.exports = Sugar.Array.compact;
+},{"./internal/arrayCompact":50,"sugar-core":18}],26:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    coercePositiveInteger = require('../common/internal/coercePositiveInteger');
+
+Sugar.Array.defineStatic({
+
+  'construct': function(n, fn) {
+    n = coercePositiveInteger(n);
+    return Array.from(new Array(n), function(el, i) {
+      return fn && fn(i);
+    });
+  }
+
+});
+
+module.exports = Sugar.Array.construct;
+},{"../common/internal/coercePositiveInteger":110,"sugar-core":18}],27:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayCount = require('../enumerable/internal/arrayCount'),
+    fixArgumentLength = require('../common/internal/fixArgumentLength');
+
+Sugar.Array.defineInstance({
+
+  'count': fixArgumentLength(arrayCount)
+
+});
+
+module.exports = Sugar.Array.count;
+},{"../common/internal/fixArgumentLength":128,"../enumerable/internal/arrayCount":406,"sugar-core":18}],28:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayCreate = require('./internal/arrayCreate');
+
+require('./build/setArrayChainableConstructorCall');
+
+Sugar.Array.defineStatic({
+
+  'create': function(obj, clone) {
+    return arrayCreate(obj, clone);
+  }
+
+});
+
+module.exports = Sugar.Array.create;
+},{"./build/setArrayChainableConstructorCall":23,"./internal/arrayCreate":52,"sugar-core":18}],29:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    ENHANCEMENTS_FLAG = require('../common/var/ENHANCEMENTS_FLAG'),
+    ARRAY_ENHANCEMENTS_FLAG = require('../enumerable/var/ARRAY_ENHANCEMENTS_FLAG'),
+    fixArgumentLength = require('../common/internal/fixArgumentLength'),
+    enhancedMatcherMethods = require('../enumerable/var/enhancedMatcherMethods');
+
+var enhancedEvery = enhancedMatcherMethods.enhancedEvery;
+
+Sugar.Array.defineInstance({
+
+  'every': fixArgumentLength(enhancedEvery)
+
+}, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
+
+module.exports = Sugar.Array.every;
+},{"../common/internal/fixArgumentLength":128,"../common/var/ENHANCEMENTS_FLAG":181,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":428,"../enumerable/var/enhancedMatcherMethods":430,"sugar-core":18}],30:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../enumerable/build/buildFromIndexMethodsCall');
+
+module.exports = Sugar.Array.everyFromIndex;
+},{"../enumerable/build/buildFromIndexMethodsCall":404,"sugar-core":18}],31:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayExclude = require('./internal/arrayExclude');
+
+Sugar.Array.defineInstance({
+
+  'exclude': function(arr, f) {
+    return arrayExclude(arr, f);
+  }
+
+});
+
+module.exports = Sugar.Array.exclude;
+},{"./internal/arrayExclude":53,"sugar-core":18}],32:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    ENHANCEMENTS_FLAG = require('../common/var/ENHANCEMENTS_FLAG'),
+    ARRAY_ENHANCEMENTS_FLAG = require('../enumerable/var/ARRAY_ENHANCEMENTS_FLAG'),
+    fixArgumentLength = require('../common/internal/fixArgumentLength'),
+    enhancedMatcherMethods = require('../enumerable/var/enhancedMatcherMethods');
+
+var enhancedFilter = enhancedMatcherMethods.enhancedFilter;
+
+Sugar.Array.defineInstance({
+
+  'filter': fixArgumentLength(enhancedFilter)
+
+}, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
+
+module.exports = Sugar.Array.filter;
+},{"../common/internal/fixArgumentLength":128,"../common/var/ENHANCEMENTS_FLAG":181,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":428,"../enumerable/var/enhancedMatcherMethods":430,"sugar-core":18}],33:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../enumerable/build/buildFromIndexMethodsCall');
+
+module.exports = Sugar.Array.filterFromIndex;
+},{"../enumerable/build/buildFromIndexMethodsCall":404,"sugar-core":18}],34:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    ENHANCEMENTS_FLAG = require('../common/var/ENHANCEMENTS_FLAG'),
+    ARRAY_ENHANCEMENTS_FLAG = require('../enumerable/var/ARRAY_ENHANCEMENTS_FLAG'),
+    fixArgumentLength = require('../common/internal/fixArgumentLength'),
+    enhancedMatcherMethods = require('../enumerable/var/enhancedMatcherMethods');
+
+var enhancedFind = enhancedMatcherMethods.enhancedFind;
+
+Sugar.Array.defineInstance({
+
+  'find': fixArgumentLength(enhancedFind)
+
+}, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
+
+module.exports = Sugar.Array.find;
+},{"../common/internal/fixArgumentLength":128,"../common/var/ENHANCEMENTS_FLAG":181,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":428,"../enumerable/var/enhancedMatcherMethods":430,"sugar-core":18}],35:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../enumerable/build/buildFromIndexMethodsCall');
+
+module.exports = Sugar.Array.findFromIndex;
+},{"../enumerable/build/buildFromIndexMethodsCall":404,"sugar-core":18}],36:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    ENHANCEMENTS_FLAG = require('../common/var/ENHANCEMENTS_FLAG'),
+    ARRAY_ENHANCEMENTS_FLAG = require('../enumerable/var/ARRAY_ENHANCEMENTS_FLAG'),
+    fixArgumentLength = require('../common/internal/fixArgumentLength'),
+    enhancedMatcherMethods = require('../enumerable/var/enhancedMatcherMethods');
+
+var enhancedFindIndex = enhancedMatcherMethods.enhancedFindIndex;
+
+Sugar.Array.defineInstance({
+
+  'findIndex': fixArgumentLength(enhancedFindIndex)
+
+}, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
+
+module.exports = Sugar.Array.findIndex;
+},{"../common/internal/fixArgumentLength":128,"../common/var/ENHANCEMENTS_FLAG":181,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":428,"../enumerable/var/enhancedMatcherMethods":430,"sugar-core":18}],37:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../enumerable/build/buildFromIndexMethodsCall');
+
+module.exports = Sugar.Array.findIndexFromIndex;
+},{"../enumerable/build/buildFromIndexMethodsCall":404,"sugar-core":18}],38:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUndefined = require('../common/internal/isUndefined');
+
+Sugar.Array.defineInstance({
+
+  'first': function(arr, num) {
+    if (isUndefined(num)) return arr[0];
+    if (num < 0) num = 0;
+    return arr.slice(0, num);
+  }
+
+});
+
+module.exports = Sugar.Array.first;
+},{"../common/internal/isUndefined":155,"sugar-core":18}],39:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayFlatten = require('./internal/arrayFlatten');
+
+Sugar.Array.defineInstance({
+
+  'flatten': function(arr, limit) {
+    return arrayFlatten(arr, limit);
+  }
+
+});
+
+module.exports = Sugar.Array.flatten;
+},{"./internal/arrayFlatten":54,"sugar-core":18}],40:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../enumerable/build/buildFromIndexMethodsCall');
+
+module.exports = Sugar.Array.forEachFromIndex;
+},{"../enumerable/build/buildFromIndexMethodsCall":404,"sugar-core":18}],41:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.Array.defineInstance({
+
+  'from': function(arr, num) {
+    return arr.slice(num);
+  }
+
+});
+
+module.exports = Sugar.Array.from;
+},{"sugar-core":18}],42:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    ARRAY_OPTIONS = require('./var/ARRAY_OPTIONS');
+
+var _arrayOptions = ARRAY_OPTIONS._arrayOptions;
+
+module.exports = Sugar.Array.getOption;
+},{"./var/ARRAY_OPTIONS":98,"sugar-core":18}],43:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayGroupBy = require('./internal/arrayGroupBy');
+
+Sugar.Array.defineInstance({
+
+  'groupBy': function(arr, map, fn) {
+    return arrayGroupBy(arr, map, fn);
+  }
+
+});
+
+module.exports = Sugar.Array.groupBy;
+},{"./internal/arrayGroupBy":55,"sugar-core":18}],44:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isDefined = require('../common/internal/isDefined'),
+    mathAliases = require('../common/var/mathAliases'),
+    simpleRepeat = require('../common/internal/simpleRepeat');
+
+var ceil = mathAliases.ceil;
+
+Sugar.Array.defineInstance({
+
+  'inGroups': function(arr, num, padding) {
+    var pad = isDefined(padding);
+    var result = new Array(num);
+    var divisor = ceil(arr.length / num);
+    simpleRepeat(num, function(i) {
+      var index = i * divisor;
+      var group = arr.slice(index, index + divisor);
+      if (pad && group.length < divisor) {
+        simpleRepeat(divisor - group.length, function() {
+          group.push(padding);
+        });
+      }
+      result[i] = group;
+    });
+    return result;
+  }
+
+});
+
+module.exports = Sugar.Array.inGroups;
+},{"../common/internal/isDefined":149,"../common/internal/simpleRepeat":174,"../common/var/mathAliases":195,"sugar-core":18}],45:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUndefined = require('../common/internal/isUndefined'),
+    mathAliases = require('../common/var/mathAliases'),
+    simpleRepeat = require('../common/internal/simpleRepeat');
+
+var ceil = mathAliases.ceil;
+
+Sugar.Array.defineInstance({
+
+  'inGroupsOf': function(arr, num, padding) {
+    var result = [], len = arr.length, group;
+    if (len === 0 || num === 0) return arr;
+    if (isUndefined(num)) num = 1;
+    if (isUndefined(padding)) padding = null;
+    simpleRepeat(ceil(len / num), function(i) {
+      group = arr.slice(num * i, num * i + num);
+      while(group.length < num) {
+        group.push(padding);
+      }
+      result.push(group);
+    });
+    return result;
+  }
+
+});
+
+module.exports = Sugar.Array.inGroupsOf;
+},{"../common/internal/isUndefined":155,"../common/internal/simpleRepeat":174,"../common/var/mathAliases":195,"sugar-core":18}],46:[function(require,module,exports){
+'use strict';
+
+// Static Methods
+require('./construct');
+require('./create');
+
+// Instance Methods
+require('./add');
+require('./append');
+require('./at');
+require('./clone');
+require('./compact');
+require('./exclude');
+require('./first');
+require('./flatten');
+require('./from');
+require('./groupBy');
+require('./inGroups');
+require('./inGroupsOf');
+require('./intersect');
+require('./isEmpty');
+require('./isEqual');
+require('./last');
+require('./remove');
+require('./removeAt');
+require('./sample');
+require('./shuffle');
+require('./sortBy');
+require('./subtract');
+require('./to');
+require('./union');
+require('./unique');
+require('./zip');
+
+// Aliases
+require('./insert');
+
+// Accessors
+require('./getOption');
+require('./setOption');
+
+module.exports = require('sugar-core');
+},{"./add":19,"./append":20,"./at":21,"./clone":24,"./compact":25,"./construct":26,"./create":28,"./exclude":31,"./first":38,"./flatten":39,"./from":41,"./getOption":42,"./groupBy":43,"./inGroups":44,"./inGroupsOf":45,"./insert":47,"./intersect":71,"./isEmpty":72,"./isEqual":73,"./last":74,"./remove":85,"./removeAt":86,"./sample":87,"./setOption":88,"./shuffle":89,"./sortBy":92,"./subtract":93,"./to":95,"./union":96,"./unique":97,"./zip":102,"sugar-core":18}],47:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    append = require('./append');
+
+Sugar.Array.alias('insert', 'append');
+
+module.exports = Sugar.Array.insert;
+},{"./append":20,"sugar-core":18}],48:[function(require,module,exports){
+'use strict';
+
+var isDefined = require('../../common/internal/isDefined');
+
+function arrayAppend(arr, el, index) {
+  var spliceArgs;
+  index = +index;
+  if (isNaN(index)) {
+    index = arr.length;
+  }
+  spliceArgs = [index, 0];
+  if (isDefined(el)) {
+    spliceArgs = spliceArgs.concat(el);
+  }
+  arr.splice.apply(arr, spliceArgs);
+  return arr;
+}
+
+module.exports = arrayAppend;
+},{"../../common/internal/isDefined":149}],49:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach');
+
+function arrayClone(arr) {
+  var clone = new Array(arr.length);
+  forEach(arr, function(el, i) {
+    clone[i] = el;
+  });
+  return clone;
+}
+
+module.exports = arrayClone;
+},{"../../common/internal/forEach":129}],50:[function(require,module,exports){
+'use strict';
+
+var filter = require('../../common/internal/filter');
+
+function arrayCompact(arr, all) {
+  return filter(arr, function(el) {
+    return el || (!all && el != null && el.valueOf() === el.valueOf());
+  });
+}
+
+module.exports = arrayCompact;
+},{"../../common/internal/filter":127}],51:[function(require,module,exports){
+'use strict';
+
+var HAS_CONCAT_BUG = require('../var/HAS_CONCAT_BUG'),
+    arraySafeConcat = require('./arraySafeConcat');
+
+function arrayConcat(arr1, arr2) {
+  if (HAS_CONCAT_BUG) {
+    return arraySafeConcat(arr1, arr2);
+  }
+  return arr1.concat(arr2);
+}
+
+module.exports = arrayConcat;
+},{"../var/HAS_CONCAT_BUG":101,"./arraySafeConcat":58}],52:[function(require,module,exports){
+'use strict';
+
+var isDefined = require('../../common/internal/isDefined'),
+    arrayClone = require('./arrayClone'),
+    classChecks = require('../../common/var/classChecks'),
+    isObjectType = require('../../common/internal/isObjectType'),
+    isArrayOrInherited = require('./isArrayOrInherited');
+
+var isString = classChecks.isString;
+
+function arrayCreate(obj, clone) {
+  var arr;
+  if (isArrayOrInherited(obj)) {
+    arr = clone ? arrayClone(obj) : obj;
+  } else if (isObjectType(obj) || isString(obj)) {
+    arr = Array.from(obj);
+  } else if (isDefined(obj)) {
+    arr = [obj];
+  }
+  return arr || [];
+}
+
+module.exports = arrayCreate;
+},{"../../common/internal/isDefined":149,"../../common/internal/isObjectType":151,"../../common/var/classChecks":192,"./arrayClone":49,"./isArrayOrInherited":69}],53:[function(require,module,exports){
+'use strict';
+
+var getMatcher = require('../../common/internal/getMatcher');
+
+function arrayExclude(arr, f) {
+  var result = [], matcher = getMatcher(f);
+  for (var i = 0; i < arr.length; i++) {
+    if (!matcher(arr[i], i, arr)) {
+      result.push(arr[i]);
+    }
+  }
+  return result;
+}
+
+module.exports = arrayExclude;
+},{"../../common/internal/getMatcher":136}],54:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    classChecks = require('../../common/var/classChecks');
+
+var isArray = classChecks.isArray;
+
+function arrayFlatten(arr, level, current) {
+  var result = [];
+  level = level || Infinity;
+  current = current || 0;
+  forEach(arr, function(el) {
+    if (isArray(el) && current < level) {
+      result = result.concat(arrayFlatten(el, level, current + 1));
+    } else {
+      result.push(el);
+    }
+  });
+  return result;
+}
+
+module.exports = arrayFlatten;
+},{"../../common/internal/forEach":129,"../../common/var/classChecks":192}],55:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    mapWithShortcuts = require('../../common/internal/mapWithShortcuts'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var hasOwn = coreUtilityAliases.hasOwn,
+    forEachProperty = coreUtilityAliases.forEachProperty;
+
+function arrayGroupBy(arr, map, fn) {
+  var result = {}, key;
+  forEach(arr, function(el, i) {
+    key = mapWithShortcuts(el, map, arr, [el, i, arr]);
+    if (!hasOwn(result, key)) {
+      result[key] = [];
+    }
+    result[key].push(el);
+  });
+  if (fn) {
+    forEachProperty(result, fn);
+  }
+  return result;
+}
+
+module.exports = arrayGroupBy;
+},{"../../common/internal/forEach":129,"../../common/internal/mapWithShortcuts":160,"../../common/var/coreUtilityAliases":193}],56:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    arrayWrap = require('./arrayWrap'),
+    classChecks = require('../../common/var/classChecks'),
+    serializeInternal = require('../../common/internal/serializeInternal'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var isArray = classChecks.isArray,
+    hasOwn = coreUtilityAliases.hasOwn;
+
+function arrayIntersectOrSubtract(arr1, arr2, subtract) {
+  var result = [], obj = {}, refs = [];
+  if (!isArray(arr2)) {
+    arr2 = arrayWrap(arr2);
+  }
+  forEach(arr2, function(el) {
+    obj[serializeInternal(el, refs)] = true;
+  });
+  forEach(arr1, function(el) {
+    var key = serializeInternal(el, refs);
+    if (hasOwn(obj, key) !== subtract) {
+      delete obj[key];
+      result.push(el);
+    }
+  });
+  return result;
+}
+
+module.exports = arrayIntersectOrSubtract;
+},{"../../common/internal/forEach":129,"../../common/internal/serializeInternal":168,"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193,"./arrayWrap":61}],57:[function(require,module,exports){
+'use strict';
+
+var getMatcher = require('../../common/internal/getMatcher');
+
+function arrayRemove(arr, f) {
+  var matcher = getMatcher(f), i = 0;
+  while(i < arr.length) {
+    if (matcher(arr[i], i, arr)) {
+      arr.splice(i, 1);
+    } else {
+      i++;
+    }
+  }
+  return arr;
+}
+
+module.exports = arrayRemove;
+},{"../../common/internal/getMatcher":136}],58:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    arrayClone = require('./arrayClone'),
+    classChecks = require('../../common/var/classChecks');
+
+var isArray = classChecks.isArray;
+
+function arraySafeConcat(arr, arg) {
+  var result = arrayClone(arr), len = result.length, arr2;
+  arr2 = isArray(arg) ? arg : [arg];
+  result.length += arr2.length;
+  forEach(arr2, function(el, i) {
+    result[len + i] = el;
+  });
+  return result;
+}
+
+module.exports = arraySafeConcat;
+},{"../../common/internal/forEach":129,"../../common/var/classChecks":192,"./arrayClone":49}],59:[function(require,module,exports){
+'use strict';
+
+var arrayClone = require('./arrayClone');
+
+function arrayShuffle(arr) {
+  arr = arrayClone(arr);
+  var i = arr.length, j, x;
+  while(i) {
+    j = (Math.random() * i) | 0;
+    x = arr[--i];
+    arr[i] = arr[j];
+    arr[j] = x;
+  }
+  return arr;
+}
+
+module.exports = arrayShuffle;
+},{"./arrayClone":49}],60:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    mapWithShortcuts = require('../../common/internal/mapWithShortcuts'),
+    serializeInternal = require('../../common/internal/serializeInternal'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var hasOwn = coreUtilityAliases.hasOwn;
+
+function arrayUnique(arr, map) {
+  var result = [], obj = {}, refs = [];
+  forEach(arr, function(el, i) {
+    var transformed = map ? mapWithShortcuts(el, map, arr, [el, i, arr]) : el;
+    var key = serializeInternal(transformed, refs);
+    if (!hasOwn(obj, key)) {
+      result.push(el);
+      obj[key] = true;
+    }
+  });
+  return result;
+}
+
+module.exports = arrayUnique;
+},{"../../common/internal/forEach":129,"../../common/internal/mapWithShortcuts":160,"../../common/internal/serializeInternal":168,"../../common/var/coreUtilityAliases":193}],61:[function(require,module,exports){
+'use strict';
+
+function arrayWrap(obj) {
+  var arr = [];
+  arr.push(obj);
+  return arr;
+}
+
+module.exports = arrayWrap;
+},{}],62:[function(require,module,exports){
+'use strict';
+
+var HALF_WIDTH_NINE = require('../var/HALF_WIDTH_NINE'),
+    FULL_WIDTH_NINE = require('../var/FULL_WIDTH_NINE'),
+    CommonChars = require('../../common/var/CommonChars');
+
+var HALF_WIDTH_ZERO = CommonChars.HALF_WIDTH_ZERO,
+    FULL_WIDTH_ZERO = CommonChars.FULL_WIDTH_ZERO;
+
+function codeIsNumeral(code) {
+  return (code >= HALF_WIDTH_ZERO && code <= HALF_WIDTH_NINE) ||
+         (code >= FULL_WIDTH_ZERO && code <= FULL_WIDTH_NINE);
+}
+
+module.exports = codeIsNumeral;
+},{"../../common/var/CommonChars":180,"../var/FULL_WIDTH_NINE":99,"../var/HALF_WIDTH_NINE":100}],63:[function(require,module,exports){
+'use strict';
+
+var ARRAY_OPTIONS = require('../var/ARRAY_OPTIONS'),
+    classChecks = require('../../common/var/classChecks');
+
+var isString = classChecks.isString,
+    isArray = classChecks.isArray,
+    _arrayOptions = ARRAY_OPTIONS._arrayOptions;
+
+function compareValue(aVal, bVal) {
+  var cmp, i, collate;
+  if (isString(aVal) && isString(bVal)) {
+    collate = _arrayOptions('sortCollate');
+    return collate(aVal, bVal);
+  } else if (isArray(aVal) && isArray(bVal)) {
+    if (aVal.length < bVal.length) {
+      return -1;
+    } else if (aVal.length > bVal.length) {
+      return 1;
+    } else {
+      for(i = 0; i < aVal.length; i++) {
+        cmp = compareValue(aVal[i], bVal[i]);
+        if (cmp !== 0) {
+          return cmp;
+        }
+      }
+      return 0;
+    }
+  }
+  return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+}
+
+module.exports = compareValue;
+},{"../../common/var/classChecks":192,"../var/ARRAY_OPTIONS":98}],64:[function(require,module,exports){
+'use strict';
+
+var coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var getOwn = coreUtilityAliases.getOwn;
+
+function getCollationCharacter(str, index, sortEquivalents) {
+  var chr = str.charAt(index);
+  return getOwn(sortEquivalents, chr) || chr;
+}
+
+module.exports = getCollationCharacter;
+},{"../../common/var/coreUtilityAliases":193}],65:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks');
+
+var isString = classChecks.isString;
+
+function getCollationReadyString(str, sortIgnore, sortIgnoreCase) {
+  if (!isString(str)) str = String(str);
+  if (sortIgnoreCase) {
+    str = str.toLowerCase();
+  }
+  if (sortIgnore) {
+    str = str.replace(sortIgnore, '');
+  }
+  return str;
+}
+
+module.exports = getCollationReadyString;
+},{"../../common/var/classChecks":192}],66:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    spaceSplit = require('../../common/internal/spaceSplit');
+
+function getSortEquivalents() {
+  var equivalents = {};
+  forEach(spaceSplit('AÁÀÂÃÄ CÇ EÉÈÊË IÍÌİÎÏ OÓÒÔÕÖ Sß UÚÙÛÜ'), function(set) {
+    var first = set.charAt(0);
+    forEach(set.slice(1).split(''), function(chr) {
+      equivalents[chr] = first;
+      equivalents[chr.toLowerCase()] = first.toLowerCase();
+    });
+  });
+  return equivalents;
+}
+
+module.exports = getSortEquivalents;
+},{"../../common/internal/forEach":129,"../../common/internal/spaceSplit":175}],67:[function(require,module,exports){
+'use strict';
+
+var map = require('../../common/internal/map');
+
+function getSortOrder() {
+  var order = 'AÁÀÂÃĄBCĆČÇDĎÐEÉÈĚÊËĘFGĞHıIÍÌİÎÏJKLŁMNŃŇÑOÓÒÔPQRŘSŚŠŞTŤUÚÙŮÛÜVWXYÝZŹŻŽÞÆŒØÕÅÄÖ';
+  return map(order.split(''), function(str) {
+    return str + str.toLowerCase();
+  }).join('');
+}
+
+module.exports = getSortOrder;
+},{"../../common/internal/map":158}],68:[function(require,module,exports){
+'use strict';
+
+function getSortOrderIndex(chr, sortOrder) {
+  if (!chr) {
+    return null;
+  } else {
+    return sortOrder.indexOf(chr);
+  }
+}
+
+module.exports = getSortOrderIndex;
+},{}],69:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks');
+
+var isArray = classChecks.isArray;
+
+function isArrayOrInherited(obj) {
+  return obj && obj.constructor && isArray(obj.constructor.prototype);
+}
+
+module.exports = isArrayOrInherited;
+},{"../../common/var/classChecks":192}],70:[function(require,module,exports){
+'use strict';
+
+var arrayCreate = require('./arrayCreate'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    setChainableConstructor = require('../../common/internal/setChainableConstructor');
+
+var sugarArray = namespaceAliases.sugarArray;
+
+function setArrayChainableConstructor() {
+  setChainableConstructor(sugarArray, arrayCreate);
+}
+
+module.exports = setArrayChainableConstructor;
+},{"../../common/internal/setChainableConstructor":169,"../../common/var/namespaceAliases":197,"./arrayCreate":52}],71:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayIntersectOrSubtract = require('./internal/arrayIntersectOrSubtract');
+
+Sugar.Array.defineInstance({
+
+  'intersect': function(arr1, arr2) {
+    return arrayIntersectOrSubtract(arr1, arr2, false);
+  }
+
+});
+
+module.exports = Sugar.Array.intersect;
+},{"./internal/arrayIntersectOrSubtract":56,"sugar-core":18}],72:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.Array.defineInstance({
+
+  'isEmpty': function(arr) {
+    return arr.length === 0;
+  }
+
+});
+
+module.exports = Sugar.Array.isEmpty;
+},{"sugar-core":18}],73:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isEqual = require('../common/internal/isEqual');
+
+Sugar.Array.defineInstance({
+
+  'isEqual': function(a, b) {
+    return isEqual(a, b);
+  }
+
+});
+
+module.exports = Sugar.Array.isEqual;
+},{"../common/internal/isEqual":150,"sugar-core":18}],74:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUndefined = require('../common/internal/isUndefined');
+
+Sugar.Array.defineInstance({
+
+  'last': function(arr, num) {
+    if (isUndefined(num)) return arr[arr.length - 1];
+    var start = arr.length - num < 0 ? 0 : arr.length - num;
+    return arr.slice(start);
+  }
+
+});
+
+module.exports = Sugar.Array.last;
+},{"../common/internal/isUndefined":155,"sugar-core":18}],75:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getLeastOrMost = require('../enumerable/internal/getLeastOrMost');
+
+Sugar.Array.defineInstance({
+
+  'least': function(arr, all, map) {
+    return getLeastOrMost(arr, all, map);
+  }
+
+});
+
+module.exports = Sugar.Array.least;
+},{"../enumerable/internal/getLeastOrMost":415,"sugar-core":18}],76:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    ENHANCEMENTS_FLAG = require('../common/var/ENHANCEMENTS_FLAG'),
+    ARRAY_ENHANCEMENTS_FLAG = require('../enumerable/var/ARRAY_ENHANCEMENTS_FLAG'),
+    enhancedMap = require('../enumerable/var/enhancedMap'),
+    fixArgumentLength = require('../common/internal/fixArgumentLength');
+
+Sugar.Array.defineInstance({
+
+  'map': fixArgumentLength(enhancedMap)
+
+}, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
+
+module.exports = Sugar.Array.map;
+},{"../common/internal/fixArgumentLength":128,"../common/var/ENHANCEMENTS_FLAG":181,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":428,"../enumerable/var/enhancedMap":429,"sugar-core":18}],77:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../enumerable/build/buildFromIndexMethodsCall');
+
+module.exports = Sugar.Array.mapFromIndex;
+},{"../enumerable/build/buildFromIndexMethodsCall":404,"sugar-core":18}],78:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getMinOrMax = require('../enumerable/internal/getMinOrMax');
+
+Sugar.Array.defineInstance({
+
+  'max': function(arr, all, map) {
+    return getMinOrMax(arr, all, map, true);
+  }
+
+});
+
+module.exports = Sugar.Array.max;
+},{"../enumerable/internal/getMinOrMax":416,"sugar-core":18}],79:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    median = require('../enumerable/internal/median');
+
+Sugar.Array.defineInstance({
+
+  'median': function(arr, map) {
+    return median(arr, map);
+  }
+
+});
+
+module.exports = Sugar.Array.median;
+},{"../enumerable/internal/median":418,"sugar-core":18}],80:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getMinOrMax = require('../enumerable/internal/getMinOrMax');
+
+Sugar.Array.defineInstance({
+
+  'min': function(arr, all, map) {
+    return getMinOrMax(arr, all, map);
+  }
+
+});
+
+module.exports = Sugar.Array.min;
+},{"../enumerable/internal/getMinOrMax":416,"sugar-core":18}],81:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getLeastOrMost = require('../enumerable/internal/getLeastOrMost');
+
+Sugar.Array.defineInstance({
+
+  'most': function(arr, all, map) {
+    return getLeastOrMost(arr, all, map, true);
+  }
+
+});
+
+module.exports = Sugar.Array.most;
+},{"../enumerable/internal/getLeastOrMost":415,"sugar-core":18}],82:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayNone = require('../enumerable/internal/arrayNone'),
+    fixArgumentLength = require('../common/internal/fixArgumentLength');
+
+Sugar.Array.defineInstance({
+
+  'none': fixArgumentLength(arrayNone)
+
+});
+
+module.exports = Sugar.Array.none;
+},{"../common/internal/fixArgumentLength":128,"../enumerable/internal/arrayNone":407,"sugar-core":18}],83:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../enumerable/build/buildFromIndexMethodsCall');
+
+module.exports = Sugar.Array.reduceFromIndex;
+},{"../enumerable/build/buildFromIndexMethodsCall":404,"sugar-core":18}],84:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../enumerable/build/buildFromIndexMethodsCall');
+
+module.exports = Sugar.Array.reduceRightFromIndex;
+},{"../enumerable/build/buildFromIndexMethodsCall":404,"sugar-core":18}],85:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayRemove = require('./internal/arrayRemove');
+
+Sugar.Array.defineInstance({
+
+  'remove': function(arr, f) {
+    return arrayRemove(arr, f);
+  }
+
+});
+
+module.exports = Sugar.Array.remove;
+},{"./internal/arrayRemove":57,"sugar-core":18}],86:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUndefined = require('../common/internal/isUndefined');
+
+Sugar.Array.defineInstance({
+
+  'removeAt': function(arr, start, end) {
+    if (isUndefined(start)) return arr;
+    if (isUndefined(end))   end = start;
+    arr.splice(start, end - start + 1);
+    return arr;
+  }
+
+});
+
+module.exports = Sugar.Array.removeAt;
+},{"../common/internal/isUndefined":155,"sugar-core":18}],87:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    trunc = require('../common/var/trunc'),
+    arrayClone = require('./internal/arrayClone'),
+    classChecks = require('../common/var/classChecks'),
+    isUndefined = require('../common/internal/isUndefined'),
+    mathAliases = require('../common/var/mathAliases');
+
+var isBoolean = classChecks.isBoolean,
+    min = mathAliases.min;
+
+Sugar.Array.defineInstance({
+
+  'sample': function(arr, arg1, arg2) {
+    var result = [], num, remove, single;
+    if (isBoolean(arg1)) {
+      remove = arg1;
+    } else {
+      num = arg1;
+      remove = arg2;
+    }
+    if (isUndefined(num)) {
+      num = 1;
+      single = true;
+    }
+    if (!remove) {
+      arr = arrayClone(arr);
+    }
+    num = min(num, arr.length);
+    for (var i = 0, index; i < num; i++) {
+      index = trunc(Math.random() * arr.length);
+      result.push(arr[index]);
+      arr.splice(index, 1);
+    }
+    return single ? result[0] : result;
+  }
+
+});
+
+module.exports = Sugar.Array.sample;
+},{"../common/internal/isUndefined":155,"../common/var/classChecks":192,"../common/var/mathAliases":195,"../common/var/trunc":198,"./internal/arrayClone":49,"sugar-core":18}],88:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    ARRAY_OPTIONS = require('./var/ARRAY_OPTIONS');
+
+var _arrayOptions = ARRAY_OPTIONS._arrayOptions;
+
+module.exports = Sugar.Array.setOption;
+},{"./var/ARRAY_OPTIONS":98,"sugar-core":18}],89:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayShuffle = require('./internal/arrayShuffle');
+
+Sugar.Array.defineInstance({
+
+  'shuffle': function(arr) {
+    return arrayShuffle(arr);
+  }
+
+});
+
+module.exports = Sugar.Array.shuffle;
+},{"./internal/arrayShuffle":59,"sugar-core":18}],90:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    ENHANCEMENTS_FLAG = require('../common/var/ENHANCEMENTS_FLAG'),
+    ARRAY_ENHANCEMENTS_FLAG = require('../enumerable/var/ARRAY_ENHANCEMENTS_FLAG'),
+    fixArgumentLength = require('../common/internal/fixArgumentLength'),
+    enhancedMatcherMethods = require('../enumerable/var/enhancedMatcherMethods');
+
+var enhancedSome = enhancedMatcherMethods.enhancedSome;
+
+Sugar.Array.defineInstance({
+
+  'some': fixArgumentLength(enhancedSome)
+
+}, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
+
+module.exports = Sugar.Array.some;
+},{"../common/internal/fixArgumentLength":128,"../common/var/ENHANCEMENTS_FLAG":181,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":428,"../enumerable/var/enhancedMatcherMethods":430,"sugar-core":18}],91:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../enumerable/build/buildFromIndexMethodsCall');
+
+module.exports = Sugar.Array.someFromIndex;
+},{"../enumerable/build/buildFromIndexMethodsCall":404,"sugar-core":18}],92:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    compareValue = require('./internal/compareValue'),
+    mapWithShortcuts = require('../common/internal/mapWithShortcuts');
+
+Sugar.Array.defineInstance({
+
+  'sortBy': function(arr, map, desc) {
+    arr.sort(function(a, b) {
+      var aProperty = mapWithShortcuts(a, map, arr, [a]);
+      var bProperty = mapWithShortcuts(b, map, arr, [b]);
+      return compareValue(aProperty, bProperty) * (desc ? -1 : 1);
+    });
+    return arr;
+  }
+
+});
+
+module.exports = Sugar.Array.sortBy;
+},{"../common/internal/mapWithShortcuts":160,"./internal/compareValue":63,"sugar-core":18}],93:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayIntersectOrSubtract = require('./internal/arrayIntersectOrSubtract');
+
+Sugar.Array.defineInstance({
+
+  'subtract': function(arr, item) {
+    return arrayIntersectOrSubtract(arr, item, true);
+  }
+
+});
+
+module.exports = Sugar.Array.subtract;
+},{"./internal/arrayIntersectOrSubtract":56,"sugar-core":18}],94:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    sum = require('../enumerable/internal/sum');
+
+Sugar.Array.defineInstance({
+
+  'sum': function(arr, map) {
+    return sum(arr, map);
+  }
+
+});
+
+module.exports = Sugar.Array.sum;
+},{"../enumerable/internal/sum":425,"sugar-core":18}],95:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUndefined = require('../common/internal/isUndefined');
+
+Sugar.Array.defineInstance({
+
+  'to': function(arr, num) {
+    if (isUndefined(num)) num = arr.length;
+    return arr.slice(0, num);
+  }
+
+});
+
+module.exports = Sugar.Array.to;
+},{"../common/internal/isUndefined":155,"sugar-core":18}],96:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayUnique = require('./internal/arrayUnique'),
+    arrayConcat = require('./internal/arrayConcat');
+
+Sugar.Array.defineInstance({
+
+  'union': function(arr1, arr2) {
+    return arrayUnique(arrayConcat(arr1, arr2));
+  }
+
+});
+
+module.exports = Sugar.Array.union;
+},{"./internal/arrayConcat":51,"./internal/arrayUnique":60,"sugar-core":18}],97:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    arrayUnique = require('./internal/arrayUnique');
+
+Sugar.Array.defineInstance({
+
+  'unique': function(arr, map) {
+    return arrayUnique(arr, map);
+  }
+
+});
+
+module.exports = Sugar.Array.unique;
+},{"./internal/arrayUnique":60,"sugar-core":18}],98:[function(require,module,exports){
+'use strict';
+
+var getSortOrder = require('../internal/getSortOrder'),
+    codeIsNumeral = require('../internal/codeIsNumeral'),
+    stringToNumber = require('../../common/internal/stringToNumber'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    getSortOrderIndex = require('../internal/getSortOrderIndex'),
+    getSortEquivalents = require('../internal/getSortEquivalents'),
+    defineOptionsAccessor = require('../../common/internal/defineOptionsAccessor'),
+    getCollationCharacter = require('../internal/getCollationCharacter'),
+    getCollationReadyString = require('../internal/getCollationReadyString');
+
+var sugarArray = namespaceAliases.sugarArray;
+
+var ARRAY_OPTIONS = {
+  'sortIgnore':      null,
+  'sortNatural':     true,
+  'sortIgnoreCase':  true,
+  'sortOrder':       getSortOrder(),
+  'sortCollate':     collateStrings,
+  'sortEquivalents': getSortEquivalents()
+};
+
+var _arrayOptions = defineOptionsAccessor(sugarArray, ARRAY_OPTIONS);
+
+function collateStrings(a, b) {
+  var aValue, bValue, aChar, bChar, aEquiv, bEquiv, index = 0, tiebreaker = 0;
+
+  var sortOrder       = _arrayOptions('sortOrder');
+  var sortIgnore      = _arrayOptions('sortIgnore');
+  var sortNatural     = _arrayOptions('sortNatural');
+  var sortIgnoreCase  = _arrayOptions('sortIgnoreCase');
+  var sortEquivalents = _arrayOptions('sortEquivalents');
+
+  a = getCollationReadyString(a, sortIgnore, sortIgnoreCase);
+  b = getCollationReadyString(b, sortIgnore, sortIgnoreCase);
+
+  do {
+
+    aChar  = getCollationCharacter(a, index, sortEquivalents);
+    bChar  = getCollationCharacter(b, index, sortEquivalents);
+    aValue = getSortOrderIndex(aChar, sortOrder);
+    bValue = getSortOrderIndex(bChar, sortOrder);
+
+    if (aValue === -1 || bValue === -1) {
+      aValue = a.charCodeAt(index) || null;
+      bValue = b.charCodeAt(index) || null;
+      if (sortNatural && codeIsNumeral(aValue) && codeIsNumeral(bValue)) {
+        aValue = stringToNumber(a.slice(index));
+        bValue = stringToNumber(b.slice(index));
+      }
+    } else {
+      aEquiv = aChar !== a.charAt(index);
+      bEquiv = bChar !== b.charAt(index);
+      if (aEquiv !== bEquiv && tiebreaker === 0) {
+        tiebreaker = aEquiv - bEquiv;
+      }
+    }
+    index += 1;
+  } while(aValue != null && bValue != null && aValue === bValue);
+  if (aValue === bValue) return tiebreaker;
+  return aValue - bValue;
+}
+
+module.exports = {
+  ARRAY_OPTIONS: ARRAY_OPTIONS,
+  _arrayOptions: _arrayOptions
+};
+},{"../../common/internal/defineOptionsAccessor":124,"../../common/internal/stringToNumber":176,"../../common/var/namespaceAliases":197,"../internal/codeIsNumeral":62,"../internal/getCollationCharacter":64,"../internal/getCollationReadyString":65,"../internal/getSortEquivalents":66,"../internal/getSortOrder":67,"../internal/getSortOrderIndex":68}],99:[function(require,module,exports){
+'use strict';
+
+module.exports = 0xff19;
+},{}],100:[function(require,module,exports){
+'use strict';
+
+module.exports = 0x39;
+},{}],101:[function(require,module,exports){
+'use strict';
+
+module.exports = !('0' in [].concat(undefined).concat());
+},{}],102:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    map = require('../common/internal/map');
+
+Sugar.Array.defineInstanceWithArguments({
+
+  'zip': function(arr, args) {
+    return map(arr, function(el, i) {
+      return [el].concat(map(args, function(k) {
+        return (i in k) ? k[i] : null;
+      }));
+    });
+  }
+
+});
+
+module.exports = Sugar.Array.zip;
+},{"../common/internal/map":158,"sugar-core":18}],103:[function(require,module,exports){
+'use strict';
+
+function allCharsReg(src) {
+  return RegExp('[' + src + ']', 'g');
+}
+
+module.exports = allCharsReg;
+},{}],104:[function(require,module,exports){
+'use strict';
+
+function assertArgument(exists) {
+  if (!exists) {
+    throw new TypeError('Argument required');
+  }
+}
+
+module.exports = assertArgument;
+},{}],105:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../var/classChecks');
+
+var isArray = classChecks.isArray;
+
+function assertArray(obj) {
+  if (!isArray(obj)) {
+    throw new TypeError('Array required');
+  }
+}
+
+module.exports = assertArray;
+},{"../var/classChecks":192}],106:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../var/classChecks');
+
+var isFunction = classChecks.isFunction;
+
+function assertCallable(obj) {
+  if (!isFunction(obj)) {
+    throw new TypeError('Function is not callable');
+  }
+}
+
+module.exports = assertCallable;
+},{"../var/classChecks":192}],107:[function(require,module,exports){
+'use strict';
+
+var isPrimitive = require('./isPrimitive');
+
+function assertWritable(obj) {
+  if (isPrimitive(obj)) {
+    // If strict mode is active then primitives will throw an
+    // error when attempting to write properties. We can't be
+    // sure if strict mode is available, so pre-emptively
+    // throw an error here to ensure consistent behavior.
+    throw new TypeError('Property cannot be written');
+  }
+}
+
+module.exports = assertWritable;
+},{"./isPrimitive":153}],108:[function(require,module,exports){
+'use strict';
+
+var _utc = require('../var/_utc');
+
+function callDateGet(d, method) {
+  return d['get' + (_utc(d) ? 'UTC' : '') + method]();
+}
+
+module.exports = callDateGet;
+},{"../var/_utc":190}],109:[function(require,module,exports){
+'use strict';
+
+var _utc = require('../var/_utc'),
+    callDateGet = require('./callDateGet');
+
+function callDateSet(d, method, value, safe) {
+  // "Safe" denotes not setting the date if the value is the same as what is
+  // currently set. In theory this should be a noop, however it will cause
+  // timezone shifts when in the middle of a DST fallback. This is unavoidable
+  // as the notation itself is ambiguous (i.e. there are two "1:00ams" on
+  // November 1st, 2015 in northern hemisphere timezones that follow DST),
+  // however when advancing or rewinding dates this can throw off calculations
+  // so avoiding this unintentional shifting on an opt-in basis.
+  if (safe && value === callDateGet(d, method, value)) {
+    return;
+  }
+  d['set' + (_utc(d) ? 'UTC' : '') + method](value);
+}
+
+module.exports = callDateSet;
+},{"../var/_utc":190,"./callDateGet":108}],110:[function(require,module,exports){
+'use strict';
+
+var trunc = require('../var/trunc'),
+    classChecks = require('../var/classChecks');
+
+var isNumber = classChecks.isNumber;
+
+function coercePositiveInteger(n) {
+  n = +n || 0;
+  if (n < 0 || !isNumber(n) || !isFinite(n)) {
+    throw new RangeError('Invalid number');
+  }
+  return trunc(n);
+}
+
+module.exports = coercePositiveInteger;
+},{"../var/classChecks":192,"../var/trunc":198}],111:[function(require,module,exports){
+'use strict';
+
+var NO_KEYS_IN_STRING_OBJECTS = require('../var/NO_KEYS_IN_STRING_OBJECTS'),
+    isPrimitive = require('./isPrimitive'),
+    classChecks = require('../var/classChecks'),
+    forceStringCoercion = require('./forceStringCoercion');
+
+var isString = classChecks.isString;
+
+function coercePrimitiveToObject(obj) {
+  if (isPrimitive(obj)) {
+    obj = Object(obj);
+  }
+  if (NO_KEYS_IN_STRING_OBJECTS && isString(obj)) {
+    forceStringCoercion(obj);
+  }
+  return obj;
+}
+
+module.exports = coercePrimitiveToObject;
+},{"../var/NO_KEYS_IN_STRING_OBJECTS":185,"../var/classChecks":192,"./forceStringCoercion":130,"./isPrimitive":153}],112:[function(require,module,exports){
+'use strict';
+
+var forEach = require('./forEach'),
+    spaceSplit = require('./spaceSplit'),
+    classChecks = require('../var/classChecks');
+
+var isString = classChecks.isString;
+
+function collectSimilarMethods(set, fn) {
+  var methods = {};
+  if (isString(set)) {
+    set = spaceSplit(set);
+  }
+  forEach(set, function(el, i) {
+    fn(methods, el, i);
+  });
+  return methods;
+}
+
+module.exports = collectSimilarMethods;
+},{"../var/classChecks":192,"./forEach":129,"./spaceSplit":175}],113:[function(require,module,exports){
+'use strict';
+
+var CommonChars = require('../var/CommonChars');
+
+var HALF_WIDTH_COMMA = CommonChars.HALF_WIDTH_COMMA;
+
+function commaSplit(str) {
+  return str.split(HALF_WIDTH_COMMA);
+}
+
+module.exports = commaSplit;
+},{"../var/CommonChars":180}],114:[function(require,module,exports){
+'use strict';
+
+var STRING_FORMAT_REG = require('../var/STRING_FORMAT_REG'),
+    CommonChars = require('../var/CommonChars'),
+    memoizeFunction = require('./memoizeFunction');
+
+var OPEN_BRACE = CommonChars.OPEN_BRACE,
+    CLOSE_BRACE = CommonChars.CLOSE_BRACE;
+
+function createFormatMatcher(bracketMatcher, percentMatcher, precheck) {
+
+  var reg = STRING_FORMAT_REG;
+  var compileMemoized = memoizeFunction(compile);
+
+  function getToken(format, match) {
+    var get, token, literal, fn;
+    var bKey = match[2];
+    var pLit = match[3];
+    var pKey = match[5];
+    if (match[4] && percentMatcher) {
+      token = pKey;
+      get = percentMatcher;
+    } else if (bKey) {
+      token = bKey;
+      get = bracketMatcher;
+    } else if (pLit && percentMatcher) {
+      literal = pLit;
+    } else {
+      literal = match[1] || match[0];
+    }
+    if (get) {
+      assertPassesPrecheck(precheck, bKey, pKey);
+      fn = function(obj, opt) {
+        return get(obj, token, opt);
       };
     }
+    format.push(fn || getLiteral(literal));
+  }
 
-    function storeMethod(klass, name, instance, existing, prop, polyfill) {
-      var result = instance ? wrapInstanceMethod(prop) : prop;
-      var methods = SugarMethods[klass];
-      if (!methods) {
-        methods = SugarMethods[klass] = {};
+  function getSubstring(format, str, start, end) {
+    if (end > start) {
+      var sub = str.slice(start, end);
+      assertNoUnmatched(sub, OPEN_BRACE);
+      assertNoUnmatched(sub, CLOSE_BRACE);
+      format.push(function() {
+        return sub;
+      });
+    }
+  }
+
+  function getLiteral(str) {
+    return function() {
+      return str;
+    };
+  }
+
+  function assertPassesPrecheck(precheck, bt, pt) {
+    if (precheck && !precheck(bt, pt)) {
+      throw new TypeError('Invalid token '+ (bt || pt) +' in format string');
+    }
+  }
+
+  function assertNoUnmatched(str, chr) {
+    if (str.indexOf(chr) !== -1) {
+      throw new TypeError('Unmatched '+ chr +' in format string');
+    }
+  }
+
+  function compile(str) {
+    var format = [], lastIndex = 0, match;
+    reg.lastIndex = 0;
+    while(match = reg.exec(str)) {
+      getSubstring(format, str, lastIndex, match.index);
+      getToken(format, match);
+      lastIndex = reg.lastIndex;
+    }
+    getSubstring(format, str, lastIndex, str.length);
+    return format;
+  }
+
+  return function(str, obj, opt) {
+    var format = compileMemoized(str), result = '';
+    for (var i = 0; i < format.length; i++) {
+      result += format[i](obj, opt);
+    }
+    return result;
+  };
+}
+
+module.exports = createFormatMatcher;
+},{"../var/CommonChars":180,"../var/STRING_FORMAT_REG":188,"./memoizeFunction":161}],115:[function(require,module,exports){
+'use strict';
+
+function dateMatcher(d) {
+  var ms = d.getTime();
+  return function(el) {
+    return !!(el && el.getTime) && el.getTime() === ms;
+  };
+}
+
+module.exports = dateMatcher;
+},{}],116:[function(require,module,exports){
+'use strict';
+
+var handleDeepProperty = require('./handleDeepProperty');
+
+function deepGetProperty(obj, key, any) {
+  return handleDeepProperty(obj, key, any, false);
+}
+
+module.exports = deepGetProperty;
+},{"./handleDeepProperty":142}],117:[function(require,module,exports){
+'use strict';
+
+var handleDeepProperty = require('./handleDeepProperty');
+
+function deepHasProperty(obj, key, any) {
+  return handleDeepProperty(obj, key, any, true);
+}
+
+module.exports = deepHasProperty;
+},{"./handleDeepProperty":142}],118:[function(require,module,exports){
+'use strict';
+
+var handleDeepProperty = require('./handleDeepProperty');
+
+function deepSetProperty(obj, key, val) {
+  handleDeepProperty(obj, key, false, false, true, false, val);
+  return obj;
+}
+
+module.exports = deepSetProperty;
+},{"./handleDeepProperty":142}],119:[function(require,module,exports){
+'use strict';
+
+var isEqual = require('./isEqual');
+
+function defaultMatcher(f) {
+  return function(el) {
+    return isEqual(el, f);
+  };
+}
+
+module.exports = defaultMatcher;
+},{"./isEqual":150}],120:[function(require,module,exports){
+'use strict';
+
+var coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var setProperty = coreUtilityAliases.setProperty;
+
+function defineAccessor(namespace, name, fn) {
+  setProperty(namespace, name, fn);
+}
+
+module.exports = defineAccessor;
+},{"../var/coreUtilityAliases":193}],121:[function(require,module,exports){
+'use strict';
+
+var methodDefineAliases = require('../var/methodDefineAliases'),
+    collectSimilarMethods = require('./collectSimilarMethods');
+
+var defineInstanceAndStatic = methodDefineAliases.defineInstanceAndStatic;
+
+function defineInstanceAndStaticSimilar(sugarNamespace, set, fn, flags) {
+  defineInstanceAndStatic(sugarNamespace, collectSimilarMethods(set, fn), flags);
+}
+
+module.exports = defineInstanceAndStaticSimilar;
+},{"../var/methodDefineAliases":196,"./collectSimilarMethods":112}],122:[function(require,module,exports){
+'use strict';
+
+var methodDefineAliases = require('../var/methodDefineAliases'),
+    collectSimilarMethods = require('./collectSimilarMethods');
+
+var defineInstance = methodDefineAliases.defineInstance;
+
+function defineInstanceSimilar(sugarNamespace, set, fn, flags) {
+  defineInstance(sugarNamespace, collectSimilarMethods(set, fn), flags);
+}
+
+module.exports = defineInstanceSimilar;
+},{"../var/methodDefineAliases":196,"./collectSimilarMethods":112}],123:[function(require,module,exports){
+'use strict';
+
+var coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function defineOnPrototype(ctor, methods) {
+  var proto = ctor.prototype;
+  forEachProperty(methods, function(val, key) {
+    proto[key] = val;
+  });
+}
+
+module.exports = defineOnPrototype;
+},{"../var/coreUtilityAliases":193}],124:[function(require,module,exports){
+'use strict';
+
+var simpleClone = require('./simpleClone'),
+    defineAccessor = require('./defineAccessor'),
+    coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function defineOptionsAccessor(namespace, defaults) {
+  var obj = simpleClone(defaults);
+
+  function getOption(name) {
+    return obj[name];
+  }
+
+  function setOption(arg1, arg2) {
+    var options;
+    if (arguments.length === 1) {
+      options = arg1;
+    } else {
+      options = {};
+      options[arg1] = arg2;
+    }
+    forEachProperty(options, function(val, name) {
+      if (val === null) {
+        val = defaults[name];
       }
-      setProperty(methods, name, result, true);
-      if (typeof prop === 'function') {
-        setProperty(result, 'fn', prop);
-        setProperty(result, 'original', existing);
-        setProperty(result, 'instance', instance);
-        setProperty(result, 'polyfill', polyfill);
+      obj[name] = val;
+    });
+  }
+
+  defineAccessor(namespace, 'getOption', getOption);
+  defineAccessor(namespace, 'setOption', setOption);
+  return getOption;
+}
+
+module.exports = defineOptionsAccessor;
+},{"../var/coreUtilityAliases":193,"./defineAccessor":120,"./simpleClone":172}],125:[function(require,module,exports){
+'use strict';
+
+var getNormalizedIndex = require('./getNormalizedIndex');
+
+function entryAtIndex(obj, index, length, loop, isString) {
+  index = getNormalizedIndex(index, length, loop);
+  return isString ? obj.charAt(index) : obj[index];
+}
+
+module.exports = entryAtIndex;
+},{"./getNormalizedIndex":137}],126:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../var/classChecks');
+
+var isString = classChecks.isString;
+
+function escapeRegExp(str) {
+  if (!isString(str)) str = String(str);
+  return str.replace(/([\\\/\'*+?|()\[\]{}.^$-])/g,'\\$1');
+}
+
+module.exports = escapeRegExp;
+},{"../var/classChecks":192}],127:[function(require,module,exports){
+'use strict';
+
+function filter(arr, fn) {
+  var result = [];
+  for (var i = 0, len = arr.length; i < len; i++) {
+    var el = arr[i];
+    if (i in arr && fn(el, i)) {
+      result.push(el);
+    }
+  }
+  return result;
+}
+
+module.exports = filter;
+},{}],128:[function(require,module,exports){
+'use strict';
+
+function fixArgumentLength(fn) {
+  var staticFn = function(a) {
+    var args = arguments;
+    return fn(a, args[1], args[2], args.length - 1);
+  };
+  staticFn.instance = function(b) {
+    var args = arguments;
+    return fn(this, b, args[1], args.length);
+  };
+  return staticFn;
+}
+
+module.exports = fixArgumentLength;
+},{}],129:[function(require,module,exports){
+'use strict';
+
+var iterateOverSparseArray = require('./iterateOverSparseArray');
+
+function forEach(arr, fn) {
+  for (var i = 0, len = arr.length; i < len; i++) {
+    if (!(i in arr)) {
+      return iterateOverSparseArray(arr, fn, i);
+    }
+    fn(arr[i], i);
+  }
+}
+
+module.exports = forEach;
+},{"./iterateOverSparseArray":156}],130:[function(require,module,exports){
+'use strict';
+
+function forceStringCoercion(obj) {
+  var i = 0, chr;
+  while (chr = obj.charAt(i)) {
+    obj[i++] = chr;
+  }
+}
+
+module.exports = forceStringCoercion;
+},{}],131:[function(require,module,exports){
+'use strict';
+
+function functionMatcher(fn) {
+  return function(el, i, arr) {
+    // Return true up front if match by reference
+    return el === fn || fn.call(arr, el, i, arr);
+  };
+}
+
+module.exports = functionMatcher;
+},{}],132:[function(require,module,exports){
+'use strict';
+
+var Inflections = require('../var/Inflections');
+
+function getAcronym(str) {
+  return Inflections.acronyms && Inflections.acronyms.find(str);
+}
+
+module.exports = getAcronym;
+},{"../var/Inflections":183}],133:[function(require,module,exports){
+'use strict';
+
+var forEach = require('./forEach'),
+    classChecks = require('../var/classChecks'),
+    entryAtIndex = require('./entryAtIndex');
+
+var isArray = classChecks.isArray;
+
+function getEntriesForIndexes(obj, find, loop, isString) {
+  var result, length = obj.length;
+  if (!isArray(find)) {
+    return entryAtIndex(obj, find, length, loop, isString);
+  }
+  result = new Array(find.length);
+  forEach(find, function(index, i) {
+    result[i] = entryAtIndex(obj, index, length, loop, isString);
+  });
+  return result;
+}
+
+module.exports = getEntriesForIndexes;
+},{"../var/classChecks":192,"./entryAtIndex":125,"./forEach":129}],134:[function(require,module,exports){
+'use strict';
+
+var Inflections = require('../var/Inflections');
+
+function getHumanWord(str) {
+  return Inflections.human && Inflections.human.find(str);
+}
+
+module.exports = getHumanWord;
+},{"../var/Inflections":183}],135:[function(require,module,exports){
+'use strict';
+
+function getKeys(obj) {
+  return Object.keys(obj);
+}
+
+module.exports = getKeys;
+},{}],136:[function(require,module,exports){
+'use strict';
+
+var isPrimitive = require('./isPrimitive'),
+    classChecks = require('../var/classChecks'),
+    dateMatcher = require('./dateMatcher'),
+    regexMatcher = require('./regexMatcher'),
+    isObjectType = require('./isObjectType'),
+    isPlainObject = require('./isPlainObject'),
+    defaultMatcher = require('./defaultMatcher'),
+    functionMatcher = require('./functionMatcher'),
+    coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var getOwn = coreUtilityAliases.getOwn,
+    classToString = coreUtilityAliases.classToString,
+    forEachProperty = coreUtilityAliases.forEachProperty,
+    isDate = classChecks.isDate,
+    isRegExp = classChecks.isRegExp,
+    isFunction = classChecks.isFunction;
+
+function getMatcher(f) {
+  if (!isPrimitive(f)) {
+    var className = classToString(f);
+    if (isRegExp(f, className)) {
+      return regexMatcher(f);
+    } else if (isDate(f, className)) {
+      return dateMatcher(f);
+    } else if (isFunction(f, className)) {
+      return functionMatcher(f);
+    } else if (isPlainObject(f, className)) {
+      return fuzzyMatcher(f);
+    }
+  }
+  // Default is standard isEqual
+  return defaultMatcher(f);
+}
+
+function fuzzyMatcher(obj) {
+  var matchers = {};
+  return function(el, i, arr) {
+    var matched = true;
+    if (!isObjectType(el)) {
+      return false;
+    }
+    forEachProperty(obj, function(val, key) {
+      matchers[key] = getOwn(matchers, key) || getMatcher(val);
+      if (matchers[key].call(arr, el[key], i, arr) === false) {
+        matched = false;
+      }
+      return matched;
+    });
+    return matched;
+  };
+}
+
+module.exports = getMatcher;
+},{"../var/classChecks":192,"../var/coreUtilityAliases":193,"./dateMatcher":115,"./defaultMatcher":119,"./functionMatcher":131,"./isObjectType":151,"./isPlainObject":152,"./isPrimitive":153,"./regexMatcher":165}],137:[function(require,module,exports){
+'use strict';
+
+function getNormalizedIndex(index, length, loop) {
+  if (index && loop) {
+    index = index % length;
+  }
+  if (index < 0) index = length + index;
+  return index;
+}
+
+module.exports = getNormalizedIndex;
+},{}],138:[function(require,module,exports){
+'use strict';
+
+function getOrdinalSuffix(num) {
+  if (num >= 11 && num <= 13) {
+    return 'th';
+  } else {
+    switch(num % 10) {
+      case 1:  return 'st';
+      case 2:  return 'nd';
+      case 3:  return 'rd';
+      default: return 'th';
+    }
+  }
+}
+
+module.exports = getOrdinalSuffix;
+},{}],139:[function(require,module,exports){
+'use strict';
+
+var coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var hasOwn = coreUtilityAliases.hasOwn;
+
+function getOwnKey(obj, key) {
+  if (hasOwn(obj, key)) {
+    return key;
+  }
+}
+
+module.exports = getOwnKey;
+},{"../var/coreUtilityAliases":193}],140:[function(require,module,exports){
+'use strict';
+
+function getRegExpFlags(reg, add) {
+  var flags = '';
+  add = add || '';
+  function checkFlag(prop, flag) {
+    if (prop || add.indexOf(flag) > -1) {
+      flags += flag;
+    }
+  }
+  checkFlag(reg.global, 'g');
+  checkFlag(reg.ignoreCase, 'i');
+  checkFlag(reg.multiline, 'm');
+  checkFlag(reg.sticky, 'y');
+  return flags;
+}
+
+module.exports = getRegExpFlags;
+},{}],141:[function(require,module,exports){
+'use strict';
+
+var isArrayIndex = require('./isArrayIndex');
+
+function getSparseArrayIndexes(arr, fromIndex, loop, fromRight) {
+  var indexes = [], i;
+  for (i in arr) {
+    if (isArrayIndex(i) && (loop || (fromRight ? i <= fromIndex : i >= fromIndex))) {
+      indexes.push(+i);
+    }
+  }
+  indexes.sort(function(a, b) {
+    var aLoop = a > fromIndex;
+    var bLoop = b > fromIndex;
+    if (aLoop !== bLoop) {
+      return aLoop ? -1 : 1;
+    }
+    return a - b;
+  });
+  return indexes;
+}
+
+module.exports = getSparseArrayIndexes;
+},{"./isArrayIndex":147}],142:[function(require,module,exports){
+'use strict';
+
+var PROPERTY_RANGE_REG = require('../var/PROPERTY_RANGE_REG'),
+    CommonChars = require('../var/CommonChars'),
+    isDefined = require('./isDefined'),
+    classChecks = require('../var/classChecks'),
+    periodSplit = require('./periodSplit'),
+    assertArray = require('./assertArray'),
+    isObjectType = require('./isObjectType'),
+    assertWritable = require('./assertWritable'),
+    coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var isString = classChecks.isString,
+    hasOwn = coreUtilityAliases.hasOwn,
+    HALF_WIDTH_PERIOD = CommonChars.HALF_WIDTH_PERIOD;
+
+function handleDeepProperty(obj, key, any, has, fill, fillLast, val) {
+  var ns, bs, ps, cbi, set, isLast, isPush, isIndex, nextIsIndex, exists;
+  ns = obj || undefined;
+  if (key == null) return;
+
+  if (isObjectType(key)) {
+    // Allow array and array-like accessors
+    bs = [key];
+  } else {
+    key = String(key);
+    if (key.indexOf('..') !== -1) {
+      return handleArrayIndexRange(obj, key, any, val);
+    }
+    bs = key.split('[');
+  }
+
+  set = isDefined(val);
+
+  for (var i = 0, blen = bs.length; i < blen; i++) {
+    ps = bs[i];
+
+    if (isString(ps)) {
+      ps = periodSplit(ps);
+    }
+
+    for (var j = 0, plen = ps.length; j < plen; j++) {
+      key = ps[j];
+
+      // Is this the last key?
+      isLast = i === blen - 1 && j === plen - 1;
+
+      // Index of the closing ]
+      cbi = key.indexOf(']');
+
+      // Is the key an array index?
+      isIndex = cbi !== -1;
+
+      // Is this array push syntax "[]"?
+      isPush = set && cbi === 0;
+
+      // If the bracket split was successful and this is the last element
+      // in the dot split, then we know the next key will be an array index.
+      nextIsIndex = blen > 1 && j === plen - 1;
+
+      if (isPush) {
+        // Set the index to the end of the array
+        key = ns.length;
+      } else if (isIndex) {
+        // Remove the closing ]
+        key = key.slice(0, -1);
+      }
+
+      // If the array index is less than 0, then
+      // add its length to allow negative indexes.
+      if (isIndex && key < 0) {
+        key = +key + ns.length;
+      }
+
+      // Bracket keys may look like users[5] or just [5], so the leading
+      // characters are optional. We can enter the namespace if this is the
+      // 2nd part, if there is only 1 part, or if there is an explicit key.
+      if (i || key || blen === 1) {
+
+        exists = any ? key in ns : hasOwn(ns, key);
+
+        // Non-existent namespaces are only filled if they are intermediate
+        // (not at the end) or explicitly filling the last.
+        if (fill && (!isLast || fillLast) && !exists) {
+          // For our purposes, last only needs to be an array.
+          ns = ns[key] = nextIsIndex || (fillLast && isLast) ? [] : {};
+          continue;
+        }
+
+        if (has) {
+          if (isLast || !exists) {
+            return exists;
+          }
+        } else if (set && isLast) {
+          assertWritable(ns);
+          ns[key] = val;
+        }
+
+        ns = exists ? ns[key] : undefined;
+      }
+
+    }
+  }
+  return ns;
+}
+
+function handleArrayIndexRange(obj, key, any, val) {
+  var match, start, end, leading, trailing, arr, set;
+  match = key.match(PROPERTY_RANGE_REG);
+  if (!match) {
+    return;
+  }
+
+  set = isDefined(val);
+  leading = match[1];
+
+  if (leading) {
+    arr = handleDeepProperty(obj, leading, any, false, set ? true : false, true);
+  } else {
+    arr = obj;
+  }
+
+  assertArray(arr);
+
+  trailing = match[4];
+  start    = match[2] ? +match[2] : 0;
+  end      = match[3] ? +match[3] : arr.length;
+
+  // A range of 0..1 is inclusive, so we need to add 1 to the end. If this
+  // pushes the index from -1 to 0, then set it to the full length of the
+  // array, otherwise it will return nothing.
+  end = end === -1 ? arr.length : end + 1;
+
+  if (set) {
+    for (var i = start; i < end; i++) {
+      handleDeepProperty(arr, i + trailing, any, false, true, false, val);
+    }
+  } else {
+    arr = arr.slice(start, end);
+
+    // If there are trailing properties, then they need to be mapped for each
+    // element in the array.
+    if (trailing) {
+      if (trailing.charAt(0) === HALF_WIDTH_PERIOD) {
+        // Need to chomp the period if one is trailing after the range. We
+        // can't do this at the regex level because it will be required if
+        // we're setting the value as it needs to be concatentated together
+        // with the array index to be set.
+        trailing = trailing.slice(1);
+      }
+      return arr.map(function(el) {
+        return handleDeepProperty(el, trailing);
+      });
+    }
+  }
+  return arr;
+}
+
+module.exports = handleDeepProperty;
+},{"../var/CommonChars":180,"../var/PROPERTY_RANGE_REG":187,"../var/classChecks":192,"../var/coreUtilityAliases":193,"./assertArray":105,"./assertWritable":107,"./isDefined":149,"./isObjectType":151,"./periodSplit":163}],143:[function(require,module,exports){
+'use strict';
+
+var coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var hasOwn = coreUtilityAliases.hasOwn;
+
+function hasOwnEnumeratedProperties(obj) {
+  // Plain objects are generally defined as having enumerated properties
+  // all their own, however in early IE environments without defineProperty,
+  // there may also be enumerated methods in the prototype chain, so check
+  // for both of these cases.
+  var objectProto = Object.prototype;
+  for (var key in obj) {
+    var val = obj[key];
+    if (!hasOwn(obj, key) && val !== objectProto[key]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+module.exports = hasOwnEnumeratedProperties;
+},{"../var/coreUtilityAliases":193}],144:[function(require,module,exports){
+'use strict';
+
+var isPrimitive = require('./isPrimitive');
+
+function hasProperty(obj, prop) {
+  return !isPrimitive(obj) && prop in obj;
+}
+
+module.exports = hasProperty;
+},{"./isPrimitive":153}],145:[function(require,module,exports){
+'use strict';
+
+var coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var hasOwn = coreUtilityAliases.hasOwn;
+
+function hasValidPlainObjectPrototype(obj) {
+  var hasToString = 'toString' in obj;
+  var hasConstructor = 'constructor' in obj;
+  // An object created with Object.create(null) has no methods in the
+  // prototype chain, so check if any are missing. The additional hasToString
+  // check is for false positives on some host objects in old IE which have
+  // toString but no constructor. If the object has an inherited constructor,
+  // then check if it is Object (the "isPrototypeOf" tapdance here is a more
+  // robust way of ensuring this if the global has been hijacked). Note that
+  // accessing the constructor directly (without "in" or "hasOwnProperty")
+  // will throw a permissions error in IE8 on cross-domain windows.
+  return (!hasConstructor && !hasToString) ||
+          (hasConstructor && !hasOwn(obj, 'constructor') &&
+           hasOwn(obj.constructor.prototype, 'isPrototypeOf'));
+}
+
+module.exports = hasValidPlainObjectPrototype;
+},{"../var/coreUtilityAliases":193}],146:[function(require,module,exports){
+'use strict';
+
+function indexOf(arr, el) {
+  for (var i = 0, len = arr.length; i < len; i++) {
+    if (i in arr && arr[i] === el) return i;
+  }
+  return -1;
+}
+
+module.exports = indexOf;
+},{}],147:[function(require,module,exports){
+'use strict';
+
+function isArrayIndex(n) {
+  return n >>> 0 == n && n != 0xFFFFFFFF;
+}
+
+module.exports = isArrayIndex;
+},{}],148:[function(require,module,exports){
+'use strict';
+
+var coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var classToString = coreUtilityAliases.classToString;
+
+function isClass(obj, className, str) {
+  if (!str) {
+    str = classToString(obj);
+  }
+  return str === '[object '+ className +']';
+}
+
+module.exports = isClass;
+},{"../var/coreUtilityAliases":193}],149:[function(require,module,exports){
+'use strict';
+
+function isDefined(o) {
+  return o !== undefined;
+}
+
+module.exports = isDefined;
+},{}],150:[function(require,module,exports){
+'use strict';
+
+var getKeys = require('./getKeys'),
+    setToArray = require('./setToArray'),
+    mapToArray = require('./mapToArray'),
+    classChecks = require('../var/classChecks'),
+    isObjectType = require('./isObjectType'),
+    coreUtilityAliases = require('../var/coreUtilityAliases'),
+    iterateWithCyclicCheck = require('./iterateWithCyclicCheck');
+
+var classToString = coreUtilityAliases.classToString,
+    isSerializable = classChecks.isSerializable,
+    isSet = classChecks.isSet,
+    isMap = classChecks.isMap,
+    isError = classChecks.isError;
+
+function isEqual(a, b, stack) {
+  var aClass, bClass;
+  if (a === b) {
+    // Return quickly up front when matched by reference,
+    // but be careful about 0 !== -0.
+    return a !== 0 || 1 / a === 1 / b;
+  }
+  aClass = classToString(a);
+  bClass = classToString(b);
+  if (aClass !== bClass) {
+    return false;
+  }
+
+  if (isSerializable(a, aClass) && isSerializable(b, bClass)) {
+    return objectIsEqual(a, b, aClass, stack);
+  } else if (isSet(a, aClass) && isSet(b, bClass)) {
+    return a.size === b.size && isEqual(setToArray(a), setToArray(b), stack);
+  } else if (isMap(a, aClass) && isMap(b, bClass)) {
+    return a.size === b.size && isEqual(mapToArray(a), mapToArray(b), stack);
+  } else if (isError(a, aClass) && isError(b, bClass)) {
+    return a.toString() === b.toString();
+  }
+
+  return false;
+}
+
+function objectIsEqual(a, b, aClass, stack) {
+  var aType = typeof a, bType = typeof b, propsEqual, count;
+  if (aType !== bType) {
+    return false;
+  }
+  if (isObjectType(a.valueOf())) {
+    if (a.length !== b.length) {
+      // perf: Quickly returning up front for arrays.
+      return false;
+    }
+    count = 0;
+    propsEqual = true;
+    iterateWithCyclicCheck(a, false, stack, function(key, val, cyc, stack) {
+      if (!cyc && (!(key in b) || !isEqual(val, b[key], stack))) {
+        propsEqual = false;
+      }
+      count++;
+      return propsEqual;
+    });
+    if (!propsEqual || count !== getKeys(b).length) {
+      return false;
+    }
+  }
+  // Stringifying the value handles NaN, wrapped primitives, dates, and errors in one go.
+  return a.valueOf().toString() === b.valueOf().toString();
+}
+
+module.exports = isEqual;
+},{"../var/classChecks":192,"../var/coreUtilityAliases":193,"./getKeys":135,"./isObjectType":151,"./iterateWithCyclicCheck":157,"./mapToArray":159,"./setToArray":170}],151:[function(require,module,exports){
+'use strict';
+
+function isObjectType(obj, type) {
+  return !!obj && (type || typeof obj) === 'object';
+}
+
+module.exports = isObjectType;
+},{}],152:[function(require,module,exports){
+'use strict';
+
+var isClass = require('./isClass'),
+    isObjectType = require('./isObjectType'),
+    hasOwnEnumeratedProperties = require('./hasOwnEnumeratedProperties'),
+    hasValidPlainObjectPrototype = require('./hasValidPlainObjectPrototype');
+
+function isPlainObject(obj, className) {
+  return isObjectType(obj) &&
+         isClass(obj, 'Object', className) &&
+         hasValidPlainObjectPrototype(obj) &&
+         hasOwnEnumeratedProperties(obj);
+}
+
+module.exports = isPlainObject;
+},{"./hasOwnEnumeratedProperties":143,"./hasValidPlainObjectPrototype":145,"./isClass":148,"./isObjectType":151}],153:[function(require,module,exports){
+'use strict';
+
+function isPrimitive(obj, type) {
+  type = type || typeof obj;
+  return obj == null || type === 'string' || type === 'number' || type === 'boolean';
+}
+
+module.exports = isPrimitive;
+},{}],154:[function(require,module,exports){
+'use strict';
+
+function isRealNaN(obj) {
+  // This is only true of NaN
+  return obj != null && obj !== obj;
+}
+
+module.exports = isRealNaN;
+},{}],155:[function(require,module,exports){
+'use strict';
+
+function isUndefined(o) {
+  return o === undefined;
+}
+
+module.exports = isUndefined;
+},{}],156:[function(require,module,exports){
+'use strict';
+
+var getSparseArrayIndexes = require('./getSparseArrayIndexes');
+
+function iterateOverSparseArray(arr, fn, fromIndex, loop) {
+  var indexes = getSparseArrayIndexes(arr, fromIndex, loop), index;
+  for (var i = 0, len = indexes.length; i < len; i++) {
+    index = indexes[i];
+    fn.call(arr, arr[index], index, arr);
+  }
+  return arr;
+}
+
+module.exports = iterateOverSparseArray;
+},{"./getSparseArrayIndexes":141}],157:[function(require,module,exports){
+'use strict';
+
+var getKeys = require('./getKeys'),
+    coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function iterateWithCyclicCheck(obj, sortedKeys, stack, fn) {
+
+  function next(val, key) {
+    var cyc = false;
+
+    // Allowing a step into the structure before triggering this check to save
+    // cycles on standard JSON structures and also to try as hard as possible to
+    // catch basic properties that may have been modified.
+    if (stack.length > 1) {
+      var i = stack.length;
+      while (i--) {
+        if (stack[i] === val) {
+          cyc = true;
+        }
       }
     }
 
-    function setProperty(target, name, property, enumerable) {
-      if (propertyDescriptorSupport) {
-        Object.defineProperty(target, name, {
-          value: property,
-          enumerable: !!enumerable,
-          configurable: true,
-          writable: true
-        });
-      } else {
-        target[name] = property;
-      }
+    stack.push(val);
+    fn(key, val, cyc, stack);
+    stack.pop();
+  }
+
+  function iterateWithSortedKeys() {
+    // Sorted keys is required for serialization, where object order
+    // does not matter but stringified order does.
+    var arr = getKeys(obj).sort(), key;
+    for (var i = 0; i < arr.length; i++) {
+      key = arr[i];
+      next(obj[key], arr[i]);
     }
+  }
 
-    function iterateOverObject(obj, fn) {
-      var key;
-      for(key in obj) {
-        if (!hasOwnProperty(obj, key)) continue;
-        if (fn.call(obj, key, obj[key], obj) === false) break;
-      }
+  // This method for checking for cyclic structures was egregiously stolen from
+  // the ingenious method by @kitcambridge from the Underscore script:
+  // https://github.com/documentcloud/underscore/issues/240
+  if (!stack) {
+    stack = [];
+  }
+
+  if (sortedKeys) {
+    iterateWithSortedKeys();
+  } else {
+    forEachProperty(obj, next);
+  }
+}
+
+module.exports = iterateWithCyclicCheck;
+},{"../var/coreUtilityAliases":193,"./getKeys":135}],158:[function(require,module,exports){
+'use strict';
+
+function map(arr, fn) {
+  // perf: Not using fixed array len here as it may be sparse.
+  var result = [];
+  for (var i = 0, len = arr.length; i < len; i++) {
+    if (i in arr) {
+      result.push(fn(arr[i], i));
     }
+  }
+  return result;
+}
 
-    function hasOwnProperty(obj, prop) {
-      return !!obj && internalHasOwnProperty.call(obj, prop);
+module.exports = map;
+},{}],159:[function(require,module,exports){
+'use strict';
+
+function mapToArray(map) {
+  var arr = new Array(map.size), i = 0;
+  map.forEach(function(val, key) {
+    arr[i++] = [key, val];
+  });
+  return arr;
+}
+
+module.exports = mapToArray;
+},{}],160:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../var/classChecks'),
+    deepGetProperty = require('./deepGetProperty');
+
+var isFunction = classChecks.isFunction,
+    isArray = classChecks.isArray;
+
+function mapWithShortcuts(el, f, context, mapArgs) {
+  if (!f) {
+    return el;
+  } else if (f.apply) {
+    return f.apply(context, mapArgs || []);
+  } else if (isArray(f)) {
+    return f.map(function(m) {
+      return mapWithShortcuts(el, m, context, mapArgs);
+    });
+  } else if (isFunction(el[f])) {
+    return el[f].call(el);
+  } else {
+    return deepGetProperty(el, f);
+  }
+}
+
+module.exports = mapWithShortcuts;
+},{"../var/classChecks":192,"./deepGetProperty":116}],161:[function(require,module,exports){
+'use strict';
+
+var INTERNAL_MEMOIZE_LIMIT = require('../var/INTERNAL_MEMOIZE_LIMIT'),
+    coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var hasOwn = coreUtilityAliases.hasOwn;
+
+function memoizeFunction(fn) {
+  var memo = {}, counter = 0;
+
+  return function(key) {
+    if (hasOwn(memo, key)) {
+      return memo[key];
     }
+    if (counter === INTERNAL_MEMOIZE_LIMIT) {
+      memo = {};
+      counter = 0;
+    }
+    counter++;
+    return memo[key] = fn(key);
+  };
+}
 
-    initializeClasses();
+module.exports = memoizeFunction;
+},{"../var/INTERNAL_MEMOIZE_LIMIT":182,"../var/coreUtilityAliases":193}],162:[function(require,module,exports){
+'use strict';
 
+var mathAliases = require('../var/mathAliases'),
+    repeatString = require('./repeatString');
 
-    /***
-     * @module Common
-     * @description Internal utility and common methods.
-     ***/
+var abs = mathAliases.abs;
 
+function padNumber(num, place, sign, base, replacement) {
+  var str = abs(num).toString(base || 10);
+  str = repeatString(replacement || '0', place - str.replace(/\.\d+/, '').length) + str;
+  if (sign || num < 0) {
+    str = (num < 0 ? '-' : '+') + str;
+  }
+  return str;
+}
 
-    // Internal toString
-    var internalToString = Object.prototype.toString;
+module.exports = padNumber;
+},{"../var/mathAliases":195,"./repeatString":166}],163:[function(require,module,exports){
+'use strict';
 
-    // Are regexes type function?
-    var regexIsFunction = typeof RegExp() === 'function';
+var CommonChars = require('../var/CommonChars');
 
-    // Do strings have no keys?
-    var noKeysInStringObjects = !('0' in new String('a'));
+var HALF_WIDTH_PERIOD = CommonChars.HALF_WIDTH_PERIOD;
 
-    // Type check methods need a way to be accessed dynamically.
-    var typeChecks = {};
+function periodSplit(str) {
+  return str.split(HALF_WIDTH_PERIOD);
+}
 
-    // Classes that can be matched by value
-    var matchedByValueReg = /^\[object Date|Array|String|Number|RegExp|Boolean|Arguments\]$/;
+module.exports = periodSplit;
+},{"../var/CommonChars":180}],164:[function(require,module,exports){
+'use strict';
 
-    var isBoolean  = buildPrimitiveClassCheck('boolean', natives[0]);
-    var isNumber   = buildPrimitiveClassCheck('number',  natives[1]);
-    var isString   = buildPrimitiveClassCheck('string',  natives[2]);
+var PRIVATE_PROP_PREFIX = require('../var/PRIVATE_PROP_PREFIX'),
+    coreUtilityAliases = require('../var/coreUtilityAliases');
 
-    var isArray    = buildClassCheck(natives[3]);
-    var isDate     = buildClassCheck(natives[4]);
-    var isRegExp   = buildClassCheck(natives[5]);
+var setProperty = coreUtilityAliases.setProperty;
 
+function privatePropertyAccessor(key) {
+  var privateKey = PRIVATE_PROP_PREFIX + key;
+  return function(obj, val) {
+    if (arguments.length > 1) {
+      setProperty(obj, privateKey, val);
+      return obj;
+    }
+    return obj[privateKey];
+  };
+}
+
+module.exports = privatePropertyAccessor;
+},{"../var/PRIVATE_PROP_PREFIX":186,"../var/coreUtilityAliases":193}],165:[function(require,module,exports){
+'use strict';
+
+function regexMatcher(reg) {
+  reg = RegExp(reg);
+  return function(el) {
+    return reg.test(el);
+  };
+}
+
+module.exports = regexMatcher;
+},{}],166:[function(require,module,exports){
+'use strict';
+
+function repeatString(str, num) {
+  var result = '';
+  str = str.toString();
+  while (num > 0) {
+    if (num & 1) {
+      result += str;
+    }
+    if (num >>= 1) {
+      str += str;
+    }
+  }
+  return result;
+}
+
+module.exports = repeatString;
+},{}],167:[function(require,module,exports){
+'use strict';
+
+var Inflections = require('../var/Inflections');
+
+function runHumanRules(str) {
+  return Inflections.human && Inflections.human.runRules(str) || str;
+}
+
+module.exports = runHumanRules;
+},{"../var/Inflections":183}],168:[function(require,module,exports){
+'use strict';
+
+var indexOf = require('./indexOf'),
+    isRealNaN = require('./isRealNaN'),
+    isPrimitive = require('./isPrimitive'),
+    classChecks = require('../var/classChecks'),
+    isObjectType = require('./isObjectType'),
+    coreUtilityAliases = require('../var/coreUtilityAliases'),
+    iterateWithCyclicCheck = require('./iterateWithCyclicCheck');
+
+var classToString = coreUtilityAliases.classToString,
+    isSerializable = classChecks.isSerializable;
+
+function serializeInternal(obj, refs, stack) {
+  var type = typeof obj, className, value, ref;
+
+  // Return quickly for primitives to save cycles
+  if (isPrimitive(obj, type) && !isRealNaN(obj)) {
+    return type + obj;
+  }
+
+  className = classToString(obj);
+
+  if (!isSerializable(obj, className)) {
+    ref = indexOf(refs, obj);
+    if (ref === -1) {
+      ref = refs.length;
+      refs.push(obj);
+    }
+    return ref;
+  } else if (isObjectType(obj)) {
+    value = serializeDeep(obj, refs, stack) + obj.toString();
+  } else if (1 / obj === -Infinity) {
+    value = '-0';
+  } else if (obj.valueOf) {
+    value = obj.valueOf();
+  }
+  return type + className + value;
+}
+
+function serializeDeep(obj, refs, stack) {
+  var result = '';
+  iterateWithCyclicCheck(obj, true, stack, function(key, val, cyc, stack) {
+    result += cyc ? 'CYC' : key + serializeInternal(val, refs, stack);
+  });
+  return result;
+}
+
+module.exports = serializeInternal;
+},{"../var/classChecks":192,"../var/coreUtilityAliases":193,"./indexOf":146,"./isObjectType":151,"./isPrimitive":153,"./isRealNaN":154,"./iterateWithCyclicCheck":157}],169:[function(require,module,exports){
+'use strict';
+
+function setChainableConstructor(sugarNamespace, createFn) {
+  sugarNamespace.prototype.constructor = function() {
+    return createFn.apply(this, arguments);
+  };
+}
+
+module.exports = setChainableConstructor;
+},{}],170:[function(require,module,exports){
+'use strict';
+
+function setToArray(set) {
+  var arr = new Array(set.size), i = 0;
+  set.forEach(function(val) {
+    arr[i++] = val;
+  });
+  return arr;
+}
+
+module.exports = setToArray;
+},{}],171:[function(require,module,exports){
+'use strict';
+
+function simpleCapitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+module.exports = simpleCapitalize;
+},{}],172:[function(require,module,exports){
+'use strict';
+
+var simpleMerge = require('./simpleMerge');
+
+function simpleClone(obj) {
+  return simpleMerge({}, obj);
+}
+
+module.exports = simpleClone;
+},{"./simpleMerge":173}],173:[function(require,module,exports){
+'use strict';
+
+var coreUtilityAliases = require('../var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function simpleMerge(target, source) {
+  forEachProperty(source, function(val, key) {
+    target[key] = val;
+  });
+  return target;
+}
+
+module.exports = simpleMerge;
+},{"../var/coreUtilityAliases":193}],174:[function(require,module,exports){
+'use strict';
+
+function simpleRepeat(n, fn) {
+  for (var i = 0; i < n; i++) {
+    fn(i);
+  }
+}
+
+module.exports = simpleRepeat;
+},{}],175:[function(require,module,exports){
+'use strict';
+
+function spaceSplit(str) {
+  return str.split(' ');
+}
+
+module.exports = spaceSplit;
+},{}],176:[function(require,module,exports){
+'use strict';
+
+var CommonChars = require('../var/CommonChars'),
+    coreUtilityAliases = require('../var/coreUtilityAliases'),
+    fullwidthNumberHelpers = require('../var/fullwidthNumberHelpers');
+
+var fullWidthNumberReg = fullwidthNumberHelpers.fullWidthNumberReg,
+    fullWidthNumberMap = fullwidthNumberHelpers.fullWidthNumberMap,
+    getOwn = coreUtilityAliases.getOwn,
+    HALF_WIDTH_PERIOD = CommonChars.HALF_WIDTH_PERIOD;
+
+function stringToNumber(str, base) {
+  var sanitized, isDecimal;
+  sanitized = str.replace(fullWidthNumberReg, function(chr) {
+    var replacement = getOwn(fullWidthNumberMap, chr);
+    if (replacement === HALF_WIDTH_PERIOD) {
+      isDecimal = true;
+    }
+    return replacement;
+  });
+  return isDecimal ? parseFloat(sanitized) : parseInt(sanitized, base || 10);
+}
+
+module.exports = stringToNumber;
+},{"../var/CommonChars":180,"../var/coreUtilityAliases":193,"../var/fullwidthNumberHelpers":194}],177:[function(require,module,exports){
+'use strict';
+
+function trim(str) {
+  return str.trim();
+}
+
+module.exports = trim;
+},{}],178:[function(require,module,exports){
+'use strict';
+
+var mathAliases = require('../var/mathAliases');
+
+var abs = mathAliases.abs,
+    pow = mathAliases.pow,
+    round = mathAliases.round;
+
+function withPrecision(val, precision, fn) {
+  var multiplier = pow(10, abs(precision || 0));
+  fn = fn || round;
+  if (precision < 0) multiplier = 1 / multiplier;
+  return fn(val * multiplier) / multiplier;
+}
+
+module.exports = withPrecision;
+},{"../var/mathAliases":195}],179:[function(require,module,exports){
+'use strict';
+
+function wrapNamespace(method) {
+  return function(sugarNamespace, arg1, arg2) {
+    sugarNamespace[method](arg1, arg2);
+  };
+}
+
+module.exports = wrapNamespace;
+},{}],180:[function(require,module,exports){
+'use strict';
+
+module.exports = {
+  HALF_WIDTH_ZERO: 0x30,
+  FULL_WIDTH_ZERO: 0xff10,
+  HALF_WIDTH_PERIOD: '.',
+  FULL_WIDTH_PERIOD: '．',
+  HALF_WIDTH_COMMA: ',',
+  OPEN_BRACE: '{',
+  CLOSE_BRACE: '}'
+};
+},{}],181:[function(require,module,exports){
+'use strict';
+
+module.exports = 'enhance';
+},{}],182:[function(require,module,exports){
+'use strict';
+
+module.exports = 1000;
+},{}],183:[function(require,module,exports){
+'use strict';
+
+module.exports = {};
+},{}],184:[function(require,module,exports){
+'use strict';
+
+module.exports = 'Boolean Number String Date RegExp Function Array Error Set Map';
+},{}],185:[function(require,module,exports){
+'use strict';
+
+module.exports = !('0' in Object('a'));
+},{}],186:[function(require,module,exports){
+'use strict';
+
+module.exports = '_sugar_';
+},{}],187:[function(require,module,exports){
+'use strict';
+
+module.exports = /^(.*?)\[([-\d]*)\.\.([-\d]*)\](.*)$/;
+},{}],188:[function(require,module,exports){
+'use strict';
+
+module.exports = /([{}])\1|\{([^}]*)\}|(%)%|(%(\w*))/g;
+},{}],189:[function(require,module,exports){
+'use strict';
+
+module.exports = '\u0009\u000A\u000B\u000C\u000D\u0020\u00A0\u1680\u180E\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u2028\u2029\u3000\uFEFF';
+},{}],190:[function(require,module,exports){
+'use strict';
+
+var privatePropertyAccessor = require('../internal/privatePropertyAccessor');
+
+module.exports = privatePropertyAccessor('utc');
+},{"../internal/privatePropertyAccessor":164}],191:[function(require,module,exports){
+'use strict';
+
+module.exports = String.fromCharCode;
+},{}],192:[function(require,module,exports){
+'use strict';
+
+var NATIVE_TYPES = require('./NATIVE_TYPES'),
+    forEach = require('../internal/forEach'),
+    isClass = require('../internal/isClass'),
+    spaceSplit = require('../internal/spaceSplit'),
+    isPlainObject = require('../internal/isPlainObject'),
+    coreUtilityAliases = require('./coreUtilityAliases');
+
+var classToString = coreUtilityAliases.classToString;
+
+var isSerializable,
+    isBoolean, isNumber, isString,
+    isDate, isRegExp, isFunction,
+    isArray, isSet, isMap, isError;
+
+function buildClassChecks() {
+
+  var knownTypes = {};
+
+  function addCoreTypes() {
+
+    var names = spaceSplit(NATIVE_TYPES);
+
+    isBoolean = buildPrimitiveClassCheck(names[0]);
+    isNumber  = buildPrimitiveClassCheck(names[1]);
+    isString  = buildPrimitiveClassCheck(names[2]);
+
+    isDate   = buildClassCheck(names[3]);
+    isRegExp = buildClassCheck(names[4]);
 
     // Wanted to enhance performance here by using simply "typeof"
     // but Firefox has two major issues that make this impossible,
-    // one fixed, the other not. Despite being typeof "function"
-    // the objects below still report in as [object Function], so
-    // we need to perform a full class check here.
+    // one fixed, the other not, so perform a full class check here.
     //
     // 1. Regexes can be typeof "function" in FF < 3
     //    https://bugzilla.mozilla.org/show_bug.cgi?id=61911 (fixed)
     //
     // 2. HTMLEmbedElement and HTMLObjectElement are be typeof "function"
     //    https://bugzilla.mozilla.org/show_bug.cgi?id=268945 (won't fix)
-    //
-    var isFunction = buildClassCheck(natives[6]);
+    isFunction = buildClassCheck(names[5]);
 
-    function isClass(obj, klass, cached) {
-      var k = cached || className(obj);
-      return k === '[object '+klass+']';
+
+    isArray = Array.isArray || buildClassCheck(names[6]);
+    isError = buildClassCheck(names[7]);
+
+    isSet = buildClassCheck(names[8], typeof Set !== 'undefined' && Set);
+    isMap = buildClassCheck(names[9], typeof Map !== 'undefined' && Map);
+
+    // Add core types as known so that they can be checked by value below,
+    // notably excluding Functions and adding Arguments and Error.
+    addKnownType('Arguments');
+    addKnownType(names[0]);
+    addKnownType(names[1]);
+    addKnownType(names[2]);
+    addKnownType(names[3]);
+    addKnownType(names[4]);
+    addKnownType(names[6]);
+
+  }
+
+  function addArrayTypes() {
+    var types = 'Int8 Uint8 Uint8Clamped Int16 Uint16 Int32 Uint32 Float32 Float64';
+    forEach(spaceSplit(types), function(str) {
+      addKnownType(str + 'Array');
+    });
+  }
+
+  function addKnownType(className) {
+    var str = '[object '+ className +']';
+    knownTypes[str] = true;
+  }
+
+  function isKnownType(className) {
+    return knownTypes[className];
+  }
+
+  function buildClassCheck(className, globalObject) {
+    if (globalObject && isClass(new globalObject, 'Object')) {
+      return getConstructorClassCheck(globalObject);
+    } else {
+      return getToStringClassCheck(className);
     }
+  }
 
-    function buildClassCheck(klass) {
-      var fn = (klass === 'Array' && Array.isArray) || function(obj, cached) {
-        return isClass(obj, klass, cached);
+  function getConstructorClassCheck(obj) {
+    var ctorStr = String(obj);
+    return function(obj) {
+      return String(obj.constructor) === ctorStr;
+    };
+  }
+
+  function getToStringClassCheck(className) {
+    return function(obj, str) {
+      // perf: Returning up front on instanceof appears to be slower.
+      return isClass(obj, className, str);
+    };
+  }
+
+  function buildPrimitiveClassCheck(className) {
+    var type = className.toLowerCase();
+    return function(obj) {
+      var t = typeof obj;
+      return t === type || t === 'object' && isClass(obj, className);
+    };
+  }
+
+  addCoreTypes();
+  addArrayTypes();
+
+  isSerializable = function(obj, className) {
+    // Only known objects can be serialized. This notably excludes functions,
+    // host objects, Symbols (which are matched by reference), and instances
+    // of classes. The latter can arguably be matched by value, but
+    // distinguishing between these and host objects -- which should never be
+    // compared by value -- is very tricky so not dealing with it here.
+    className = className || classToString(obj);
+    return isKnownType(className) || isPlainObject(obj, className);
+  };
+
+}
+
+buildClassChecks();
+
+module.exports = {
+  isSerializable: isSerializable,
+  isBoolean: isBoolean,
+  isNumber: isNumber,
+  isString: isString,
+  isDate: isDate,
+  isRegExp: isRegExp,
+  isFunction: isFunction,
+  isArray: isArray,
+  isSet: isSet,
+  isMap: isMap,
+  isError: isError
+};
+},{"../internal/forEach":129,"../internal/isClass":148,"../internal/isPlainObject":152,"../internal/spaceSplit":175,"./NATIVE_TYPES":184,"./coreUtilityAliases":193}],193:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+module.exports = {
+  hasOwn: Sugar.util.hasOwn,
+  getOwn: Sugar.util.getOwn,
+  setProperty: Sugar.util.setProperty,
+  classToString: Sugar.util.classToString,
+  defineProperty: Sugar.util.defineProperty,
+  forEachProperty: Sugar.util.forEachProperty,
+  mapNativeToChainable: Sugar.util.mapNativeToChainable
+};
+},{"sugar-core":18}],194:[function(require,module,exports){
+'use strict';
+
+var CommonChars = require('./CommonChars'),
+    chr = require('./chr'),
+    allCharsReg = require('../internal/allCharsReg');
+
+var HALF_WIDTH_ZERO = CommonChars.HALF_WIDTH_ZERO,
+    FULL_WIDTH_ZERO = CommonChars.FULL_WIDTH_ZERO,
+    HALF_WIDTH_PERIOD = CommonChars.HALF_WIDTH_PERIOD,
+    FULL_WIDTH_PERIOD = CommonChars.FULL_WIDTH_PERIOD,
+    HALF_WIDTH_COMMA = CommonChars.HALF_WIDTH_COMMA;
+
+var fullWidthNumberReg, fullWidthNumberMap, fullWidthNumbers;
+
+function buildFullWidthNumber() {
+  var fwp = FULL_WIDTH_PERIOD, hwp = HALF_WIDTH_PERIOD, hwc = HALF_WIDTH_COMMA, fwn = '';
+  fullWidthNumberMap = {};
+  for (var i = 0, digit; i <= 9; i++) {
+    digit = chr(i + FULL_WIDTH_ZERO);
+    fwn += digit;
+    fullWidthNumberMap[digit] = chr(i + HALF_WIDTH_ZERO);
+  }
+  fullWidthNumberMap[hwc] = '';
+  fullWidthNumberMap[fwp] = hwp;
+  // Mapping this to itself to capture it easily
+  // in stringToNumber to detect decimals later.
+  fullWidthNumberMap[hwp] = hwp;
+  fullWidthNumberReg = allCharsReg(fwn + fwp + hwc + hwp);
+  fullWidthNumbers = fwn;
+}
+
+buildFullWidthNumber();
+
+module.exports = {
+  fullWidthNumberReg: fullWidthNumberReg,
+  fullWidthNumberMap: fullWidthNumberMap,
+  fullWidthNumbers: fullWidthNumbers
+};
+},{"../internal/allCharsReg":103,"./CommonChars":180,"./chr":191}],195:[function(require,module,exports){
+'use strict';
+
+module.exports = {
+  abs: Math.abs,
+  pow: Math.pow,
+  min: Math.min,
+  max: Math.max,
+  ceil: Math.ceil,
+  floor: Math.floor,
+  round: Math.round
+};
+},{}],196:[function(require,module,exports){
+'use strict';
+
+var wrapNamespace = require('../internal/wrapNamespace');
+
+module.exports = {
+  alias: wrapNamespace('alias'),
+  defineStatic: wrapNamespace('defineStatic'),
+  defineInstance: wrapNamespace('defineInstance'),
+  defineStaticPolyfill: wrapNamespace('defineStaticPolyfill'),
+  defineInstancePolyfill: wrapNamespace('defineInstancePolyfill'),
+  defineInstanceAndStatic: wrapNamespace('defineInstanceAndStatic'),
+  defineInstanceWithArguments: wrapNamespace('defineInstanceWithArguments')
+};
+},{"../internal/wrapNamespace":179}],197:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+module.exports = {
+  sugarObject: Sugar.Object,
+  sugarArray: Sugar.Array,
+  sugarDate: Sugar.Date,
+  sugarString: Sugar.String,
+  sugarNumber: Sugar.Number,
+  sugarFunction: Sugar.Function,
+  sugarRegExp: Sugar.RegExp
+};
+},{"sugar-core":18}],198:[function(require,module,exports){
+'use strict';
+
+var mathAliases = require('./mathAliases');
+
+var ceil = mathAliases.ceil,
+    floor = mathAliases.floor;
+
+var trunc = Math.trunc || function(n) {
+  if (n === 0 || !isFinite(n)) return n;
+  return n < 0 ? ceil(n) : floor(n);
+};
+
+module.exports = trunc;
+},{"./mathAliases":195}],199:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.addDays;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],200:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.addHours;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],201:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    LocaleHelpers = require('./var/LocaleHelpers');
+
+var localeManager = LocaleHelpers.localeManager;
+
+Sugar.Date.defineStatic({
+
+  'addLocale': function(code, set) {
+    return localeManager.add(code, set);
+  }
+
+});
+
+module.exports = Sugar.Date.addLocale;
+},{"./var/LocaleHelpers":389,"sugar-core":18}],202:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.addMilliseconds;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],203:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.addMinutes;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],204:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.addMonths;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],205:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.addSeconds;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],206:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.addWeeks;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],207:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.addYears;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],208:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    advanceDateWithArgs = require('./internal/advanceDateWithArgs');
+
+Sugar.Date.defineInstanceWithArguments({
+
+  'advance': function(d, args) {
+    return advanceDateWithArgs(d, args, 1);
+  }
+
+});
+
+module.exports = Sugar.Date.advance;
+},{"./internal/advanceDateWithArgs":246,"sugar-core":18}],209:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.beginningOfDay;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],210:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    resetTime = require('./internal/resetTime'),
+    getWeekday = require('./internal/getWeekday'),
+    setWeekday = require('./internal/setWeekday');
+
+Sugar.Date.defineInstance({
+
+  'beginningOfISOWeek': function(date) {
+    var day = getWeekday(date);
+    if (day === 0) {
+      day = -6;
+    } else if (day !== 1) {
+      day = 1;
+    }
+    setWeekday(date, day);
+    return resetTime(date);
+  }
+
+});
+
+module.exports = Sugar.Date.beginningOfISOWeek;
+},{"./internal/getWeekday":293,"./internal/resetTime":306,"./internal/setWeekday":312,"sugar-core":18}],211:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.beginningOfMonth;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],212:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.beginningOfWeek;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],213:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.beginningOfYear;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],214:[function(require,module,exports){
+'use strict';
+
+var buildDateUnitMethods = require('../internal/buildDateUnitMethods');
+
+buildDateUnitMethods();
+},{"../internal/buildDateUnitMethods":249}],215:[function(require,module,exports){
+'use strict';
+
+var buildNumberUnitMethods = require('../internal/buildNumberUnitMethods');
+
+buildNumberUnitMethods();
+},{"../internal/buildNumberUnitMethods":250}],216:[function(require,module,exports){
+'use strict';
+
+var buildRelativeAliases = require('../internal/buildRelativeAliases');
+
+buildRelativeAliases();
+},{"../internal/buildRelativeAliases":251}],217:[function(require,module,exports){
+'use strict';
+
+var setDateChainableConstructor = require('../internal/setDateChainableConstructor');
+
+setDateChainableConstructor();
+},{"../internal/setDateChainableConstructor":308}],218:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    cloneDate = require('./internal/cloneDate');
+
+Sugar.Date.defineInstance({
+
+  'clone': function(date) {
+    return cloneDate(date);
+  }
+
+});
+
+module.exports = Sugar.Date.clone;
+},{"./internal/cloneDate":253,"sugar-core":18}],219:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    createDate = require('./internal/createDate');
+
+require('./build/setDateChainableConstructorCall');
+
+Sugar.Date.defineStatic({
+
+  'create': function(d, options) {
+    return createDate(d, options);
+  }
+
+});
+
+module.exports = Sugar.Date.create;
+},{"./build/setDateChainableConstructorCall":217,"./internal/createDate":258,"sugar-core":18}],220:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.daysAgo;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],221:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.daysFromNow;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],222:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getDaysInMonth = require('./internal/getDaysInMonth');
+
+Sugar.Date.defineInstance({
+
+  'daysInMonth': function(date) {
+    return getDaysInMonth(date);
+  }
+
+});
+
+module.exports = Sugar.Date.daysInMonth;
+},{"./internal/getDaysInMonth":274,"sugar-core":18}],223:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.daysSince;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],224:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.daysUntil;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],225:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.endOfDay;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],226:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    DateUnitIndexes = require('./var/DateUnitIndexes'),
+    getWeekday = require('./internal/getWeekday'),
+    setWeekday = require('./internal/setWeekday'),
+    moveToEndOfUnit = require('./internal/moveToEndOfUnit');
+
+var DAY_INDEX = DateUnitIndexes.DAY_INDEX;
+
+Sugar.Date.defineInstance({
+
+  'endOfISOWeek': function(date) {
+    if (getWeekday(date) !== 0) {
+      setWeekday(date, 7);
+    }
+    return moveToEndOfUnit(date, DAY_INDEX);
+  }
+
+});
+
+module.exports = Sugar.Date.endOfISOWeek;
+},{"./internal/getWeekday":293,"./internal/moveToEndOfUnit":302,"./internal/setWeekday":312,"./var/DateUnitIndexes":382,"sugar-core":18}],227:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.endOfMonth;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],228:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.endOfWeek;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],229:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.endOfYear;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],230:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    dateFormat = require('./internal/dateFormat');
+
+Sugar.Date.defineInstance({
+
+  'format': function(date, f, localeCode) {
+    return dateFormat(date, f, localeCode);
+  }
+
+});
+
+module.exports = Sugar.Date.format;
+},{"./internal/dateFormat":260,"sugar-core":18}],231:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    createDateWithContext = require('./internal/createDateWithContext');
+
+Sugar.Date.defineInstance({
+
+  'get': function(date, d, options) {
+    return createDateWithContext(date, d, options);
+  }
+
+});
+
+module.exports = Sugar.Date.get;
+},{"./internal/createDateWithContext":259,"sugar-core":18}],232:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    LocaleHelpers = require('./var/LocaleHelpers'),
+    getKeys = require('../common/internal/getKeys');
+
+var localeManager = LocaleHelpers.localeManager;
+
+Sugar.Date.defineStatic({
+
+  'getAllLocaleCodes': function() {
+    return getKeys(localeManager.getAll());
+  }
+
+});
+
+module.exports = Sugar.Date.getAllLocaleCodes;
+},{"../common/internal/getKeys":135,"./var/LocaleHelpers":389,"sugar-core":18}],233:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    LocaleHelpers = require('./var/LocaleHelpers');
+
+var localeManager = LocaleHelpers.localeManager;
+
+Sugar.Date.defineStatic({
+
+  'getAllLocales': function() {
+    return localeManager.getAll();
+  }
+
+});
+
+module.exports = Sugar.Date.getAllLocales;
+},{"./var/LocaleHelpers":389,"sugar-core":18}],234:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getWeekNumber = require('./internal/getWeekNumber');
+
+Sugar.Date.defineInstance({
+
+  'getISOWeek': function(date) {
+    return getWeekNumber(date, true);
+  }
+
+});
+
+module.exports = Sugar.Date.getISOWeek;
+},{"./internal/getWeekNumber":291,"sugar-core":18}],235:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    LocaleHelpers = require('./var/LocaleHelpers');
+
+var localeManager = LocaleHelpers.localeManager;
+
+Sugar.Date.defineStatic({
+
+  'getLocale': function(code) {
+    return localeManager.get(code, !code);
+  }
+
+});
+
+module.exports = Sugar.Date.getLocale;
+},{"./var/LocaleHelpers":389,"sugar-core":18}],236:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    _dateOptions = require('./var/_dateOptions');
+
+module.exports = Sugar.Date.getOption;
+},{"./var/_dateOptions":394,"sugar-core":18}],237:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getUTCOffset = require('./internal/getUTCOffset');
+
+Sugar.Date.defineInstance({
+
+  'getUTCOffset': function(date, iso) {
+    return getUTCOffset(date, iso);
+  }
+
+});
+
+module.exports = Sugar.Date.getUTCOffset;
+},{"./internal/getUTCOffset":289,"sugar-core":18}],238:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.Date.defineInstance({
+
+  'getUTCWeekday': function(date) {
+    return date.getUTCDay();
+  }
+
+});
+
+module.exports = Sugar.Date.getUTCWeekday;
+},{"sugar-core":18}],239:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getWeekday = require('./internal/getWeekday');
+
+Sugar.Date.defineInstance({
+
+  'getWeekday': function(date) {
+    return getWeekday(date);
+  }
+
+});
+
+module.exports = Sugar.Date.getWeekday;
+},{"./internal/getWeekday":293,"sugar-core":18}],240:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.hoursAgo;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],241:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.hoursFromNow;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],242:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.hoursSince;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],243:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.hoursUntil;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],244:[function(require,module,exports){
+'use strict';
+
+// Static Methods
+require('./addLocale');
+require('./create');
+require('./getAllLocaleCodes');
+require('./getAllLocales');
+require('./getLocale');
+require('./removeLocale');
+require('./setLocale');
+
+// Instance Methods
+require('../number/day');
+require('../number/dayAfter');
+require('../number/dayAgo');
+require('../number/dayBefore');
+require('../number/dayFromNow');
+require('../number/days');
+require('../number/daysAfter');
+require('../number/daysAgo');
+require('../number/daysBefore');
+require('../number/daysFromNow');
+require('../number/duration');
+require('../number/hour');
+require('../number/hourAfter');
+require('../number/hourAgo');
+require('../number/hourBefore');
+require('../number/hourFromNow');
+require('../number/hours');
+require('../number/hoursAfter');
+require('../number/hoursAgo');
+require('../number/hoursBefore');
+require('../number/hoursFromNow');
+require('../number/millisecond');
+require('../number/millisecondAfter');
+require('../number/millisecondAgo');
+require('../number/millisecondBefore');
+require('../number/millisecondFromNow');
+require('../number/milliseconds');
+require('../number/millisecondsAfter');
+require('../number/millisecondsAgo');
+require('../number/millisecondsBefore');
+require('../number/millisecondsFromNow');
+require('../number/minute');
+require('../number/minuteAfter');
+require('../number/minuteAgo');
+require('../number/minuteBefore');
+require('../number/minuteFromNow');
+require('../number/minutes');
+require('../number/minutesAfter');
+require('../number/minutesAgo');
+require('../number/minutesBefore');
+require('../number/minutesFromNow');
+require('../number/month');
+require('../number/monthAfter');
+require('../number/monthAgo');
+require('../number/monthBefore');
+require('../number/monthFromNow');
+require('../number/months');
+require('../number/monthsAfter');
+require('../number/monthsAgo');
+require('../number/monthsBefore');
+require('../number/monthsFromNow');
+require('../number/second');
+require('../number/secondAfter');
+require('../number/secondAgo');
+require('../number/secondBefore');
+require('../number/secondFromNow');
+require('../number/seconds');
+require('../number/secondsAfter');
+require('../number/secondsAgo');
+require('../number/secondsBefore');
+require('../number/secondsFromNow');
+require('../number/week');
+require('../number/weekAfter');
+require('../number/weekAgo');
+require('../number/weekBefore');
+require('../number/weekFromNow');
+require('../number/weeks');
+require('../number/weeksAfter');
+require('../number/weeksAgo');
+require('../number/weeksBefore');
+require('../number/weeksFromNow');
+require('../number/year');
+require('../number/yearAfter');
+require('../number/yearAgo');
+require('../number/yearBefore');
+require('../number/yearFromNow');
+require('../number/years');
+require('../number/yearsAfter');
+require('../number/yearsAgo');
+require('../number/yearsBefore');
+require('../number/yearsFromNow');
+require('./addDays');
+require('./addHours');
+require('./addMilliseconds');
+require('./addMinutes');
+require('./addMonths');
+require('./addSeconds');
+require('./addWeeks');
+require('./addYears');
+require('./advance');
+require('./beginningOfDay');
+require('./beginningOfISOWeek');
+require('./beginningOfMonth');
+require('./beginningOfWeek');
+require('./beginningOfYear');
+require('./clone');
+require('./daysAgo');
+require('./daysFromNow');
+require('./daysInMonth');
+require('./daysSince');
+require('./daysUntil');
+require('./endOfDay');
+require('./endOfISOWeek');
+require('./endOfMonth');
+require('./endOfWeek');
+require('./endOfYear');
+require('./format');
+require('./get');
+require('./getISOWeek');
+require('./getUTCOffset');
+require('./getUTCWeekday');
+require('./getWeekday');
+require('./hoursAgo');
+require('./hoursFromNow');
+require('./hoursSince');
+require('./hoursUntil');
+require('./is');
+require('./isAfter');
+require('./isBefore');
+require('./isBetween');
+require('./isFriday');
+require('./isFuture');
+require('./isLastMonth');
+require('./isLastWeek');
+require('./isLastYear');
+require('./isLeapYear');
+require('./isMonday');
+require('./isNextMonth');
+require('./isNextWeek');
+require('./isNextYear');
+require('./isPast');
+require('./isSaturday');
+require('./isSunday');
+require('./isThisMonth');
+require('./isThisWeek');
+require('./isThisYear');
+require('./isThursday');
+require('./isToday');
+require('./isTomorrow');
+require('./isTuesday');
+require('./isUTC');
+require('./isValid');
+require('./isWednesday');
+require('./isWeekday');
+require('./isWeekend');
+require('./isYesterday');
+require('./iso');
+require('./millisecondsAgo');
+require('./millisecondsFromNow');
+require('./millisecondsSince');
+require('./millisecondsUntil');
+require('./minutesAgo');
+require('./minutesFromNow');
+require('./minutesSince');
+require('./minutesUntil');
+require('./monthsAgo');
+require('./monthsFromNow');
+require('./monthsSince');
+require('./monthsUntil');
+require('./relative');
+require('./relativeTo');
+require('./reset');
+require('./rewind');
+require('./secondsAgo');
+require('./secondsFromNow');
+require('./secondsSince');
+require('./secondsUntil');
+require('./set');
+require('./setISOWeek');
+require('./setUTC');
+require('./setWeekday');
+require('./weeksAgo');
+require('./weeksFromNow');
+require('./weeksSince');
+require('./weeksUntil');
+require('./yearsAgo');
+require('./yearsFromNow');
+require('./yearsSince');
+require('./yearsUntil');
+
+// Accessors
+require('./getOption');
+require('./setOption');
+
+module.exports = require('sugar-core');
+},{"../number/day":467,"../number/dayAfter":468,"../number/dayAgo":469,"../number/dayBefore":470,"../number/dayFromNow":471,"../number/days":472,"../number/daysAfter":473,"../number/daysAgo":474,"../number/daysBefore":475,"../number/daysFromNow":476,"../number/duration":478,"../number/hour":484,"../number/hourAfter":485,"../number/hourAgo":486,"../number/hourBefore":487,"../number/hourFromNow":488,"../number/hours":489,"../number/hoursAfter":490,"../number/hoursAgo":491,"../number/hoursBefore":492,"../number/hoursFromNow":493,"../number/millisecond":507,"../number/millisecondAfter":508,"../number/millisecondAgo":509,"../number/millisecondBefore":510,"../number/millisecondFromNow":511,"../number/milliseconds":512,"../number/millisecondsAfter":513,"../number/millisecondsAgo":514,"../number/millisecondsBefore":515,"../number/millisecondsFromNow":516,"../number/minute":517,"../number/minuteAfter":518,"../number/minuteAgo":519,"../number/minuteBefore":520,"../number/minuteFromNow":521,"../number/minutes":522,"../number/minutesAfter":523,"../number/minutesAgo":524,"../number/minutesBefore":525,"../number/minutesFromNow":526,"../number/month":527,"../number/monthAfter":528,"../number/monthAgo":529,"../number/monthBefore":530,"../number/monthFromNow":531,"../number/months":532,"../number/monthsAfter":533,"../number/monthsAgo":534,"../number/monthsBefore":535,"../number/monthsFromNow":536,"../number/second":543,"../number/secondAfter":544,"../number/secondAgo":545,"../number/secondBefore":546,"../number/secondFromNow":547,"../number/seconds":548,"../number/secondsAfter":549,"../number/secondsAgo":550,"../number/secondsBefore":551,"../number/secondsFromNow":552,"../number/week":563,"../number/weekAfter":564,"../number/weekAgo":565,"../number/weekBefore":566,"../number/weekFromNow":567,"../number/weeks":568,"../number/weeksAfter":569,"../number/weeksAgo":570,"../number/weeksBefore":571,"../number/weeksFromNow":572,"../number/year":573,"../number/yearAfter":574,"../number/yearAgo":575,"../number/yearBefore":576,"../number/yearFromNow":577,"../number/years":578,"../number/yearsAfter":579,"../number/yearsAgo":580,"../number/yearsBefore":581,"../number/yearsFromNow":582,"./addDays":199,"./addHours":200,"./addLocale":201,"./addMilliseconds":202,"./addMinutes":203,"./addMonths":204,"./addSeconds":205,"./addWeeks":206,"./addYears":207,"./advance":208,"./beginningOfDay":209,"./beginningOfISOWeek":210,"./beginningOfMonth":211,"./beginningOfWeek":212,"./beginningOfYear":213,"./clone":218,"./create":219,"./daysAgo":220,"./daysFromNow":221,"./daysInMonth":222,"./daysSince":223,"./daysUntil":224,"./endOfDay":225,"./endOfISOWeek":226,"./endOfMonth":227,"./endOfWeek":228,"./endOfYear":229,"./format":230,"./get":231,"./getAllLocaleCodes":232,"./getAllLocales":233,"./getISOWeek":234,"./getLocale":235,"./getOption":236,"./getUTCOffset":237,"./getUTCWeekday":238,"./getWeekday":239,"./hoursAgo":240,"./hoursFromNow":241,"./hoursSince":242,"./hoursUntil":243,"./is":317,"./isAfter":318,"./isBefore":319,"./isBetween":320,"./isFriday":321,"./isFuture":322,"./isLastMonth":323,"./isLastWeek":324,"./isLastYear":325,"./isLeapYear":326,"./isMonday":327,"./isNextMonth":328,"./isNextWeek":329,"./isNextYear":330,"./isPast":331,"./isSaturday":332,"./isSunday":333,"./isThisMonth":334,"./isThisWeek":335,"./isThisYear":336,"./isThursday":337,"./isToday":338,"./isTomorrow":339,"./isTuesday":340,"./isUTC":341,"./isValid":342,"./isWednesday":343,"./isWeekday":344,"./isWeekend":345,"./isYesterday":346,"./iso":347,"./millisecondsAgo":348,"./millisecondsFromNow":349,"./millisecondsSince":350,"./millisecondsUntil":351,"./minutesAgo":352,"./minutesFromNow":353,"./minutesSince":354,"./minutesUntil":355,"./monthsAgo":356,"./monthsFromNow":357,"./monthsSince":358,"./monthsUntil":359,"./relative":361,"./relativeTo":362,"./removeLocale":363,"./reset":364,"./rewind":365,"./secondsAgo":366,"./secondsFromNow":367,"./secondsSince":368,"./secondsUntil":369,"./set":370,"./setISOWeek":371,"./setLocale":372,"./setOption":373,"./setUTC":374,"./setWeekday":375,"./weeksAgo":396,"./weeksFromNow":397,"./weeksSince":398,"./weeksUntil":399,"./yearsAgo":400,"./yearsFromNow":401,"./yearsSince":402,"./yearsUntil":403,"sugar-core":18}],245:[function(require,module,exports){
+'use strict';
+
+var updateDate = require('./updateDate');
+
+function advanceDate(d, unit, num, reset) {
+  var set = {};
+  set[unit] = num;
+  return updateDate(d, set, reset, 1);
+}
+
+module.exports = advanceDate;
+},{"./updateDate":315}],246:[function(require,module,exports){
+'use strict';
+
+var updateDate = require('./updateDate'),
+    collectDateArguments = require('./collectDateArguments');
+
+function advanceDateWithArgs(d, args, dir) {
+  args = collectDateArguments(args, true);
+  return updateDate(d, args[0], args[1], dir);
+}
+
+module.exports = advanceDateWithArgs;
+},{"./collectDateArguments":254,"./updateDate":315}],247:[function(require,module,exports){
+'use strict';
+
+var map = require('../../common/internal/map'),
+    escapeRegExp = require('../../common/internal/escapeRegExp');
+
+function arrayToRegAlternates(arr) {
+  var joined = arr.join('');
+  if (!arr || !arr.length) {
+    return '';
+  }
+  if (joined.length === arr.length) {
+    return '[' + joined + ']';
+  }
+  // map handles sparse arrays so no need to compact the array here.
+  return map(arr, escapeRegExp).join('|');
+}
+
+module.exports = arrayToRegAlternates;
+},{"../../common/internal/escapeRegExp":126,"../../common/internal/map":158}],248:[function(require,module,exports){
+'use strict';
+
+var dateIsValid = require('./dateIsValid');
+
+function assertDateIsValid(d) {
+  if (!dateIsValid(d)) {
+    throw new TypeError('Date is not valid');
+  }
+}
+
+module.exports = assertDateIsValid;
+},{"./dateIsValid":261}],249:[function(require,module,exports){
+'use strict';
+
+var DateUnits = require('../var/DateUnits'),
+    DateUnitIndexes = require('../var/DateUnitIndexes'),
+    forEach = require('../../common/internal/forEach'),
+    compareDate = require('./compareDate'),
+    advanceDate = require('./advanceDate'),
+    moveToEndOfUnit = require('./moveToEndOfUnit'),
+    simpleCapitalize = require('../../common/internal/simpleCapitalize'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    defineInstanceSimilar = require('../../common/internal/defineInstanceSimilar'),
+    moveToBeginningOfUnit = require('./moveToBeginningOfUnit'),
+    createDateWithContext = require('./createDateWithContext'),
+    getTimeDistanceForUnit = require('./getTimeDistanceForUnit');
+
+var sugarDate = namespaceAliases.sugarDate,
+    HOURS_INDEX = DateUnitIndexes.HOURS_INDEX,
+    DAY_INDEX = DateUnitIndexes.DAY_INDEX;
+
+function buildDateUnitMethods() {
+
+  defineInstanceSimilar(sugarDate, DateUnits, function(methods, unit, index) {
+    var name = unit.name, caps = simpleCapitalize(name);
+
+    if (index > DAY_INDEX) {
+      forEach(['Last','This','Next'], function(shift) {
+        methods['is' + shift + caps] = function(d, localeCode) {
+          return compareDate(d, shift + ' ' + name, 0, localeCode, { locale: 'en' });
+        };
+      });
+    }
+    if (index > HOURS_INDEX) {
+      methods['beginningOf' + caps] = function(d, localeCode) {
+        return moveToBeginningOfUnit(d, index, localeCode);
       };
-      typeChecks[klass] = fn;
-      return fn;
+      methods['endOf' + caps] = function(d, localeCode) {
+        return moveToEndOfUnit(d, index, localeCode);
+      };
     }
 
-    function buildPrimitiveClassCheck(type, klass) {
-      var fn = function(obj) {
-        if (isObjectType(obj)) {
-          return isClass(obj, klass);
-        }
-        return typeof obj === type;
-      }
-      typeChecks[klass] = fn;
-      return fn;
-    }
-
-    function className(obj) {
-      return internalToString.call(obj);
-    }
-
-    function extendSimilar(klass, set, fn, instance, polyfill, override) {
-      var methods = {};
-      set = isString(set) ? set.split(',') : set;
-      set.forEach(function(name, i) {
-        fn(methods, name, i);
-      });
-      extend(klass, methods, instance, polyfill, override);
-    }
-
-    // Argument helpers
-
-    function isArgumentsObject(obj, klass) {
-      klass = klass || className(obj);
-      // .callee exists on Arguments objects in < IE8
-      return hasProperty(obj, 'length') && (klass === '[object Arguments]' || !!obj.callee);
-    }
-
-    function checkCallback(fn) {
-      if (!fn || !fn.call) {
-        throw new TypeError('Callback is not callable');
-      }
-    }
-
-    // Coerces an object to a positive integer.
-    // Does not allow NaN, or Infinity.
-    function coercePositiveInteger(n) {
-      n = +n || 0;
-      if (n < 0 || !isNumber(n) || !isFinite(n)) {
-        throw new RangeError('Invalid number');
-      }
-      return trunc(n);
-    }
-
-
-    // General helpers
-
-    function isDefined(o) {
-      return o !== undefined;
-    }
-
-    function isUndefined(o) {
-      return o === undefined;
-    }
-
-
-    // Object helpers
-
-    function hasProperty(obj, prop) {
-      return !isPrimitiveType(obj) && prop in obj;
-    }
-
-    function isObjectType(obj) {
-      // 1. Check for null
-      // 2. Check for regexes in environments where they are "functions".
-      return !!obj && (typeof obj === 'object' || (regexIsFunction && isRegExp(obj)));
-    }
-
-    function isPrimitiveType(obj) {
-      var type = typeof obj;
-      return obj == null || type === 'string' || type === 'number' || type === 'boolean';
-    }
-
-    function isPlainObject(obj, klass) {
-      klass = klass || className(obj);
-      try {
-        // Not own constructor property must be Object
-        // This code was borrowed from jQuery.isPlainObject
-        if (obj && obj.constructor &&
-              !hasOwnProperty(obj, 'constructor') &&
-              !hasOwnProperty(obj.constructor.prototype, 'isPrototypeOf')) {
-          return false;
-        }
-      } catch (e) {
-        // IE8,9 Will throw exceptions on certain host objects.
-        return false;
-      }
-      // === on the constructor is not safe across iframes
-      // 'hasOwnProperty' ensures that the object also inherits
-      // from Object, which is false for DOMElements in IE.
-      return !!obj && klass === '[object Object]' && 'hasOwnProperty' in obj;
-    }
-
-    function simpleRepeat(n, fn) {
-      for(var i = 0; i < n; i++) {
-        fn(i);
-      }
-    }
-
-    function simpleMerge(target, source) {
-      iterateOverObject(source, function(key) {
-        target[key] = source[key];
-      });
-      return target;
-    }
-
-     // Make primtives types like strings into objects.
-     function coercePrimitiveToObject(obj) {
-       if (isPrimitiveType(obj)) {
-         obj = Object(obj);
-       }
-       if (noKeysInStringObjects && isString(obj)) {
-         forceStringCoercion(obj);
-       }
-       return obj;
-     }
-
-     // Force strings to have their indexes set in
-     // environments that don't do this automatically.
-     function forceStringCoercion(obj) {
-       var i = 0, chr;
-       while(chr = obj.charAt(i)) {
-         obj[i++] = chr;
-       }
-     }
-
-    // Hash definition
-
-    function Hash(obj) {
-      simpleMerge(this, coercePrimitiveToObject(obj));
+    methods['add' + caps + 's'] = function(d, num, reset) {
+      return advanceDate(d, name, num, reset);
     };
 
-    Hash.prototype.constructor = Object;
+    var since = function(date, d, options) {
+      return getTimeDistanceForUnit(date, createDateWithContext(date, d, options, true), unit);
+    };
+    var until = function(date, d, options) {
+      return getTimeDistanceForUnit(createDateWithContext(date, d, options, true), date, unit);
+    };
 
-    // Math helpers
+    methods[name + 'sAgo']   = methods[name + 'sUntil']   = until;
+    methods[name + 'sSince'] = methods[name + 'sFromNow'] = since;
 
-    var abs   = Math.abs;
-    var pow   = Math.pow;
-    var ceil  = Math.ceil;
-    var floor = Math.floor;
-    var round = Math.round;
-    var min   = Math.min;
-    var max   = Math.max;
+  });
 
-    function withPrecision(val, precision, fn) {
-      var multiplier = pow(10, abs(precision || 0));
-      fn = fn || round;
-      if (precision < 0) multiplier = 1 / multiplier;
-      return fn(val * multiplier) / multiplier;
+}
+
+module.exports = buildDateUnitMethods;
+},{"../../common/internal/defineInstanceSimilar":122,"../../common/internal/forEach":129,"../../common/internal/simpleCapitalize":171,"../../common/var/namespaceAliases":197,"../var/DateUnitIndexes":382,"../var/DateUnits":383,"./advanceDate":245,"./compareDate":256,"./createDateWithContext":259,"./getTimeDistanceForUnit":288,"./moveToBeginningOfUnit":300,"./moveToEndOfUnit":302}],250:[function(require,module,exports){
+'use strict';
+
+var DateUnits = require('../var/DateUnits'),
+    createDate = require('./createDate'),
+    mathAliases = require('../../common/var/mathAliases'),
+    advanceDate = require('./advanceDate'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    defineInstanceSimilar = require('../../common/internal/defineInstanceSimilar');
+
+var sugarNumber = namespaceAliases.sugarNumber,
+    round = mathAliases.round;
+
+function buildNumberUnitMethods() {
+  defineInstanceSimilar(sugarNumber, DateUnits, function(methods, unit) {
+    var name = unit.name, base, after, before;
+    base = function(n) {
+      return round(n * unit.multiplier);
+    };
+    after = function(n, d, options) {
+      return advanceDate(createDate(d, options, true), name, n);
+    };
+    before = function(n, d, options) {
+      return advanceDate(createDate(d, options, true), name, -n);
+    };
+    methods[name] = base;
+    methods[name + 's'] = base;
+    methods[name + 'Before'] = before;
+    methods[name + 'sBefore'] = before;
+    methods[name + 'Ago'] = before;
+    methods[name + 'sAgo'] = before;
+    methods[name + 'After'] = after;
+    methods[name + 'sAfter'] = after;
+    methods[name + 'FromNow'] = after;
+    methods[name + 'sFromNow'] = after;
+  });
+}
+
+module.exports = buildNumberUnitMethods;
+},{"../../common/internal/defineInstanceSimilar":122,"../../common/var/mathAliases":195,"../../common/var/namespaceAliases":197,"../var/DateUnits":383,"./advanceDate":245,"./createDate":258}],251:[function(require,module,exports){
+'use strict';
+
+var LocaleHelpers = require('../var/LocaleHelpers'),
+    spaceSplit = require('../../common/internal/spaceSplit'),
+    fullCompareDate = require('./fullCompareDate'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    defineInstanceSimilar = require('../../common/internal/defineInstanceSimilar');
+
+var English = LocaleHelpers.English,
+    sugarDate = namespaceAliases.sugarDate;
+
+function buildRelativeAliases() {
+  var special  = spaceSplit('Today Yesterday Tomorrow Weekday Weekend Future Past');
+  var weekdays = English.weekdays.slice(0, 7);
+  var months   = English.months.slice(0, 12);
+  var together = special.concat(weekdays).concat(months);
+  defineInstanceSimilar(sugarDate, together, function(methods, name) {
+    methods['is'+ name] = function(d) {
+      return fullCompareDate(d, name);
+    };
+  });
+}
+
+module.exports = buildRelativeAliases;
+},{"../../common/internal/defineInstanceSimilar":122,"../../common/internal/spaceSplit":175,"../../common/var/namespaceAliases":197,"../var/LocaleHelpers":389,"./fullCompareDate":265}],252:[function(require,module,exports){
+'use strict';
+
+var callDateSet = require('../../common/internal/callDateSet'),
+    setISOWeekNumber = require('./setISOWeekNumber');
+
+function callDateSetWithWeek(d, method, value, safe) {
+  if (method === 'ISOWeek') {
+    setISOWeekNumber(d, value);
+  } else {
+    callDateSet(d, method, value, safe);
+  }
+}
+
+module.exports = callDateSetWithWeek;
+},{"../../common/internal/callDateSet":109,"./setISOWeekNumber":309}],253:[function(require,module,exports){
+'use strict';
+
+var _utc = require('../../common/var/_utc');
+
+function cloneDate(d) {
+  // Rhino environments have a bug where new Date(d) truncates
+  // milliseconds so need to call getTime() here.
+  var clone = new Date(d.getTime());
+  _utc(clone, !!_utc(d));
+  return clone;
+}
+
+module.exports = cloneDate;
+},{"../../common/var/_utc":190}],254:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    simpleClone = require('../../common/internal/simpleClone'),
+    isObjectType = require('../../common/internal/isObjectType'),
+    getDateParamsFromString = require('./getDateParamsFromString'),
+    collectDateParamsFromArguments = require('./collectDateParamsFromArguments');
+
+var isNumber = classChecks.isNumber,
+    isString = classChecks.isString;
+
+function collectDateArguments(args, allowDuration) {
+  var arg1 = args[0], arg2 = args[1];
+  if (allowDuration && isString(arg1)) {
+    arg1 = getDateParamsFromString(arg1);
+  } else if (isNumber(arg1) && isNumber(arg2)) {
+    arg1 = collectDateParamsFromArguments(args);
+    arg2 = null;
+  } else {
+    if (isObjectType(arg1)) {
+      arg1 = simpleClone(arg1);
     }
+  }
+  return [arg1, arg2];
+}
 
-    // Full width number helpers
+module.exports = collectDateArguments;
+},{"../../common/internal/isObjectType":151,"../../common/internal/simpleClone":172,"../../common/var/classChecks":192,"./collectDateParamsFromArguments":255,"./getDateParamsFromString":273}],255:[function(require,module,exports){
+'use strict';
 
-    var HalfWidthZeroCode = 0x30;
-    var HalfWidthNineCode = 0x39;
-    var FullWidthZeroCode = 0xff10;
-    var FullWidthNineCode = 0xff19;
+var DateUnitIndexes = require('../var/DateUnitIndexes'),
+    isDefined = require('../../common/internal/isDefined'),
+    walkUnitDown = require('./walkUnitDown');
 
-    var HalfWidthPeriod = '.';
-    var FullWidthPeriod = '．';
-    var HalfWidthComma  = ',';
+var YEAR_INDEX = DateUnitIndexes.YEAR_INDEX;
 
-    // Used here and later in the Date package.
-    var FullWidthDigits   = '';
-
-    var NumberNormalizeMap = {};
-    var NumberNormalizeReg;
-
-    function codeIsNumeral(code) {
-      return (code >= HalfWidthZeroCode && code <= HalfWidthNineCode) ||
-             (code >= FullWidthZeroCode && code <= FullWidthNineCode);
+function collectDateParamsFromArguments(args) {
+  var params = {}, index = 0;
+  walkUnitDown(YEAR_INDEX, function(unit) {
+    var arg = args[index++];
+    if (isDefined(arg)) {
+      params[unit.name] = arg;
     }
+  });
+  return params;
+}
 
-    function buildNumberHelpers() {
-      var digit, i;
-      for(i = 0; i <= 9; i++) {
-        digit = chr(i + FullWidthZeroCode);
-        FullWidthDigits += digit;
-        NumberNormalizeMap[digit] = chr(i + HalfWidthZeroCode);
-      }
-      NumberNormalizeMap[HalfWidthComma] = '';
-      NumberNormalizeMap[FullWidthPeriod] = HalfWidthPeriod;
-      // Mapping this to itself to easily be able to easily
-      // capture it in stringToNumber to detect decimals later.
-      NumberNormalizeMap[HalfWidthPeriod] = HalfWidthPeriod;
-      NumberNormalizeReg = RegExp('[' + FullWidthDigits + FullWidthPeriod + HalfWidthComma + HalfWidthPeriod + ']', 'g');
+module.exports = collectDateParamsFromArguments;
+},{"../../common/internal/isDefined":149,"../var/DateUnitIndexes":382,"./walkUnitDown":316}],256:[function(require,module,exports){
+'use strict';
+
+var MINUTES = require('../var/MINUTES'),
+    DateUnits = require('../var/DateUnits'),
+    DateUnitIndexes = require('../var/DateUnitIndexes'),
+    _utc = require('../../common/var/_utc'),
+    tzOffset = require('./tzOffset'),
+    cloneDate = require('./cloneDate'),
+    isDefined = require('../../common/internal/isDefined'),
+    advanceDate = require('./advanceDate'),
+    dateIsValid = require('./dateIsValid'),
+    moveToEndOfUnit = require('./moveToEndOfUnit'),
+    getExtendedDate = require('./getExtendedDate'),
+    moveToBeginningOfUnit = require('./moveToBeginningOfUnit');
+
+var MONTH_INDEX = DateUnitIndexes.MONTH_INDEX;
+
+function compareDate(date, d, margin, localeCode, options) {
+  var loMargin = 0, hiMargin = 0, timezoneShift, compareEdges, override, min, max, p, t;
+
+  function getTimezoneShift() {
+    // If there is any specificity in the date then we're implicitly not
+    // checking absolute time, so ignore timezone shifts.
+    if (p.set && p.set.specificity) {
+      return 0;
     }
+    return (tzOffset(p.date) - tzOffset(date)) * MINUTES;
+  }
 
-    // String helpers
+  function addSpecificUnit() {
+    var unit = DateUnits[p.set.specificity];
+    return advanceDate(cloneDate(p.date), unit.name, 1).getTime() - 1;
+  }
 
-    function chr(num) {
-      return String.fromCharCode(num);
+  if (_utc(date)) {
+    options = options || {};
+    options.fromUTC = true;
+    options.setUTC = true;
+  }
+
+  p = getExtendedDate(null, d, options, true);
+
+  if (margin > 0) {
+    loMargin = hiMargin = margin;
+    override = true;
+  }
+  if (!dateIsValid(p.date)) return false;
+  if (p.set && p.set.specificity) {
+    if (isDefined(p.set.edge) || isDefined(p.set.shift)) {
+      compareEdges = true;
+      moveToBeginningOfUnit(p.date, p.set.specificity, localeCode);
     }
-
-    // WhiteSpace/LineTerminator as defined in ES5.1 plus Unicode characters in the Space, Separator category.
-    function getTrimmableCharacters() {
-      return '\u0009\u000A\u000B\u000C\u000D\u0020\u00A0\u1680\u180E\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u2028\u2029\u3000\uFEFF';
+    if (compareEdges || p.set.specificity === MONTH_INDEX) {
+      max = moveToEndOfUnit(cloneDate(p.date), p.set.specificity, localeCode).getTime();
+    } else {
+      max = addSpecificUnit();
     }
-
-    function repeatString(str, num) {
-      var result = '';
-      str = str.toString();
-      while (num > 0) {
-        if (num & 1) {
-          result += str;
-        }
-        if (num >>= 1) {
-          str += str;
-        }
-      }
-      return result;
+    if (!override && isDefined(p.set.sign) && p.set.specificity) {
+      // If the time is relative, there can occasionally be an disparity between
+      // the relative date and "now", which it is being compared to, so set an
+      // extra margin to account for this.
+      loMargin = 50;
+      hiMargin = -50;
     }
+  }
+  t   = date.getTime();
+  min = p.date.getTime();
+  max = max || min;
+  timezoneShift = getTimezoneShift();
+  if (timezoneShift) {
+    min -= timezoneShift;
+    max -= timezoneShift;
+  }
+  return t >= (min - loMargin) && t <= (max + hiMargin);
+}
 
-    // Returns taking into account full-width characters, commas, and decimals.
-    function stringToNumber(str, base) {
-      var sanitized, isDecimal;
-      sanitized = str.replace(NumberNormalizeReg, function(chr) {
-        var replacement = NumberNormalizeMap[chr];
-        if (replacement === HalfWidthPeriod) {
-          isDecimal = true;
-        }
-        return replacement;
-      });
-      return isDecimal ? parseFloat(sanitized) : parseInt(sanitized, base || 10);
+module.exports = compareDate;
+},{"../../common/internal/isDefined":149,"../../common/var/_utc":190,"../var/DateUnitIndexes":382,"../var/DateUnits":383,"../var/MINUTES":391,"./advanceDate":245,"./cloneDate":253,"./dateIsValid":261,"./getExtendedDate":277,"./moveToBeginningOfUnit":300,"./moveToEndOfUnit":302,"./tzOffset":314}],257:[function(require,module,exports){
+'use strict';
+
+var setDate = require('./setDate'),
+    getDate = require('./getDate'),
+    getYear = require('./getYear'),
+    getMonth = require('./getMonth'),
+    getNewDate = require('./getNewDate');
+
+function compareDay(d, shift) {
+  var comp = getNewDate();
+  if (shift) {
+    setDate(comp, getDate(comp) + shift);
+  }
+  return getYear(d) === getYear(comp) &&
+         getMonth(d) === getMonth(comp) &&
+         getDate(d) === getDate(comp);
+}
+
+module.exports = compareDay;
+},{"./getDate":270,"./getMonth":282,"./getNewDate":283,"./getYear":294,"./setDate":307}],258:[function(require,module,exports){
+'use strict';
+
+var getExtendedDate = require('./getExtendedDate');
+
+function createDate(d, options, forceClone) {
+  return getExtendedDate(null, d, options, forceClone).date;
+}
+
+module.exports = createDate;
+},{"./getExtendedDate":277}],259:[function(require,module,exports){
+'use strict';
+
+var getExtendedDate = require('./getExtendedDate');
+
+function createDateWithContext(contextDate, d, options, forceClone) {
+  return getExtendedDate(contextDate, d, options, forceClone).date;
+}
+
+module.exports = createDateWithContext;
+},{"./getExtendedDate":277}],260:[function(require,module,exports){
+'use strict';
+
+var CoreOutputFormats = require('../var/CoreOutputFormats'),
+    formattingTokens = require('../var/formattingTokens'),
+    assertDateIsValid = require('./assertDateIsValid');
+
+var dateFormatMatcher = formattingTokens.dateFormatMatcher;
+
+function dateFormat(d, format, localeCode) {
+  assertDateIsValid(d);
+  format = CoreOutputFormats[format] || format || '{long}';
+  return dateFormatMatcher(format, d, localeCode);
+}
+
+module.exports = dateFormat;
+},{"../var/CoreOutputFormats":379,"../var/formattingTokens":395,"./assertDateIsValid":248}],261:[function(require,module,exports){
+'use strict';
+
+function dateIsValid(d) {
+  return !isNaN(d.getTime());
+}
+
+module.exports = dateIsValid;
+},{}],262:[function(require,module,exports){
+'use strict';
+
+var LocaleHelpers = require('../var/LocaleHelpers'),
+    dateFormat = require('./dateFormat'),
+    classChecks = require('../../common/var/classChecks'),
+    assertDateIsValid = require('./assertDateIsValid'),
+    getAdjustedUnitForDate = require('./getAdjustedUnitForDate');
+
+var isFunction = classChecks.isFunction,
+    localeManager = LocaleHelpers.localeManager;
+
+function dateRelative(d, dRelative, arg1, arg2) {
+  var adu, format, type, localeCode, fn;
+  assertDateIsValid(d);
+  if (isFunction(arg1)) {
+    fn = arg1;
+  } else {
+    localeCode = arg1;
+    fn = arg2;
+  }
+  adu = getAdjustedUnitForDate(d, dRelative);
+  if (fn) {
+    format = fn.apply(d, adu.concat(localeManager.get(localeCode)));
+    if (format) {
+      return dateFormat(d, format, localeCode);
     }
+  }
+  // Adjust up if time is in ms, as this doesn't
+  // look very good for a standard relative date.
+  if (adu[1] === 0) {
+    adu[1] = 1;
+    adu[0] = 1;
+  }
+  if (dRelative) {
+    type = 'duration';
+  } else if (adu[2] > 0) {
+    type = 'future';
+  } else {
+    type = 'past';
+  }
+  return localeManager.get(localeCode).getRelativeFormat(adu, type);
+}
 
+module.exports = dateRelative;
+},{"../../common/var/classChecks":192,"../var/LocaleHelpers":389,"./assertDateIsValid":248,"./dateFormat":260,"./getAdjustedUnitForDate":267}],263:[function(require,module,exports){
+'use strict';
 
-    // Used by Number and Date
+function defaultNewDate() {
+  return new Date;
+}
 
-    var trunc = Math.trunc || function(n) {
-      if (n === 0 || !isFinite(n)) return n;
-      return n < 0 ? ceil(n) : floor(n);
+module.exports = defaultNewDate;
+},{}],264:[function(require,module,exports){
+'use strict';
+
+var getDateParamKey = require('./getDateParamKey');
+
+function deleteDateParam(params, key) {
+  delete params[getDateParamKey(params, key)];
+}
+
+module.exports = deleteDateParam;
+},{"./getDateParamKey":272}],265:[function(require,module,exports){
+'use strict';
+
+var LocaleHelpers = require('../var/LocaleHelpers'),
+    trim = require('../../common/internal/trim'),
+    getMonth = require('./getMonth'),
+    isDefined = require('../../common/internal/isDefined'),
+    getNewDate = require('./getNewDate'),
+    compareDay = require('./compareDay'),
+    getWeekday = require('./getWeekday'),
+    dateIsValid = require('./dateIsValid'),
+    classChecks = require('../../common/var/classChecks'),
+    compareDate = require('./compareDate');
+
+var isString = classChecks.isString,
+    English = LocaleHelpers.English;
+
+function fullCompareDate(date, d, margin) {
+  var tmp;
+  if (!dateIsValid(date)) return;
+  if (isString(d)) {
+    d = trim(d).toLowerCase();
+    switch(true) {
+      case d === 'future':    return date.getTime() > getNewDate().getTime();
+      case d === 'past':      return date.getTime() < getNewDate().getTime();
+      case d === 'today':     return compareDay(date);
+      case d === 'tomorrow':  return compareDay(date,  1);
+      case d === 'yesterday': return compareDay(date, -1);
+      case d === 'weekday':   return getWeekday(date) > 0 && getWeekday(date) < 6;
+      case d === 'weekend':   return getWeekday(date) === 0 || getWeekday(date) === 6;
+
+      case (isDefined(tmp = English.weekdayMap[d])):
+        return getWeekday(date) === tmp;
+      case (isDefined(tmp = English.monthMap[d])):
+        return getMonth(date) === tmp;
     }
+  }
+  return compareDate(date, d, margin);
+}
 
-    function padNumber(num, place, sign, base) {
-      var str = abs(num).toString(base || 10);
-      str = repeatString('0', place - str.replace(/\.\d+/, '').length) + str;
-      if (sign || num < 0) {
-        str = (num < 0 ? '-' : '+') + str;
-      }
-      return str;
-    }
+module.exports = fullCompareDate;
+},{"../../common/internal/isDefined":149,"../../common/internal/trim":177,"../../common/var/classChecks":192,"../var/LocaleHelpers":389,"./compareDate":256,"./compareDay":257,"./dateIsValid":261,"./getMonth":282,"./getNewDate":283,"./getWeekday":293}],266:[function(require,module,exports){
+'use strict';
 
-    function getOrdinalizedSuffix(num) {
-      if (num >= 11 && num <= 13) {
-        return 'th';
-      } else {
-        switch(num % 10) {
-          case 1:  return 'st';
-          case 2:  return 'nd';
-          case 3:  return 'rd';
-          default: return 'th';
-        }
-      }
-    }
+var mathAliases = require('../../common/var/mathAliases'),
+    iterateOverDateUnits = require('./iterateOverDateUnits');
 
+var abs = mathAliases.abs;
 
-    // RegExp helpers
-
-    function getRegExpFlags(reg, add) {
-      var flags = '';
-      add = add || '';
-      function checkFlag(prop, flag) {
-        if (prop || add.indexOf(flag) > -1) {
-          flags += flag;
-        }
-      }
-      checkFlag(reg.multiline, 'm');
-      checkFlag(reg.ignoreCase, 'i');
-      checkFlag(reg.global, 'g');
-      checkFlag(reg.sticky, 'y');
-      return flags;
-    }
-
-    function escapeRegExp(str) {
-      if (!isString(str)) str = String(str);
-      return str.replace(/([\\\/\'*+?|()\[\]{}.^$-])/g,'\\$1');
-    }
-
-
-    // Date helpers
-
-    function callDateGet(d, method) {
-      return d['get' + (d._utc ? 'UTC' : '') + method]();
-    }
-
-    function callDateSet(d, method, value) {
-      return d['set' + (d._utc ? 'UTC' : '') + method](value);
-    }
-
-    // Used by Array#unique and Object.equal
-
-    function stringify(thing, stack) {
-      var type = typeof thing, isObject, isArrayLike, klass, value, arr, key, i, len;
-
-      // Return quickly if string to save cycles
-      if (type === 'string') return thing;
-
-      klass       = internalToString.call(thing);
-      isObject    = isPlainObject(thing, klass);
-      isArrayLike = isArray(thing, klass) || isArgumentsObject(thing, klass);
-
-      if (thing != null && isObject || isArrayLike) {
-        // This method for checking for cyclic structures was egregiously stolen from
-        // the ingenious method by @kitcambridge from the Underscore script:
-        // https://github.com/documentcloud/underscore/issues/240
-        if (!stack) stack = [];
-        // Allowing a step into the structure before triggering this
-        // script to save cycles on standard JSON structures and also to
-        // try as hard as possible to catch basic properties that may have
-        // been modified.
-        if (stack.length > 1) {
-          i = stack.length;
-          while (i--) {
-            if (stack[i] === thing) {
-              return 'CYC';
-            }
-          }
-        }
-        stack.push(thing);
-        value = thing.valueOf() + String(thing.constructor);
-        arr = isArrayLike ? thing : Object.keys(thing).sort();
-        for(i = 0, len = arr.length; i < len; i++) {
-          key = isArrayLike ? i : arr[i];
-          value += key + stringify(thing[key], stack);
-        }
-        stack.pop();
-      } else if (1 / thing === -Infinity) {
-        value = '-0';
-      } else {
-        value = String(thing && thing.valueOf ? thing.valueOf() : thing);
-      }
-      return type + klass + value;
-    }
-
-    function isEqual(a, b) {
-      if (a === b) {
-        // Return quickly up front when matching by reference,
-        // but be careful about 0 !== -0.
-        return a !== 0 || 1 / a === 1 / b;
-      } else if (objectIsMatchedByValue(a) && objectIsMatchedByValue(b)) {
-        return stringify(a) === stringify(b);
-      }
+function getAdjustedUnit(ms, fn) {
+  var unitIndex = 0, value = 0;
+  iterateOverDateUnits(function(unit, i) {
+    value = abs(fn(unit));
+    if (value >= 1) {
+      unitIndex = i;
       return false;
     }
+  });
+  return [value, unitIndex, ms];
+}
 
-    function objectIsMatchedByValue(obj) {
-      // Only known objects are matched by value. This is notably excluding functions, DOM Elements, and instances of
-      // user-created classes. The latter can arguably be matched by value, but distinguishing between these and
-      // host objects -- which should never be compared by value -- is very tricky so not dealing with it here.
-      var klass = className(obj);
-      return matchedByValueReg.test(klass) || isPlainObject(obj, klass);
+module.exports = getAdjustedUnit;
+},{"../../common/var/mathAliases":195,"./iterateOverDateUnits":298}],267:[function(require,module,exports){
+'use strict';
+
+var getNewDate = require('./getNewDate'),
+    mathAliases = require('../../common/var/mathAliases'),
+    getAdjustedUnit = require('./getAdjustedUnit'),
+    getTimeDistanceForUnit = require('./getTimeDistanceForUnit');
+
+var abs = mathAliases.abs;
+
+function getAdjustedUnitForDate(d, dRelative) {
+  var ms;
+  if (!dRelative) {
+    dRelative = getNewDate();
+    if (d > dRelative) {
+      // If our date is greater than the one that we got from getNewDate, it
+      // means that we are finding the unit for a date that is in the future
+      // relative to now. However, often the incoming date was created in
+      // the same cycle as our comparison, but our "now" date will have been
+      // created an instant after it, creating situations where "5 minutes from
+      // now" becomes "4 minutes from now" in the same tick. To prevent this,
+      // subtract a buffer of 10ms to compensate.
+      dRelative = new Date(dRelative.getTime() - 10);
     }
+  }
+  ms = d - dRelative;
+  return getAdjustedUnit(ms, function(u) {
+    return abs(getTimeDistanceForUnit(d, dRelative, u));
+  });
+}
 
+module.exports = getAdjustedUnitForDate;
+},{"../../common/var/mathAliases":195,"./getAdjustedUnit":266,"./getNewDate":283,"./getTimeDistanceForUnit":288}],268:[function(require,module,exports){
+'use strict';
 
-    // Used by Array#at and String#at
+var trunc = require('../../common/var/trunc'),
+    withPrecision = require('../../common/internal/withPrecision'),
+    getAdjustedUnit = require('./getAdjustedUnit');
 
-    function getEntriesForIndexes(obj, args, isString) {
-      var result,
-          length    = obj.length,
-          argsLen   = args.length,
-          overshoot = args[argsLen - 1] !== false,
-          multiple  = argsLen > (overshoot ? 1 : 2);
-      if (!multiple) {
-        return entryAtIndex(obj, length, args[0], overshoot, isString);
+function getAdjustedUnitForNumber(ms) {
+  return getAdjustedUnit(ms, function(unit) {
+    return trunc(withPrecision(ms / unit.multiplier, 1));
+  });
+}
+
+module.exports = getAdjustedUnitForNumber;
+},{"../../common/internal/withPrecision":178,"../../common/var/trunc":198,"./getAdjustedUnit":266}],269:[function(require,module,exports){
+'use strict';
+
+function getArrayWithOffset(arr, n, alternate, offset) {
+  var val;
+  if (alternate > 1) {
+    val = arr[n + (alternate - 1) * offset];
+  }
+  return val || arr[n];
+}
+
+module.exports = getArrayWithOffset;
+},{}],270:[function(require,module,exports){
+'use strict';
+
+var callDateGet = require('../../common/internal/callDateGet');
+
+function getDate(d) {
+  return callDateGet(d, 'Date');
+}
+
+module.exports = getDate;
+},{"../../common/internal/callDateGet":108}],271:[function(require,module,exports){
+'use strict';
+
+var getDateParamKey = require('./getDateParamKey'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var getOwn = coreUtilityAliases.getOwn;
+
+function getDateParam(params, key) {
+  return getOwn(params, getDateParamKey(params, key));
+}
+
+module.exports = getDateParam;
+},{"../../common/var/coreUtilityAliases":193,"./getDateParamKey":272}],272:[function(require,module,exports){
+'use strict';
+
+var getOwnKey = require('../../common/internal/getOwnKey');
+
+function getDateParamKey(params, key) {
+  return getOwnKey(params, key) ||
+         getOwnKey(params, key + 's') ||
+         (key === 'day' && getOwnKey(params, 'date'));
+}
+
+module.exports = getDateParamKey;
+},{"../../common/internal/getOwnKey":139}],273:[function(require,module,exports){
+'use strict';
+
+var isUndefined = require('../../common/internal/isUndefined');
+
+function getDateParamsFromString(str) {
+  var match, num, params = {};
+  match = str.match(/^(-?\d*[\d.]\d*)?\s?(\w+?)s?$/i);
+  if (match) {
+    if (isUndefined(num)) {
+      num = +match[1];
+      if (isNaN(num)) {
+        num = 1;
       }
-      result = [];
-      for (var i = 0; i < args.length; i++) {
-        var index = args[i];
-        if (!isBoolean(index)) {
-          result.push(entryAtIndex(obj, length, index, overshoot, isString));
-        }
-      }
-      return result;
     }
+    params[match[2].toLowerCase()] = num;
+  }
+  return params;
+}
 
-    function entryAtIndex(obj, length, index, overshoot, isString) {
-      if (overshoot && index) {
-        index = index % length;
-        if (index < 0) index = length + index;
-      }
-      return isString ? obj.charAt(index) : obj[index];
-    }
+module.exports = getDateParamsFromString;
+},{"../../common/internal/isUndefined":155}],274:[function(require,module,exports){
+'use strict';
 
-    // Used by the Array and Object packages.
+var getYear = require('./getYear'),
+    getMonth = require('./getMonth'),
+    callDateGet = require('../../common/internal/callDateGet');
 
-    function transformArgument(el, map, context, mapArgs) {
-      if (!map) {
-        return el;
-      } else if (map.apply) {
-        return map.apply(context, mapArgs || []);
-      } else if (isFunction(el[map])) {
-        return el[map].call(el);
+function getDaysInMonth(d) {
+  return 32 - callDateGet(new Date(getYear(d), getMonth(d), 32), 'Date');
+}
+
+module.exports = getDaysInMonth;
+},{"../../common/internal/callDateGet":108,"./getMonth":282,"./getYear":294}],275:[function(require,module,exports){
+'use strict';
+
+var DateUnits = require('../var/DateUnits'),
+    DateUnitIndexes = require('../var/DateUnitIndexes'),
+    getTimeDistanceForUnit = require('./getTimeDistanceForUnit');
+
+var DAY_INDEX = DateUnitIndexes.DAY_INDEX;
+
+function getDaysSince(d1, d2) {
+  return getTimeDistanceForUnit(d1, d2, DateUnits[DAY_INDEX]);
+}
+
+module.exports = getDaysSince;
+},{"../var/DateUnitIndexes":382,"../var/DateUnits":383,"./getTimeDistanceForUnit":288}],276:[function(require,module,exports){
+'use strict';
+
+var EnglishLocaleBaseDefinition = require('../var/EnglishLocaleBaseDefinition'),
+    simpleMerge = require('../../common/internal/simpleMerge'),
+    simpleClone = require('../../common/internal/simpleClone');
+
+function getEnglishVariant(v) {
+  return simpleMerge(simpleClone(EnglishLocaleBaseDefinition), v);
+}
+
+module.exports = getEnglishVariant;
+},{"../../common/internal/simpleClone":172,"../../common/internal/simpleMerge":173,"../var/EnglishLocaleBaseDefinition":384}],277:[function(require,module,exports){
+'use strict';
+
+var MINUTES = require('../var/MINUTES'),
+    ParsingTokens = require('../var/ParsingTokens'),
+    LocaleHelpers = require('../var/LocaleHelpers'),
+    DateUnitIndexes = require('../var/DateUnitIndexes'),
+    _utc = require('../../common/var/_utc'),
+    trunc = require('../../common/var/trunc'),
+    forEach = require('../../common/internal/forEach'),
+    tzOffset = require('./tzOffset'),
+    resetTime = require('./resetTime'),
+    isDefined = require('../../common/internal/isDefined'),
+    setWeekday = require('./setWeekday'),
+    updateDate = require('./updateDate'),
+    getNewDate = require('./getNewDate'),
+    isUndefined = require('../../common/internal/isUndefined'),
+    classChecks = require('../../common/var/classChecks'),
+    advanceDate = require('./advanceDate'),
+    simpleClone = require('../../common/internal/simpleClone'),
+    isObjectType = require('../../common/internal/isObjectType'),
+    moveToEndOfUnit = require('./moveToEndOfUnit'),
+    deleteDateParam = require('./deleteDateParam'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases'),
+    getParsingTokenValue = require('./getParsingTokenValue'),
+    moveToBeginningOfUnit = require('./moveToBeginningOfUnit'),
+    iterateOverDateParams = require('./iterateOverDateParams'),
+    getYearFromAbbreviation = require('./getYearFromAbbreviation'),
+    iterateOverHigherDateParams = require('./iterateOverHigherDateParams');
+
+var isNumber = classChecks.isNumber,
+    isString = classChecks.isString,
+    isDate = classChecks.isDate,
+    hasOwn = coreUtilityAliases.hasOwn,
+    getOwn = coreUtilityAliases.getOwn,
+    English = LocaleHelpers.English,
+    localeManager = LocaleHelpers.localeManager,
+    DAY_INDEX = DateUnitIndexes.DAY_INDEX,
+    WEEK_INDEX = DateUnitIndexes.WEEK_INDEX,
+    MONTH_INDEX = DateUnitIndexes.MONTH_INDEX,
+    YEAR_INDEX = DateUnitIndexes.YEAR_INDEX;
+
+function getExtendedDate(contextDate, d, opt, forceClone) {
+
+  var date, set, loc, options, afterCallbacks, relative, weekdayDir;
+
+  afterCallbacks = [];
+  options = getDateOptions(opt);
+
+  function getDateOptions(opt) {
+    var options = isString(opt) ? { locale: opt } : opt || {};
+    options.prefer = +!!getOwn(options, 'future') - +!!getOwn(options, 'past');
+    return options;
+  }
+
+  function getFormatParams(match, dif) {
+    var set = getOwn(options, 'params') || {};
+    forEach(dif.to, function(field, i) {
+      var str = match[i + 1], token, val;
+      if (!str) return;
+      if (field === 'yy' || field === 'y') {
+        field = 'year';
+        val = getYearFromAbbreviation(str, date, getOwn(options, 'prefer'));
+      } else if (token = getOwn(ParsingTokens, field)) {
+        field = token.param || field;
+        val = getParsingTokenValue(token, str);
       } else {
-        return el[map];
+        val = loc.getTokenValue(field, str);
       }
+      set[field] = val;
+    });
+    return set;
+  }
+
+  // Clone date will set the utc flag, but it will
+  // be overriden later, so set option flags instead.
+  function cloneDateByFlag(d, clone) {
+    if (_utc(d) && !isDefined(getOwn(options, 'fromUTC'))) {
+      options.fromUTC = true;
     }
-
-    function keysWithObjectCoercion(obj) {
-      return Object.keys(coercePrimitiveToObject(obj));
+    if (_utc(d) && !isDefined(getOwn(options, 'setUTC'))) {
+      options.setUTC = true;
     }
-
-    // Object class methods implemented as instance methods. This method
-    // is being called only on Hash and Object itself, so we don't want
-    // to go through extend() here as it will create proxies that already
-    // exist, which we want to avoid.
-
-    function buildObjectInstanceMethods(set, target) {
-      set.forEach(function(name) {
-        var key = name === 'equals' ? 'equal' : name;
-        // Polyfill methods like Object.keys may not be defined
-        // on the Sugar global object so check the main namespace.
-        var classFn = Object[key];
-        var fn = function() {
-          var args = arguments, newArgs = [this], i;
-          for(i = 0;i < args.length;i++) {
-            newArgs.push(args[i]);
-          }
-          return classFn.apply(null, newArgs);
-        }
-        setProperty(target.prototype, name, fn);
-      });
+    if (clone) {
+      d = new Date(d.getTime());
     }
+    return d;
+  }
 
-    buildNumberHelpers();
+  function afterDateSet(fn) {
+    afterCallbacks.push(fn);
+  }
 
-    /***
-     * @module ES5
-     * @description Shim methods that provide ES5 compatible functionality. This package can be excluded if you do not require legacy browser support (IE8 and below).
-     *
-     ***/
+  function fireCallbacks() {
+    forEach(afterCallbacks, function(fn) {
+      fn.call();
+    });
+  }
 
+  function parseStringDate(str) {
 
-    /***
-     * @namespace Object
-     *
-     ***/
+    str = str.toLowerCase();
 
-    extend(Object, {
+    // The act of getting the locale will initialize
+    // if it is missing and add the required formats.
+    loc = localeManager.get(getOwn(options, 'locale'));
 
-      'keys': function(obj) {
-        var keys = [];
-        if (!isObjectType(obj) && !isRegExp(obj) && !isFunction(obj)) {
-          throw new TypeError('Object required');
-        }
-        iterateOverObject(obj, function(key, value) {
-          keys.push(key);
-        });
-        return keys;
-      }
+    for (var i = 0, dif, match; dif = loc.compiledFormats[i]; i++) {
+      match = str.match(dif.reg);
+      if (match) {
 
-    }, false, true);
+        // Note that caching the format will modify the compiledFormats array
+        // which is not a good idea to do inside its for loop, however we
+        // know at this point that we have a matched format and that we will
+        // break out below, so simpler to do it here.
+        loc.cacheFormat(dif, i);
 
+        set = getFormatParams(match, dif);
 
-    /***
-     * @namespace Array
-     *
-     ***/
-
-    // ECMA5 methods
-
-    function arrayIndexOf(arr, search, fromIndex, increment) {
-      var length = arr.length,
-          fromRight = increment == -1,
-          start = fromRight ? length - 1 : 0,
-          index = toIntegerWithDefault(fromIndex, start);
-      if (index < 0) {
-        index = length + index;
-      }
-      if ((!fromRight && index < 0) || (fromRight && index >= length)) {
-        index = start;
-      }
-      while((fromRight && index >= 0) || (!fromRight && index < length)) {
-        if (arr[index] === search) {
-          return index;
-        }
-        index += increment;
-      }
-      return -1;
-    }
-
-    function arrayReduce(arr, fn, initialValue, fromRight) {
-      var length = arr.length, count = 0, defined = isDefined(initialValue), result, index;
-      checkCallback(fn);
-      if (length == 0 && !defined) {
-        throw new TypeError('Reduce called on empty array with no initial value');
-      } else if (defined) {
-        result = initialValue;
-      } else {
-        result = arr[fromRight ? length - 1 : count];
-        count++;
-      }
-      while(count < length) {
-        index = fromRight ? length - count - 1 : count;
-        if (index in arr) {
-          result = fn(result, arr[index], index, arr);
-        }
-        count++;
-      }
-      return result;
-    }
-
-    function toIntegerWithDefault(i, d) {
-      if (isNaN(i)) {
-        return d;
-      } else {
-        return parseInt(i >> 0);
-      }
-    }
-
-    function checkFirstArgumentExists(args) {
-      if (args.length === 0) {
-        throw new TypeError('First argument must be defined');
-      }
-    }
-
-
-    extend(Array, {
-
-      /***
-       *
-       * @method Array.isArray(<obj>)
-       * @returns Boolean
-       * @short Returns true if <obj> is an Array.
-       * @extra This method is provided for browsers that don't support it internally.
-       * @example
-       *
-       *   Array.isArray(3)        -> false
-       *   Array.isArray(true)     -> false
-       *   Array.isArray('wasabi') -> false
-       *   Array.isArray([1,2,3])  -> true
-       *
-       ***/
-      'isArray': function(obj) {
-        return isArray(obj);
-      }
-
-    }, false, true);
-
-
-    extend(Array, {
-
-      /***
-       * @method every(<f>, [scope])
-       * @returns Boolean
-       * @short Returns true if all elements in the array match <f>.
-       * @extra [scope] is the %this% object. %all% is provided an alias. In addition to providing this method for browsers that don't support it natively, this method also implements %array_matching%.
-       * @example
-       *
-       +   ['a','a','a'].every(function(n) {
-       *     return n == 'a';
-       *   });
-       *   ['a','a','a'].every('a')   -> true
-       *   [{a:2},{a:2}].every({a:2}) -> true
-       ***/
-      'every': function(fn, scope) {
-        var length = this.length, index = 0;
-        checkFirstArgumentExists(arguments);
-        while(index < length) {
-          if (index in this && !fn.call(scope, this[index], index, this)) {
-            return false;
-          }
-          index++;
-        }
-        return true;
-      },
-
-      /***
-       * @method some(<f>, [scope])
-       * @returns Boolean
-       * @short Returns true if any element in the array matches <f>.
-       * @extra [scope] is the %this% object. %any% is provided as an alias. In addition to providing this method for browsers that don't support it natively, this method also implements %array_matching%.
-       * @example
-       *
-       +   ['a','b','c'].some(function(n) {
-       *     return n == 'a';
-       *   });
-       +   ['a','b','c'].some(function(n) {
-       *     return n == 'd';
-       *   });
-       *   ['a','b','c'].some('a')   -> true
-       *   [{a:2},{b:5}].some({a:2}) -> true
-       ***/
-      'some': function(fn, scope) {
-        var length = this.length, index = 0;
-        checkFirstArgumentExists(arguments);
-        while(index < length) {
-          if (index in this && fn.call(scope, this[index], index, this)) {
-            return true;
-          }
-          index++;
-        }
-        return false;
-      },
-
-      /***
-       * @method map(<map>, [scope])
-       * @returns Array
-       * @short Maps the array to another array containing the values that are the result of calling <map> on each element.
-       * @extra [scope] is the %this% object. When <map> is a function, it receives three arguments: the current element, the current index, and a reference to the array. In addition to providing this method for browsers that don't support it natively, this enhanced method also directly accepts a string, which is a shortcut for a function that gets that property (or invokes a function) on each element.
-       * @example
-       *
-       *   [1,2,3].map(function(n) {
-       *     return n * 3;
-       *   });                                  -> [3,6,9]
-       *   ['one','two','three'].map(function(n) {
-       *     return n.length;
-       *   });                                  -> [3,3,5]
-       *   ['one','two','three'].map('length')  -> [3,3,5]
-       *
-       ***/
-      'map': function(fn, scope) {
-        var scope = arguments[1], length = this.length, index = 0, result = new Array(length);
-        checkFirstArgumentExists(arguments);
-        while(index < length) {
-          if (index in this) {
-            result[index] = fn.call(scope, this[index], index, this);
-          }
-          index++;
-        }
-        return result;
-      },
-
-      /***
-       * @method filter(<f>, [scope])
-       * @returns Array
-       * @short Returns any elements in the array that match <f>.
-       * @extra [scope] is the %this% object. In addition to providing this method for browsers that don't support it natively, this method also implements %array_matching%.
-       * @example
-       *
-       +   [1,2,3].filter(function(n) {
-       *     return n > 1;
-       *   });
-       *   [1,2,2,4].filter(2) -> 2
-       *
-       ***/
-      'filter': function(fn) {
-        var scope = arguments[1];
-        var length = this.length, index = 0, result = [];
-        checkFirstArgumentExists(arguments);
-        while(index < length) {
-          if (index in this && fn.call(scope, this[index], index, this)) {
-            result.push(this[index]);
-          }
-          index++;
-        }
-        return result;
-      },
-
-      /***
-       * @method indexOf(<search>, [fromIndex])
-       * @returns Number
-       * @short Searches the array and returns the first index where <search> occurs, or -1 if the element is not found.
-       * @extra [fromIndex] is the index from which to begin the search. This method performs a simple strict equality comparison on <search>. It does not support enhanced functionality such as searching the contents against a regex, callback, or deep comparison of objects. For such functionality, use the %findIndex% method instead.
-       * @example
-       *
-       *   [1,2,3].indexOf(3)           -> 1
-       *   [1,2,3].indexOf(7)           -> -1
-       *
-       ***/
-      'indexOf': function(search) {
-        var fromIndex = arguments[1];
-        if (isString(this)) return this.indexOf(search, fromIndex);
-        return arrayIndexOf(this, search, fromIndex, 1);
-      },
-
-      /***
-       * @method lastIndexOf(<search>, [fromIndex])
-       * @returns Number
-       * @short Searches the array and returns the last index where <search> occurs, or -1 if the element is not found.
-       * @extra [fromIndex] is the index from which to begin the search. This method performs a simple strict equality comparison on <search>.
-       * @example
-       *
-       *   [1,2,1].lastIndexOf(1)                 -> 2
-       *   [1,2,1].lastIndexOf(7)                 -> -1
-       *
-       ***/
-      'lastIndexOf': function(search) {
-        var fromIndex = arguments[1];
-        if (isString(this)) return this.lastIndexOf(search, fromIndex);
-        return arrayIndexOf(this, search, fromIndex, -1);
-      },
-
-      /***
-       * @method forEach([fn], [scope])
-       * @returns Nothing
-       * @short Iterates over the array, calling [fn] on each loop.
-       * @extra This method is only provided for those browsers that do not support it natively. [scope] becomes the %this% object.
-       * @example
-       *
-       *   ['a','b','c'].forEach(function(a) {
-       *     // Called 3 times: 'a','b','c'
-       *   });
-       *
-       ***/
-      'forEach': function(fn) {
-        var length = this.length, index = 0, scope = arguments[1];
-        checkCallback(fn);
-        while(index < length) {
-          if (index in this) {
-            fn.call(scope, this[index], index, this);
-          }
-          index++;
-        }
-      },
-
-      /***
-       * @method reduce(<fn>, [init])
-       * @returns Mixed
-       * @short Reduces the array to a single result.
-       * @extra If [init] is passed as a starting value, that value will be passed as the first argument to the callback. The second argument will be the first element in the array. From that point, the result of the callback will then be used as the first argument of the next iteration. This is often refered to as "accumulation", and [init] is often called an "accumulator". If [init] is not passed, then <fn> will be called n - 1 times, where n is the length of the array. In this case, on the first iteration only, the first argument will be the first element of the array, and the second argument will be the second. After that callbacks work as normal, using the result of the previous callback as the first argument of the next. This method is only provided for those browsers that do not support it natively.
-       *
-       * @example
-       *
-       +   [1,2,3,4].reduce(function(a, b) {
-       *     return a - b;
-       *   });
-       +   [1,2,3,4].reduce(function(a, b) {
-       *     return a - b;
-       *   }, 100);
-       *
-       ***/
-      'reduce': function(fn) {
-        return arrayReduce(this, fn, arguments[1]);
-      },
-
-      /***
-       * @method reduceRight([fn], [init])
-       * @returns Mixed
-       * @short Identical to %Array#reduce%, but operates on the elements in reverse order.
-       * @extra This method is only provided for those browsers that do not support it natively.
-       *
-       *
-       *
-       *
-       * @example
-       *
-       +   [1,2,3,4].reduceRight(function(a, b) {
-       *     return a - b;
-       *   });
-       *
-       ***/
-      'reduceRight': function(fn) {
-        return arrayReduce(this, fn, arguments[1], true);
-      }
-
-
-    }, true, true);
-
-
-
-
-    /***
-     * @namespace String
-     *
-     ***/
-
-    var TrimRegExp = RegExp('^[' + getTrimmableCharacters() + ']+|['+getTrimmableCharacters()+']+$', 'g')
-
-    extend(String, {
-      /***
-       * @method trim()
-       * @returns String
-       * @short Removes leading and trailing whitespace from the string.
-       * @extra Whitespace is defined as line breaks, tabs, and any character in the "Space, Separator" Unicode category, conforming to the the ES5 spec. The standard %trim% method is only added when not fully supported natively.
-       *
-       * @example
-       *
-       *   '   wasabi   '.trim()      -> 'wasabi'
-       *   '   wasabi   '.trimLeft()  -> 'wasabi   '
-       *   '   wasabi   '.trimRight() -> '   wasabi'
-       *
-       ***/
-      'trim': function() {
-        return this.toString().replace(TrimRegExp, '');
-      }
-    }, true, true);
-
-
-
-    /***
-     * @namespace Function
-     *
-     ***/
-
-
-    extend(Function, {
-
-       /***
-       * @method bind(<scope>, [arg1], ...)
-       * @returns Function
-       * @short Binds <scope> as the %this% object for the function when it is called. Also allows currying an unlimited number of parameters.
-       * @extra "currying" means setting parameters ([arg1], [arg2], etc.) ahead of time so that they are passed when the function is called later. If you pass additional parameters when the function is actually called, they will be added will be added to the end of the curried parameters. This method is provided for browsers that don't support it internally.
-       * @example
-       *
-       +   (function() {
-       *     return this;
-       *   }).bind('woof')(); -> returns 'woof'; function is bound with 'woof' as the this object.
-       *   (function(a) {
-       *     return a;
-       *   }).bind(1, 2)();   -> returns 2; function is bound with 1 as the this object and 2 curried as the first parameter
-       *   (function(a, b) {
-       *     return a + b;
-       *   }).bind(1, 2)(3);  -> returns 5; function is bound with 1 as the this object, 2 curied as the first parameter and 3 passed as the second when calling the function
-       *
-       ***/
-      'bind': function(scope) {
-        // Optimized: no leaking arguments
-        var boundArgs = [], $i; for($i = 1; $i < arguments.length; $i++) boundArgs.push(arguments[$i]);
-        var fn = this, bound;
-        if (!isFunction(this)) {
-          throw new TypeError('Function.prototype.bind called on a non-function');
-        }
-        bound = function() {
-          // Optimized: no leaking arguments
-          var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-          return fn.apply(fn.prototype && this instanceof fn ? this : scope, boundArgs.concat(args));
-        }
-        bound.prototype = this.prototype;
-        return bound;
-      }
-
-    }, true, true);
-
-    /***
-     * @namespace Date
-     *
-     ***/
-
-    function hasISOStringSupport() {
-      var d = new Date(Date.UTC(2000, 0)), expected = '2000-01-01T00:00:00.000Z';
-      return !!d.toISOString && d.toISOString() === expected;
-    }
-
-    extend(Date, {
-
-       /***
-       * @method Date.now()
-       * @returns String
-       * @short Returns the number of milliseconds since January 1st, 1970 00:00:00 (UTC time).
-       * @extra Provided for browsers that do not support this method.
-       * @example
-       *
-       *   Date.now() -> ex. 1311938296231
-       *
-       ***/
-      'now': function() {
-        return new Date().getTime();
-      }
-
-    }, false, true);
-
-
-     /***
-     * @method toISOString()
-     * @returns String
-     * @short Formats the string to ISO8601 format.
-     * @extra This will always format as UTC time. Provided for browsers that do not support this method.
-     * @example
-     *
-     *   Date.create().toISOString() -> ex. 2011-07-05 12:24:55.528Z
-     *
-     ***
-     * @method toJSON()
-     * @returns String
-     * @short Returns a JSON representation of the date.
-     * @extra This is effectively an alias for %toISOString%. Will always return the date in UTC time. Provided for browsers that do not support this method.
-     * @example
-     *
-     *   Date.create().toJSON() -> ex. 2011-07-05 12:24:55.528Z
-     *
-     ***/
-    extendSimilar(Date, 'toISOString,toJSON', function(methods, name) {
-      methods[name] = function() {
-        return padNumber(this.getUTCFullYear(), 4) + '-' +
-               padNumber(this.getUTCMonth() + 1, 2) + '-' +
-               padNumber(this.getUTCDate(), 2) + 'T' +
-               padNumber(this.getUTCHours(), 2) + ':' +
-               padNumber(this.getUTCMinutes(), 2) + ':' +
-               padNumber(this.getUTCSeconds(), 2) + '.' +
-               padNumber(this.getUTCMilliseconds(), 3) + 'Z';
-      }
-    }, true, hasISOStringSupport());
-
-    /***
-     * @module Array
-     * @dependency core
-     * @description Array manipulation and traversal, "fuzzy matching" against elements, alphanumeric sorting and collation, enumerable methods on Object.
-     *
-     ***/
-
-    // Undefined array elements in < IE8 will not be visited by concat
-    // and so will not be copied. This means that non-sparse arrays will
-    // become sparse, so detect for this here.
-    var HAS_CONCAT_BUG = !('0' in [].concat(undefined).concat());
-
-    function regexMatcher(reg) {
-      reg = RegExp(reg);
-      return function (el) {
-        return reg.test(el);
-      }
-    }
-
-    function dateMatcher(d) {
-      var ms = d.getTime();
-      return function (el) {
-        return !!(el && el.getTime) && el.getTime() === ms;
-      }
-    }
-
-    function functionMatcher(fn) {
-      return function (el, i, arr) {
-        // Return true up front if match by reference
-        return el === fn || fn.call(this, el, i, arr);
-      }
-    }
-
-    function invertedArgsFunctionMatcher(fn) {
-      return function (value, key, obj) {
-        // Return true up front if match by reference
-        return value === fn || fn.call(obj, key, value, obj);
-      }
-    }
-
-    function fuzzyMatcher(obj, isObject) {
-      var matchers = {};
-      return function (el, i, arr) {
-        var key;
-        if (!isObjectType(el)) {
-          return false;
-        }
-        for(key in obj) {
-          matchers[key] = matchers[key] || getMatcher(obj[key], isObject);
-          if (matchers[key].call(arr, el[key], i, arr) === false) {
-            return false;
-          }
-        }
-        return true;
-      }
-    }
-
-    function defaultMatcher(f) {
-      return function (el) {
-        return el === f || isEqual(el, f);
-      }
-    }
-
-    function getMatcher(f, isObject) {
-      if (isPrimitiveType(f)) {
-        // Do nothing and fall through to the
-        // default matcher below.
-      } else if (isRegExp(f)) {
-        // Match against a regexp
-        return regexMatcher(f);
-      } else if (isDate(f)) {
-        // Match against a date. isEqual below should also
-        // catch this but matching directly up front for speed.
-        return dateMatcher(f);
-      } else if (isFunction(f)) {
-        // Match against a filtering function
-        if (isObject) {
-          return invertedArgsFunctionMatcher(f);
-        } else {
-          return functionMatcher(f);
-        }
-      } else if (isPlainObject(f)) {
-        // Match against a fuzzy hash or array.
-        return fuzzyMatcher(f, isObject);
-      }
-      // Default is standard isEqual
-      return defaultMatcher(f);
-    }
-
-    function transformArgument(el, map, context, mapArgs) {
-      if (!map) {
-        return el;
-      } else if (map.apply) {
-        return map.apply(context, mapArgs || []);
-      } else if (isArray(map)) {
-        return map.map(function(m) {
-          return transformArgument(el, m, context, mapArgs);
-        });
-      } else if (isFunction(el[map])) {
-        return el[map].call(el);
-      } else {
-        return el[map];
-      }
-    }
-
-    function compareValue(aVal, bVal) {
-      var cmp, i;
-      if (isString(aVal) && isString(bVal)) {
-        return collateStrings(aVal, bVal);
-      } else if (isArray(aVal) && isArray(bVal)) {
-        if (aVal.length < bVal.length) {
-          return -1;
-        } else if (aVal.length > bVal.length) {
-          return 1;
-        } else {
-          for(i = 0; i < aVal.length; i++) {
-            cmp = compareValue(aVal[i], bVal[i]);
-            if (cmp !== 0) {
-              return cmp;
-            }
-          }
-          return 0;
-        }
-      } else if (aVal < bVal) {
-        return -1;
-      } else if (aVal > bVal) {
-        return 1;
-      } else {
-        return 0;
-      }
-
-    }
-
-    // Basic array internal methods
-
-    function arrayEach(arr, fn, startIndex, loop) {
-      var index, i, length = +arr.length;
-      if (startIndex < 0) startIndex = arr.length + startIndex;
-      i = isNaN(startIndex) ? 0 : startIndex;
-      if (loop === true) {
-        length += i;
-      }
-      while(i < length) {
-        index = i % arr.length;
-        if (!(index in arr)) {
-          return iterateOverSparseArray(arr, fn, i, loop);
-        } else if (fn.call(arr, arr[index], index, arr) === false) {
+        if (isDefined(set.timestamp)) {
+          str = set.timestamp;
+          set = null;
           break;
         }
-        i++;
+
+        if (isDefined(set.ampm)) {
+          handleAmpm(set.ampm);
+        }
+
+        if (set.utc || isDefined(set.tzHour)) {
+          handleTimezoneOffset(set.tzHour, set.tzMinute, set.tzSign);
+        }
+
+        if (isDefined(set.shift) && isUndefined(set.unit)) {
+          // "next january", "next monday", etc
+          handleUnitlessShift();
+        }
+
+        if (isDefined(set.num) && isUndefined(set.unit)) {
+          // "the second of January", etc
+          handleUnitlessNum(set.num);
+        }
+
+        if (set.midday) {
+          // "noon" and "midnight"
+          handleMidday(set.midday);
+        }
+
+        if (isDefined(set.day)) {
+          // Relative day localizations such as "today" and "tomorrow".
+          handleRelativeDay(set.day);
+        }
+
+        if (isDefined(set.unit)) {
+          // "3 days ago", etc
+          handleRelativeUnit(set.unit);
+        }
+
+        if (set.edge) {
+          // "the end of January", etc
+          handleEdge(set.edge, set);
+        }
+
+        if (set.yearSign) {
+          set.year *= set.yearSign;
+        }
+
+        break;
       }
     }
 
-    function iterateOverSparseArray(arr, fn, fromIndex, loop) {
-      var indexes = [], i;
-      for(i in arr) {
-        if (isArrayIndex(arr, i) && i >= fromIndex) {
-          indexes.push(parseInt(i));
-        }
+    if (!set) {
+      // Fall back to native parsing
+      date = new Date(str);
+      if (getOwn(options, 'fromUTC')) {
+        // Falling back to system date here which cannot be parsed as UTC,
+        // so if we're forcing UTC then simply add the offset.
+        date.setTime(date.getTime() + (tzOffset(date) * MINUTES));
       }
-      arrayEach(indexes.sort(), function(index) {
-        return fn.call(arr, arr[index], index, arr);
+    } else if (relative) {
+      updateDate(date, set, false, 1);
+    } else {
+      if (_utc(date)) {
+        // UTC times can traverse into other days or even months,
+        // so preemtively reset the time here to prevent this.
+        resetTime(date);
+      }
+      updateDate(date, set, true, 0, getOwn(options, 'prefer'), weekdayDir);
+    }
+    fireCallbacks();
+    return date;
+  }
+
+  function handleAmpm(ampm) {
+    if (ampm === 1 && set.hour < 12) {
+      // If the time is 1pm-11pm advance the time by 12 hours.
+      set.hour += 12;
+    } else if (ampm === 0 && set.hour === 12) {
+      // If it is 12:00am then set the hour to 0.
+      set.hour = 0;
+    }
+  }
+
+  function handleTimezoneOffset(tzHour, tzMinute, tzSign) {
+    // Adjust for timezone offset
+    _utc(date, true);
+    var offset = (tzSign || 1) * ((tzHour || 0) * 60 + (tzMinute || 0));
+    if (offset) {
+      set.minute = (set.minute || 0) - offset;
+    }
+  }
+
+  function handleUnitlessShift() {
+    if (isDefined(set.month)) {
+      // "next January"
+      set.unit = YEAR_INDEX;
+    } else if (isDefined(set.weekday)) {
+      // "next Monday"
+      set.unit = WEEK_INDEX;
+    }
+  }
+
+  function handleUnitlessNum(num) {
+    if (isDefined(set.weekday)) {
+      // "The second Tuesday of March"
+      setOrdinalWeekday(num);
+    } else if (isDefined(set.month)) {
+      // "The second of March"
+      set.date = set.num;
+    }
+  }
+
+  function handleMidday(hour) {
+    set.hour = hour % 24;
+    if (hour > 23) {
+      // If the date has hours past 24, we need to prevent it from traversing
+      // into a new day as that would make it being part of a new week in
+      // ambiguous dates such as "Monday".
+      afterDateSet(function() {
+        advanceDate(date, 'date', trunc(hour / 24));
       });
-      return arr;
     }
+  }
 
-    function isArrayIndex(arr, i) {
-      return i in arr && toUInt32(i) == i && i != 0xffffffff;
+  function handleRelativeDay() {
+    resetTime(date);
+    if (isUndefined(set.unit)) {
+      set.unit = DAY_INDEX;
+      set.num  = set.day;
+      delete set.day;
     }
+  }
 
-    function toUInt32(i) {
-      return i >>> 0;
-    }
+  function handleRelativeUnit(unitIndex) {
+    var num = isDefined(set.num) ? set.num : 1;
 
-    function arrayFind(arr, f, startIndex, loop, returnIndex, context) {
-      var result, index, matcher;
-      if (arr.length > 0) {
-        matcher = getMatcher(f);
-        arrayEach(arr, function(el, i) {
-          if (matcher.call(context, el, i, arr)) {
-            result = el;
-            index = i;
-            return false;
-          }
-        }, startIndex, loop);
-      }
-      return returnIndex ? index : result;
-    }
-
-    function arrayFindAll(arr, f, index, loop) {
-      var result = [], matcher;
-      if (arr.length > 0) {
-        matcher = getMatcher(f);
-        arrayEach(arr, function(el, i, arr) {
-          if (matcher(el, i, arr)) {
-            result.push(el);
-          }
-        }, index, loop);
-      }
-      return result;
-    }
-
-    function arrayAdd(arr, el, index) {
-      if (!isNumber(+index) || isNaN(index)) index = arr.length;
-      Array.prototype.splice.apply(arr, [index, 0].concat(el));
-      return arr;
-    }
-
-    function arrayRemoveElement(arr, f) {
-      var i = 0, matcher = getMatcher(f);
-      while(i < arr.length) {
-        if (matcher(arr[i], i, arr)) {
-          arr.splice(i, 1);
-        } else {
-          i++;
-        }
-      }
-    }
-
-    function arrayUnique(arr, map) {
-      var result = [], o = {}, transformed;
-      arrayEach(arr, function(el, i) {
-        transformed = map ? transformArgument(el, map, arr, [el, i, arr]) : el;
-        if (!checkForElementInHashAndSet(o, transformed)) {
-          result.push(el);
-        }
-      })
-      return result;
-    }
-
-    function arrayIntersect(arr1, arr2, subtract) {
-      var result = [], o = {};
-      arrayEach(arr2, function(el) {
-        checkForElementInHashAndSet(o, el);
-      });
-      arrayEach(arr1, function(el) {
-        var stringified = stringify(el),
-            isReference = !objectIsMatchedByValue(el);
-        // Add the result to the array if:
-        // 1. We're subtracting intersections or it doesn't already exist in the result and
-        // 2. It exists in the compared array and we're adding, or it doesn't exist and we're removing.
-        if (elementExistsInHash(o, stringified, el, isReference) !== subtract) {
-          discardElementFromHash(o, stringified, el, isReference);
-          result.push(el);
-        }
-      });
-      return result;
-    }
-
-    function arrayFlatten(arr, level, current) {
-      level = level || Infinity;
-      current = current || 0;
-      var result = [];
-      arrayEach(arr, function(el) {
-        if (isArray(el) && current < level) {
-          result = arrayConcat(result, arrayFlatten(el, level, current + 1));
-        } else {
-          result.push(el);
-        }
-      });
-      return result;
-    }
-
-    function arrayGroupBy(arr, map, fn) {
-      var result = {}, key;
-      arrayEach(arr, function(el, index) {
-        key = transformArgument(el, map, arr, [el, index, arr]);
-        if (!result[key]) result[key] = [];
-        result[key].push(el);
-      });
-      if (fn) {
-        iterateOverObject(result, fn);
-      }
-      return result;
-    }
-
-    function arraySum(arr, map) {
-      if (map) {
-        arr = arr.map.apply(arr, [map]);
-      }
-      return arr.length > 0 ? arr.reduce(function(a,b) { return a + b; }) : 0;
-    }
-
-    function arrayCompact(arr, all) {
-      var result = [];
-      arrayEach(arr, function(el, i) {
-        if (all && el) {
-          result.push(el);
-        } else if (!all && el != null && el.valueOf() === el.valueOf()) {
-          result.push(el);
-        }
-      });
-      return result;
-    }
-
-    function arrayRandomize(arr) {
-      arr = arrayClone(arr);
-      var i = arr.length, j, x;
-      while(i) {
-        j = (Math.random() * i) | 0;
-        x = arr[--i];
-        arr[i] = arr[j];
-        arr[j] = x;
-      }
-      return arr;
-    }
-
-    function arrayClone(arr) {
-      var len = arr.length, clone = new Array(len);
-      for (var i = 0; i < len; i++) {
-        clone[i] = arr[i];
-      }
-      return clone;
-    }
-
-    function arrayConcat(arr1, arr2) {
-      if (HAS_CONCAT_BUG) {
-        return arraySafeConcat(arr1, arr2);
-      }
-      return arr1.concat(arr2);
-    }
-
-    // Avoids issues with concat in < IE8
-    function arraySafeConcat(arr, arg) {
-      var result = arrayClone(arr), len = result.length, arr2;
-      arr2 = isArray(arg) ? arg : [arg];
-      result.length += arr2.length;
-      for (var i = 0, len2 = arr2.length; i < len2; i++) {
-        result[len + i] = arr2[i];
-      }
-      return result;
-    }
-
-    function isArrayLike(obj) {
-      return hasProperty(obj, 'length') && !isString(obj) && !isPlainObject(obj);
-    }
-
-    function elementExistsInHash(hash, key, element, isReference) {
-      var exists = hasOwnProperty(hash, key);
-      if (isReference) {
-        if (!hash[key]) {
-          hash[key] = [];
-        }
-        exists = hash[key].indexOf(element) !== -1;
-      }
-      return exists;
-    }
-
-    function checkForElementInHashAndSet(hash, element) {
-      var stringified = stringify(element),
-          isReference = !objectIsMatchedByValue(element),
-          exists      = elementExistsInHash(hash, stringified, element, isReference);
-      if (isReference) {
-        hash[stringified].push(element);
+    // If a weekday is defined, there are 3 possible formats being applied:
+    //
+    // 1. "the day after monday": unit is days
+    // 2. "next monday": short for "next week monday", unit is weeks
+    // 3. "the 2nd monday of next month": unit is months
+    //
+    // In the first case, we need to set the weekday up front, as the day is
+    // relative to it. The second case also needs to be handled up front for
+    // formats like "next monday at midnight" which will have its weekday reset
+    // if not set up front. The last case will set up the params necessary to
+    // shift the weekday and allow separateAbsoluteUnits below to handle setting
+    // it after the date has been shifted.
+    if(isDefined(set.weekday)) {
+      if(unitIndex === MONTH_INDEX) {
+        setOrdinalWeekday(num);
+        num = 1;
       } else {
-        hash[stringified] = element;
-      }
-      return exists;
-    }
-
-    function discardElementFromHash(hash, key, element, isReference) {
-      var arr, i = 0;
-      if (isReference) {
-        arr = hash[key];
-        while(i < arr.length) {
-          if (arr[i] === element) {
-            arr.splice(i, 1);
-          } else {
-            i += 1;
-          }
-        }
-      } else {
-        delete hash[key];
+        updateDate(date, { weekday: set.weekday }, true);
+        delete set.weekday;
       }
     }
 
-    // Support methods
+    if (set.half) {
+      // Allow localized "half" as a standalone colloquialism. Purposely avoiding
+      // the locale number system to reduce complexity. The units "month" and
+      // "week" are purposely excluded in the English date formats below, as
+      // "half a week" and "half a month" are meaningless as exact dates.
+      num *= set.half;
+    }
 
-    function getMinOrMax(obj, map, which, all) {
-      var el,
-          key,
-          edge,
-          test,
-          result = [],
-          max = which === 'max',
-          min = which === 'min',
-          isArray = Array.isArray(obj);
-      for(key in obj) {
-        if (!obj.hasOwnProperty(key)) continue;
-        el   = obj[key];
-        test = transformArgument(el, map, obj, isArray ? [el, parseInt(key), obj] : []);
-        if (isUndefined(test)) {
-          throw new TypeError('Cannot compare with undefined');
+    if (isDefined(set.shift)) {
+      // Shift and unit, ie "next month", "last week", etc.
+      num *= set.shift;
+    } else if (set.sign) {
+      // Unit and sign, ie "months ago", "weeks from now", etc.
+      num *= set.sign;
+    }
+
+    if (isDefined(set.day)) {
+      // "the day after tomorrow"
+      num += set.day;
+      delete set.day;
+    }
+
+    // Formats like "the 15th of last month" or "6:30pm of next week"
+    // contain absolute units in addition to relative ones, so separate
+    // them here, remove them from the params, and set up a callback to
+    // set them after the relative ones have been set.
+    separateAbsoluteUnits(unitIndex);
+
+    // Finally shift the unit.
+    set[English.units[unitIndex]] = num;
+    relative = true;
+  }
+
+  function handleEdge(edge, params) {
+    var edgeIndex = params.unit, weekdayOfMonth;
+    if (!edgeIndex) {
+      // If we have "the end of January", then we need to find the unit index.
+      iterateOverHigherDateParams(params, function(unitName, val, unit, i) {
+        if (unitName === 'weekday' && isDefined(params.month)) {
+          // If both a month and weekday exist, then we have a format like
+          // "the last tuesday in November, 2012", where the "last" is still
+          // relative to the end of the month, so prevent the unit "weekday"
+          // from taking over.
+          return;
         }
-        if (test === edge) {
-          result.push(el);
-        } else if (isUndefined(edge) || (max && test > edge) || (min && test < edge)) {
-          result = [el];
-          edge = test;
-        }
-      }
-      if (!isArray) result = arrayFlatten(result, 1);
-      return all ? result : result[0];
-    }
-
-    // Alphanumeric collation helpers
-
-    function collateStrings(a, b) {
-      var aValue, bValue, aChar, bChar, aEquiv, bEquiv, index = 0, tiebreaker = 0;
-
-      var sortIgnore      = Array[AlphanumericSortIgnore];
-      var sortIgnoreCase  = Array[AlphanumericSortIgnoreCase];
-      var sortEquivalents = Array[AlphanumericSortEquivalents];
-      var sortOrder       = Array[AlphanumericSortOrder];
-      var naturalSort     = Array[AlphanumericSortNatural];
-
-      a = getCollationReadyString(a, sortIgnore, sortIgnoreCase);
-      b = getCollationReadyString(b, sortIgnore, sortIgnoreCase);
-
-      do {
-
-        aChar  = getCollationCharacter(a, index, sortEquivalents);
-        bChar  = getCollationCharacter(b, index, sortEquivalents);
-        aValue = getSortOrderIndex(aChar, sortOrder);
-        bValue = getSortOrderIndex(bChar, sortOrder);
-
-        if (aValue === -1 || bValue === -1) {
-          aValue = a.charCodeAt(index) || null;
-          bValue = b.charCodeAt(index) || null;
-          if (naturalSort && codeIsNumeral(aValue) && codeIsNumeral(bValue)) {
-            aValue = stringToNumber(a.slice(index));
-            bValue = stringToNumber(b.slice(index));
-          }
-        } else {
-          aEquiv = aChar !== a.charAt(index);
-          bEquiv = bChar !== b.charAt(index);
-          if (aEquiv !== bEquiv && tiebreaker === 0) {
-            tiebreaker = aEquiv - bEquiv;
-          }
-        }
-        index += 1;
-      } while(aValue != null && bValue != null && aValue === bValue);
-      if (aValue === bValue) return tiebreaker;
-      return aValue - bValue;
-    }
-
-    function getCollationReadyString(str, sortIgnore, sortIgnoreCase) {
-      if (!isString(str)) str = string(str);
-      if (sortIgnoreCase) {
-        str = str.toLowerCase();
-      }
-      if (sortIgnore) {
-        str = str.replace(sortIgnore, '');
-      }
-      return str;
-    }
-
-    function getCollationCharacter(str, index, sortEquivalents) {
-      var chr = str.charAt(index);
-      return sortEquivalents[chr] || chr;
-    }
-
-    function getSortOrderIndex(chr, sortOrder) {
-      if (!chr) {
-        return null;
-      } else {
-        return sortOrder.indexOf(chr);
-      }
-    }
-
-    var AlphanumericSort            = 'AlphanumericSort';
-    var AlphanumericSortOrder       = 'AlphanumericSortOrder';
-    var AlphanumericSortIgnore      = 'AlphanumericSortIgnore';
-    var AlphanumericSortIgnoreCase  = 'AlphanumericSortIgnoreCase';
-    var AlphanumericSortEquivalents = 'AlphanumericSortEquivalents';
-    var AlphanumericSortNatural     = 'AlphanumericSortNatural';
-
-
-
-    function buildEnhancements() {
-      var nativeMap = Array.prototype.map;
-      var callbackCheck = function() {
-        return arguments.length > 0 && !isFunction(arguments[0]);
-      };
-      extendSimilar(Array, 'every,some,filter,find,findIndex', function(methods, name) {
-        var nativeFn = Array.prototype[name]
-        methods[name] = function(f) {
-          var matcher = getMatcher(f);
-          return nativeFn.call(this, function(el, index, arr) {
-            return matcher(el, index, arr);
-          });
-        }
-      }, true, callbackCheck);
-      extend(Array, {
-        'map': function(map, context) {
-          var arr = this;
-          if (arguments.length < 2) {
-            context = arr;
-          }
-          return nativeMap.call(arr, function(el, index) {
-            return transformArgument(el, map, context, [el, index, arr]);
-          });
-        }
-      }, true, callbackCheck);
-    }
-
-    function buildAlphanumericSort() {
-      var order = 'AÁÀÂÃĄBCĆČÇDĎÐEÉÈĚÊËĘFGĞHıIÍÌİÎÏJKLŁMNŃŇÑOÓÒÔPQRŘSŚŠŞTŤUÚÙŮÛÜVWXYÝZŹŻŽÞÆŒØÕÅÄÖ';
-      var equiv = 'AÁÀÂÃÄ,CÇ,EÉÈÊË,IÍÌİÎÏ,OÓÒÔÕÖ,Sß,UÚÙÛÜ';
-      Array[AlphanumericSortOrder] = order.split('').map(function(str) {
-        return str + str.toLowerCase();
-      }).join('');
-      var equivalents = {};
-      arrayEach(equiv.split(','), function(set) {
-        var equivalent = set.charAt(0);
-        arrayEach(set.slice(1).split(''), function(chr) {
-          equivalents[chr] = equivalent;
-          equivalents[chr.toLowerCase()] = equivalent.toLowerCase();
-        });
+        edgeIndex = i;
       });
-      Array[AlphanumericSortNatural] = true;
-      Array[AlphanumericSortIgnoreCase] = true;
-      Array[AlphanumericSortEquivalents] = equivalents;
     }
-
-    extend(Array, {
-
-      /***
-       *
-       * @method Array.create(<obj1>, <obj2>, ...)
-       * @returns Array
-       * @short Alternate array constructor.
-       * @extra This method will create a single array by calling %concat% on all arguments passed. In addition to ensuring that an unknown variable is in a single, flat array (the standard constructor will create nested arrays, this one will not), it is also a useful shorthand to convert a function's arguments object into a standard array.
-       * @example
-       *
-       *   Array.create('one', true, 3)   -> ['one', true, 3]
-       *   Array.create(['one', true, 3]) -> ['one', true, 3]
-       *   Array.create(function(n) {
-       *     return arguments;
-       *   }('howdy', 'doody'));
-       *
-       ***/
-      'create': function() {
-        // Optimized: no leaking arguments
-        var result = [];
-        for (var i = 0; i < arguments.length; i++) {
-          var a = arguments[i];
-          if (isArgumentsObject(a) || isArrayLike(a)) {
-            for (var j = 0; j < a.length; j++) {
-              result.push(a[j]);
-            }
-            continue;
-          }
-          result = arrayConcat(result, a);
+    if (edgeIndex === MONTH_INDEX && isDefined(params.weekday)) {
+      // If a weekday in a month exists (as described above),
+      // then set it up to be set after the date has been shifted.
+      weekdayOfMonth = params.weekday;
+      delete params.weekday;
+    }
+    afterDateSet(function() {
+      var stopIndex;
+      // "edge" values that are at the very edge are "2" so the beginning of the
+      // year is -2 and the end of the year is 2. Conversely, the "last day" is
+      // actually 00:00am so it is 1. -1 is reserved but unused for now.
+      if (edge < 0) {
+        moveToBeginningOfUnit(date, edgeIndex, getOwn(options, 'locale'));
+      } else if (edge > 0) {
+        if (edge === 1) {
+          stopIndex = DAY_INDEX;
+          moveToBeginningOfUnit(date, DAY_INDEX);
         }
-        return result;
+        moveToEndOfUnit(date, edgeIndex, getOwn(options, 'locale'), stopIndex);
       }
-
-    }, false);
-
-    extend(Array, {
-
-      /***
-       * @method find(<f>, [context])
-       * @returns Mixed
-       * @short Returns the first element that matches <f>.
-       * @extra [context] is the %this% object if passed. When <f> is a function, will use native implementation if it exists. <f> will also match a string, number, array, object, or alternately test against a function or regex. This method implements %array_matching%.
-       * @example
-       *
-       *   [{a:1,b:2},{a:1,b:3},{a:1,b:4}].find(function(n) {
-       *     return n['a'] == 1;
-       *   });                                  -> {a:1,b:3}
-       *   ['cuba','japan','canada'].find(/^c/) -> 'cuba'
-       *
-       ***/
-      'find': function(f) {
-        var context = arguments[1];
-        checkCallback(f);
-        for (var i = 0, len = this.length; i < len; i++) {
-          if (f.call(context, this[i], i, this)) {
-            return this[i];
-          }
-        }
-      },
-
-      /***
-       * @method findIndex(<f>, [context])
-       * @returns Number
-       * @short Returns the index of the first element that matches <f> or -1 if not found.
-       * @extra [context] is the %this% object if passed. When <f> is a function, will use native implementation if it exists. <f> will also match a string, number, array, object, or alternately test against a function or regex. This method implements %array_matching%.
-       *
-       * @example
-       *
-       *   [1,2,3,4].findIndex(function(n) {
-       *     return n % 2 == 0;
-       *   }); -> 1
-       *   [1,2,3,4].findIndex(3);               -> 2
-       *   ['one','two','three'].findIndex(/t/); -> 1
-       *
-       ***/
-      'findIndex': function(f) {
-        var index, context = arguments[1];
-        checkCallback(f);
-        for (var i = 0, len = this.length; i < len; i++) {
-          if (f.call(context, this[i], i, this)) {
-            return i;
-          }
-        }
-        return -1;
+      if (isDefined(weekdayOfMonth)) {
+        setWeekday(date, weekdayOfMonth, -edge);
+        resetTime(date);
       }
-
-    }, true, true);
-
-    extend(Array, {
-
-      /***
-       * @method findFrom(<f>, [index] = 0, [loop] = false)
-       * @returns Array
-       * @short Returns any element that matches <f>, beginning from [index].
-       * @extra <f> will match a string, number, array, object, or alternately test against a function or regex. Will continue from index = 0 if [loop] is true. This method implements %array_matching%.
-       * @example
-       *
-       *   ['cuba','japan','canada'].findFrom(/^c/, 2) -> 'canada'
-       *
-       ***/
-      'findFrom': function(f, index, loop) {
-        return arrayFind(this, f, index, loop);
-      },
-
-      /***
-       * @method findIndexFrom(<f>, [index] = 0, [loop] = false)
-       * @returns Array
-       * @short Returns the index of any element that matches <f>, beginning from [index].
-       * @extra <f> will match a string, number, array, object, or alternately test against a function or regex. Will continue from index = 0 if [loop] is true. This method implements %array_matching%.
-       * @example
-       *
-       *   ['cuba','japan','canada'].findIndexFrom(/^c/, 2) -> 2
-       *
-       ***/
-      'findIndexFrom': function(f, index, loop) {
-        var index = arrayFind(this, f, index, loop, true);
-        return isUndefined(index) ? -1 : index;
-      },
-
-      /***
-       * @method findAll(<f>, [index] = 0, [loop] = false)
-       * @returns Array
-       * @short Returns all elements that match <f>.
-       * @extra <f> will match a string, number, array, object, or alternately test against a function or regex. Starts at [index], and will continue once from index = 0 if [loop] is true. This method implements %array_matching%.
-       * @example
-       *
-       *   [{a:1,b:2},{a:1,b:3},{a:2,b:4}].findAll(function(n) {
-       *     return n['a'] == 1;
-       *   });                                        -> [{a:1,b:3},{a:1,b:4}]
-       *   ['cuba','japan','canada'].findAll(/^c/)    -> 'cuba','canada'
-       *   ['cuba','japan','canada'].findAll(/^c/, 2) -> 'canada'
-       *
-       ***/
-      'findAll': function(f, index, loop) {
-        return arrayFindAll(this, f, index, loop);
-      },
-
-      /***
-       * @method count(<f>)
-       * @returns Number
-       * @short Counts all elements in the array that match <f>.
-       * @extra <f> will match a string, number, array, object, or alternately test against a function or regex. This method implements %array_matching%.
-       * @example
-       *
-       *   [1,2,3,1].count(1)       -> 2
-       *   ['a','b','c'].count(/b/) -> 1
-       *   [{a:1},{b:2}].count(function(n) {
-       *     return n['a'] > 1;
-       *   });                      -> 0
-       *
-       ***/
-      'count': function(f) {
-        if (isUndefined(f)) return this.length;
-        return arrayFindAll(this, f).length;
-      },
-
-      /***
-       * @method removeAt(<start>, [end])
-       * @returns Array
-       * @short Removes element at <start>. If [end] is specified, removes the range between <start> and [end]. This method will change the array! If you don't intend the array to be changed use %clone% first.
-       * @example
-       *
-       *   ['a','b','c'].removeAt(0) -> ['b','c']
-       *   [1,2,3,4].removeAt(1, 3)  -> [1]
-       *
-       ***/
-      'removeAt': function(start, end) {
-        if (isUndefined(start)) return this;
-        if (isUndefined(end))   end = start;
-        this.splice(start, end - start + 1);
-        return this;
-      },
-
-      /***
-       * @method include(<el>, [index])
-       * @returns Array
-       * @short Adds <el> to the array.
-       * @extra This is a non-destructive alias for %add%. It will not change the original array.
-       * @example
-       *
-       *   [1,2,3,4].include(5)       -> [1,2,3,4,5]
-       *   [1,2,3,4].include(8, 1)    -> [1,8,2,3,4]
-       *   [1,2,3,4].include([5,6,7]) -> [1,2,3,4,5,6,7]
-       *
-       ***/
-      'include': function(el, index) {
-        return arrayAdd(arrayClone(this), el, index);
-      },
-
-      /***
-       * @method exclude([f1], [f2], ...)
-       * @returns Array
-       * @short Removes any element in the array that matches [f1], [f2], etc.
-       * @extra This is a non-destructive alias for %remove%. It will not change the original array. This method implements %array_matching%.
-       * @example
-       *
-       *   [1,2,3].exclude(3)         -> [1,2]
-       *   ['a','b','c'].exclude(/b/) -> ['a','c']
-       *   [{a:1},{b:2}].exclude(function(n) {
-       *     return n['a'] == 1;
-       *   });                       -> [{b:2}]
-       *
-       ***/
-      'exclude': function() {
-        var arr = arrayClone(this);
-        for (var i = 0; i < arguments.length; i++) {
-          arrayRemoveElement(arr, arguments[i]);
-        }
-        return arr;
-      },
-
-      /***
-       * @method clone()
-       * @returns Array
-       * @short Makes a shallow clone of the array.
-       * @example
-       *
-       *   [1,2,3].clone() -> [1,2,3]
-       *
-       ***/
-      'clone': function() {
-        return arrayClone(this);
-      },
-
-      /***
-       * @method unique([map] = null)
-       * @returns Array
-       * @short Removes all duplicate elements in the array.
-       * @extra [map] may be a function mapping the value to be uniqued on or a string acting as a shortcut. This is most commonly used when you have a key that ensures the object's uniqueness, and don't need to check all fields. This method will also correctly operate on arrays of objects.
-       * @example
-       *
-       *   [1,2,2,3].unique()                 -> [1,2,3]
-       *   [{foo:'bar'},{foo:'bar'}].unique() -> [{foo:'bar'}]
-       *   [{foo:'bar'},{foo:'bar'}].unique(function(obj){
-       *     return obj.foo;
-       *   }); -> [{foo:'bar'}]
-       *   [{foo:'bar'},{foo:'bar'}].unique('foo') -> [{foo:'bar'}]
-       *
-       ***/
-      'unique': function(map) {
-        return arrayUnique(this, map);
-      },
-
-      /***
-       * @method flatten([limit] = Infinity)
-       * @returns Array
-       * @short Returns a flattened, one-dimensional copy of the array.
-       * @extra You can optionally specify a [limit], which will only flatten that depth.
-       * @example
-       *
-       *   [[1], 2, [3]].flatten()      -> [1,2,3]
-       *   [['a'],[],'b','c'].flatten() -> ['a','b','c']
-       *
-       ***/
-      'flatten': function(limit) {
-        return arrayFlatten(this, limit);
-      },
-
-      /***
-       * @method union([a1], [a2], ...)
-       * @returns Array
-       * @short Returns an array containing all elements in all arrays with duplicates removed.
-       * @extra This method will also correctly operate on arrays of objects.
-       * @example
-       *
-       *   [1,3,5].union([5,7,9])     -> [1,3,5,7,9]
-       *   ['a','b'].union(['b','c']) -> ['a','b','c']
-       *
-       ***/
-      'union': function() {
-        // Optimized: no leaking arguments (flat)
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args = args.concat(arguments[$i]);
-        return arrayUnique(arrayConcat(this, args));
-      },
-
-      /***
-       * @method intersect([a1], [a2], ...)
-       * @returns Array
-       * @short Returns an array containing the elements all arrays have in common.
-       * @extra This method will also correctly operate on arrays of objects.
-       * @example
-       *
-       *   [1,3,5].intersect([5,7,9])   -> [5]
-       *   ['a','b'].intersect('b','c') -> ['b']
-       *
-       ***/
-      'intersect': function() {
-        // Optimized: no leaking arguments (flat)
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args = args.concat(arguments[$i]);
-        return arrayIntersect(this, args, false);
-      },
-
-      /***
-       * @method subtract([a1], [a2], ...)
-       * @returns Array
-       * @short Subtracts from the array all elements in [a1], [a2], etc.
-       * @extra This method will also correctly operate on arrays of objects.
-       * @example
-       *
-       *   [1,3,5].subtract([5,7,9])   -> [1,3]
-       *   [1,3,5].subtract([3],[5])   -> [1]
-       *   ['a','b'].subtract('b','c') -> ['a']
-       *
-       ***/
-      'subtract': function(a) {
-        // Optimized: no leaking arguments (flat)
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args = args.concat(arguments[$i]);
-        return arrayIntersect(this, args, true);
-      },
-
-      /***
-       * @method at(<index>, [loop] = true)
-       * @returns Mixed
-       * @short Gets the element(s) at a given index.
-       * @extra When [loop] is true, overshooting the end of the array (or the beginning) will begin counting from the other end. As an alternate syntax, passing multiple indexes will get the elements at those indexes.
-       * @example
-       *
-       *   [1,2,3].at(0)        -> 1
-       *   [1,2,3].at(2)        -> 3
-       *   [1,2,3].at(4)        -> 2
-       *   [1,2,3].at(4, false) -> null
-       *   [1,2,3].at(-1)       -> 3
-       *   [1,2,3].at(0,1)      -> [1,2]
-       *
-       ***/
-      'at': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return getEntriesForIndexes(this, args);
-      },
-
-      /***
-       * @method first([num] = 1)
-       * @returns Mixed
-       * @short Returns the first element(s) in the array.
-       * @extra When <num> is passed, returns the first <num> elements in the array.
-       * @example
-       *
-       *   [1,2,3].first()        -> 1
-       *   [1,2,3].first(2)       -> [1,2]
-       *
-       ***/
-      'first': function(num) {
-        if (isUndefined(num)) return this[0];
-        if (num < 0) num = 0;
-        return this.slice(0, num);
-      },
-
-      /***
-       * @method last([num] = 1)
-       * @returns Mixed
-       * @short Returns the last element(s) in the array.
-       * @extra When <num> is passed, returns the last <num> elements in the array.
-       * @example
-       *
-       *   [1,2,3].last()        -> 3
-       *   [1,2,3].last(2)       -> [2,3]
-       *
-       ***/
-      'last': function(num) {
-        if (isUndefined(num)) return this[this.length - 1];
-        var start = this.length - num < 0 ? 0 : this.length - num;
-        return this.slice(start);
-      },
-
-      /***
-       * @method from(<index>)
-       * @returns Array
-       * @short Returns a slice of the array from <index>.
-       * @example
-       *
-       *   [1,2,3].from(1)  -> [2,3]
-       *   [1,2,3].from(2)  -> [3]
-       *
-       ***/
-      'from': function(num) {
-        return this.slice(num);
-      },
-
-      /***
-       * @method to(<index>)
-       * @returns Array
-       * @short Returns a slice of the array up to <index>.
-       * @example
-       *
-       *   [1,3,5].to(1)  -> [1]
-       *   [1,3,5].to(2)  -> [1,3]
-       *
-       ***/
-      'to': function(num) {
-        if (isUndefined(num)) num = this.length;
-        return this.slice(0, num);
-      },
-
-      /***
-       * @method min([map], [all] = false)
-       * @returns Mixed
-       * @short Returns the element in the array with the lowest value.
-       * @extra [map] may be a function mapping the value to be checked or a string acting as a shortcut. If [all] is true, will return all min values in an array.
-       * @example
-       *
-       *   [1,2,3].min()                          -> 1
-       *   ['fee','fo','fum'].min('length')       -> 'fo'
-       *   ['fee','fo','fum'].min('length', true) -> ['fo']
-       *   ['fee','fo','fum'].min(function(n) {
-       *     return n.length;
-       *   });                              -> ['fo']
-       *   [{a:3,a:2}].min(function(n) {
-       *     return n['a'];
-       *   });                              -> [{a:2}]
-       *
-       ***/
-      'min': function(map, all) {
-        return getMinOrMax(this, map, 'min', all);
-      },
-
-      /***
-       * @method max([map], [all] = false)
-       * @returns Mixed
-       * @short Returns the element in the array with the greatest value.
-       * @extra [map] may be a function mapping the value to be checked or a string acting as a shortcut. If [all] is true, will return all max values in an array.
-       * @example
-       *
-       *   [1,2,3].max()                          -> 3
-       *   ['fee','fo','fum'].max('length')       -> 'fee'
-       *   ['fee','fo','fum'].max('length', true) -> ['fee']
-       *   [{a:3,a:2}].max(function(n) {
-       *     return n['a'];
-       *   });                              -> {a:3}
-       *
-       ***/
-      'max': function(map, all) {
-        return getMinOrMax(this, map, 'max', all);
-      },
-
-      /***
-       * @method least([map])
-       * @returns Array
-       * @short Returns the elements in the array with the least commonly occuring value.
-       * @extra [map] may be a function mapping the value to be checked or a string acting as a shortcut.
-       * @example
-       *
-       *   [3,2,2].least()                   -> [3]
-       *   ['fe','fo','fum'].least('length') -> ['fum']
-       *   [{age:35,name:'ken'},{age:12,name:'bob'},{age:12,name:'ted'}].least(function(n) {
-       *     return n.age;
-       *   });                               -> [{age:35,name:'ken'}]
-       *
-       ***/
-      'least': function(map, all) {
-        return getMinOrMax(arrayGroupBy(this, map), 'length', 'min', all);
-      },
-
-      /***
-       * @method most([map])
-       * @returns Array
-       * @short Returns the elements in the array with the most commonly occuring value.
-       * @extra [map] may be a function mapping the value to be checked or a string acting as a shortcut.
-       * @example
-       *
-       *   [3,2,2].most()                   -> [2]
-       *   ['fe','fo','fum'].most('length') -> ['fe','fo']
-       *   [{age:35,name:'ken'},{age:12,name:'bob'},{age:12,name:'ted'}].most(function(n) {
-       *     return n.age;
-       *   });                              -> [{age:12,name:'bob'},{age:12,name:'ted'}]
-       *
-       ***/
-      'most': function(map, all) {
-        return getMinOrMax(arrayGroupBy(this, map), 'length', 'max', all);
-      },
-
-      /***
-       * @method sum([map])
-       * @returns Number
-       * @short Sums all values in the array.
-       * @extra [map] may be a function mapping the value to be summed or a string acting as a shortcut.
-       * @example
-       *
-       *   [1,2,2].sum()                           -> 5
-       *   [{age:35},{age:12},{age:12}].sum(function(n) {
-       *     return n.age;
-       *   });                                     -> 59
-       *   [{age:35},{age:12},{age:12}].sum('age') -> 59
-       *
-       ***/
-      'sum': function(map) {
-        return arraySum(this, map);
-      },
-
-      /***
-       * @method average([map])
-       * @returns Number
-       * @short Gets the mean average for all values in the array.
-       * @extra [map] may be a function mapping the value to be averaged or a string acting as a shortcut.
-       * @example
-       *
-       *   [1,2,3].average()                           -> 2
-       *   [{age:35},{age:11},{age:11}].average(function(n) {
-       *     return n.age;
-       *   });                                         -> 19
-       *   [{age:35},{age:11},{age:11}].average('age') -> 19
-       *
-       ***/
-      'average': function(map) {
-        return this.length > 0 ? arraySum(this, map) / this.length : 0;
-      },
-
-      /***
-       * @method inGroups(<num>, [padding])
-       * @returns Array
-       * @short Groups the array into <num> arrays.
-       * @extra [padding] specifies a value with which to pad the last array so that they are all equal length.
-       * @example
-       *
-       *   [1,2,3,4,5,6,7].inGroups(3)         -> [ [1,2,3], [4,5,6], [7] ]
-       *   [1,2,3,4,5,6,7].inGroups(3, 'none') -> [ [1,2,3], [4,5,6], [7,'none','none'] ]
-       *
-       ***/
-      'inGroups': function(num, padding) {
-        var pad = arguments.length > 1;
-        var arr = this;
-        var result = [];
-        var divisor = ceil(this.length / num);
-        simpleRepeat(num, function(i) {
-          var index = i * divisor;
-          var group = arr.slice(index, index + divisor);
-          if (pad && group.length < divisor) {
-            simpleRepeat(divisor - group.length, function() {
-              group.push(padding);
-            });
-          }
-          result.push(group);
-        });
-        return result;
-      },
-
-      /***
-       * @method inGroupsOf(<num>, [padding] = null)
-       * @returns Array
-       * @short Groups the array into arrays of <num> elements each.
-       * @extra [padding] specifies a value with which to pad the last array so that they are all equal length.
-       * @example
-       *
-       *   [1,2,3,4,5,6,7].inGroupsOf(4)         -> [ [1,2,3,4], [5,6,7] ]
-       *   [1,2,3,4,5,6,7].inGroupsOf(4, 'none') -> [ [1,2,3,4], [5,6,7,'none'] ]
-       *
-       ***/
-      'inGroupsOf': function(num, padding) {
-        var result = [], len = this.length, arr = this, group;
-        if (len === 0 || num === 0) return arr;
-        if (isUndefined(num)) num = 1;
-        if (isUndefined(padding)) padding = null;
-        simpleRepeat(ceil(len / num), function(i) {
-          group = arr.slice(num * i, num * i + num);
-          while(group.length < num) {
-            group.push(padding);
-          }
-          result.push(group);
-        });
-        return result;
-      },
-
-      /***
-       * @method isEmpty()
-       * @returns Boolean
-       * @short Returns true if the array is empty.
-       * @extra This is true if the array has a length of zero, or contains only %undefined%, %null%, or %NaN%.
-       * @example
-       *
-       *   [].isEmpty()               -> true
-       *   [null,undefined].isEmpty() -> true
-       *
-       ***/
-      'isEmpty': function() {
-        return arrayCompact(this).length == 0;
-      },
-
-      /***
-       * @method sortBy(<map>, [desc] = false)
-       * @returns Array
-       * @short Returns a copy of the array sorted by <map>.
-       * @extra <map> may be a function, a string acting as a shortcut, an array (comparison by multiple values), or blank (direct comparison of array values). [desc] will sort the array in descending order. When the field being sorted on is a string, the resulting order will be determined by an internal collation algorithm that is optimized for major Western languages, but can be customized. For more information see %array_sorting%.
-       * @example
-       *
-       *   ['world','a','new'].sortBy('length')       -> ['a','new','world']
-       *   ['world','a','new'].sortBy('length', true) -> ['world','new','a']
-       *   [{age:72},{age:13},{age:18}].sortBy(function(n) {
-       *     return n.age;
-       *   });                                        -> [{age:13},{age:18},{age:72}]
-       *
-       ***/
-      'sortBy': function(map, desc) {
-        var arr = arrayClone(this);
-        arr.sort(function(a, b) {
-          var aProperty = transformArgument(a, map, arr, [a]);
-          var bProperty = transformArgument(b, map, arr, [b]);
-          return compareValue(aProperty, bProperty) * (desc ? -1 : 1);
-        });
-        return arr;
-      },
-
-      /***
-       * @method randomize()
-       * @returns Array
-       * @short Returns a copy of the array with the elements randomized.
-       * @extra Uses Fisher-Yates algorithm.
-       * @example
-       *
-       *   [1,2,3,4].randomize()  -> [?,?,?,?]
-       *
-       ***/
-      'randomize': function() {
-        return arrayRandomize(this);
-      },
-
-      /***
-       * @method zip([arr1], [arr2], ...)
-       * @returns Array
-       * @short Merges multiple arrays together.
-       * @extra This method "zips up" smaller arrays into one large whose elements are "all elements at index 0", "all elements at index 1", etc. Useful when you have associated data that is split over separated arrays. If the arrays passed have more elements than the original array, they will be discarded. If they have fewer elements, the missing elements will filled with %null%.
-       * @example
-       *
-       *   [1,2,3].zip([4,5,6])                                       -> [[1,2], [3,4], [5,6]]
-       *   ['Martin','John'].zip(['Luther','F.'], ['King','Kennedy']) -> [['Martin','Luther','King'], ['John','F.','Kennedy']]
-       *
-       ***/
-      'zip': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return this.map(function(el, i) {
-          return arrayConcat([el], args.map(function(k) {
-            return (i in k) ? k[i] : null;
-          }));
-        });
-      },
-
-      /***
-       * @method sample([num])
-       * @returns Mixed
-       * @short Returns a random element from the array.
-       * @extra If [num] is passed, will return [num] samples from the array.
-       * @example
-       *
-       *   [1,2,3,4,5].sample()  -> // Random element
-       *   [1,2,3,4,5].sample(3) -> // Array of 3 random elements
-       *
-       ***/
-      'sample': function(num) {
-        var arr = arrayRandomize(this);
-        return arguments.length > 0 ? arr.slice(0, num) : arr[0];
-      },
-
-      /***
-       * @method each(<fn>, [index] = 0, [loop] = false)
-       * @returns Array
-       * @short Runs <fn> against each element in the array. Enhanced version of %Array#forEach%.
-       * @extra Parameters passed to <fn> are identical to %forEach%, ie. the first parameter is the current element, second parameter is the current index, and third parameter is the array itself. If <fn> returns %false% at any time it will break out of the loop. Once %each% finishes, it will return the array. If [index] is passed, <fn> will begin at that index and work its way to the end. If [loop] is true, it will then start over from the beginning of the array and continue until it reaches [index] - 1.
-       * @example
-       *
-       *   [1,2,3,4].each(function(n) {
-       *     // Called 4 times: 1, 2, 3, 4
-       *   });
-       *   [1,2,3,4].each(function(n) {
-       *     // Called 4 times: 3, 4, 1, 2
-       *   }, 2, true);
-       *
-       ***/
-      'each': function(fn, index, loop) {
-        arrayEach(this, fn, index, loop);
-        return this;
-      },
-
-      /***
-       * @method add(<el>, [index])
-       * @returns Array
-       * @short Adds <el> to the array.
-       * @extra If [index] is specified, it will add at [index], otherwise adds to the end of the array. %add% behaves like %concat% in that if <el> is an array it will be joined, not inserted. This method will change the array! Use %include% for a non-destructive alias. Also, %insert% is provided as an alias that reads better when using an index.
-       * @example
-       *
-       *   [1,2,3,4].add(5)       -> [1,2,3,4,5]
-       *   [1,2,3,4].add([5,6,7]) -> [1,2,3,4,5,6,7]
-       *   [1,2,3,4].insert(8, 1) -> [1,8,2,3,4]
-       *
-       ***/
-      'add': function(el, index) {
-        return arrayAdd(this, el, index);
-      },
-
-      /***
-       * @method remove([f1], [f2], ...)
-       * @returns Array
-       * @short Removes any element in the array that matches [f1], [f2], etc.
-       * @extra Will match a string, number, array, object, or alternately test against a function or regex. This method will change the array! Use %exclude% for a non-destructive alias. This method implements %array_matching%.
-       * @example
-       *
-       *   [1,2,3].remove(3)         -> [1,2]
-       *   ['a','b','c'].remove(/b/) -> ['a','c']
-       *   [{a:1},{b:2}].remove(function(n) {
-       *     return n['a'] == 1;
-       *   });                       -> [{b:2}]
-       *
-       ***/
-      'remove': function() {
-        for (var i = 0; i < arguments.length; i++) {
-          arrayRemoveElement(this, arguments[i]);
-        }
-        return this;
-      },
-
-      /***
-       * @method compact([all] = false)
-       * @returns Array
-       * @short Removes all instances of %undefined%, %null%, and %NaN% from the array.
-       * @extra If [all] is %true%, all "falsy" elements will be removed. This includes empty strings, 0, and false.
-       * @example
-       *
-       *   [1,null,2,undefined,3].compact() -> [1,2,3]
-       *   [1,'',2,false,3].compact()       -> [1,'',2,false,3]
-       *   [1,'',2,false,3].compact(true)   -> [1,2,3]
-       *   [null, [null, 'bye']].compact()  -> ['hi', [null, 'bye']]
-       *
-       ***/
-      'compact': function(all) {
-        return arrayCompact(this, all);
-      },
-
-      /***
-       * @method groupBy(<map>, [fn])
-       * @returns Object
-       * @short Groups the array by <map>.
-       * @extra Will return an object with keys equal to the grouped values. <map> may be a mapping function, or a string acting as a shortcut. Optionally calls [fn] for each group.
-       * @example
-       *
-       *   ['fee','fi','fum'].groupBy('length') -> { 2: ['fi'], 3: ['fee','fum'] }
-       *   [{age:35,name:'ken'},{age:15,name:'bob'}].groupBy(function(n) {
-       *     return n.age;
-       *   });                                  -> { 35: [{age:35,name:'ken'}], 15: [{age:15,name:'bob'}] }
-       *
-       ***/
-      'groupBy': function(map, fn) {
-        return arrayGroupBy(this, map, fn);
-      },
-
-      /***
-       * @method none(<f>)
-       * @returns Boolean
-       * @short Returns true if none of the elements in the array match <f>.
-       * @extra <f> will match a string, number, array, object, or alternately test against a function or regex. This method implements %array_matching%.
-       * @example
-       *
-       *   [1,2,3].none(5)         -> true
-       *   ['a','b','c'].none(/b/) -> false
-       *   [{a:1},{b:2}].none(function(n) {
-       *     return n['a'] > 1;
-       *   });                     -> true
-       *
-       ***/
-      'none': function(f) {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return !Array.prototype.some.apply(this, args);
-      }
-
-
     });
-
-
-    function buildAliases() {
-      /***
-       * @method all()
-       * @alias every
-       *
-       ***/
-      alias(Array, 'all', 'every');
-
-      /*** @method any()
-       * @alias some
-       *
-       ***/
-      alias(Array, 'any', 'some');
-
-      /***
-       * @method insert()
-       * @alias add
-       *
-       ***/
-      alias(Array, 'insert', 'add');
+    if (edgeIndex === MONTH_INDEX) {
+      params.specificity = DAY_INDEX;
+    } else {
+      params.specificity = edgeIndex - 1;
     }
+  }
 
+  function setOrdinalWeekday(num) {
+    // If we have "the 2nd Tuesday of June", then pass the "weekdayDir"
+    // flag along to updateDate so that the date does not accidentally traverse
+    // into the previous month. This needs to be independent of the "prefer"
+    // flag because we are only ensuring that the weekday is in the future, not
+    // the entire date.
+    set.weekday = 7 * (num - 1) + set.weekday;
+    set.date = 1;
+    weekdayDir = 1;
+  }
 
-    /***
-     * @namespace Object
-     *
-     ***/
+  function separateAbsoluteUnits(unitIndex) {
+    var params;
 
-    /***
-     * @method [enumerable](<obj>)
-     * @returns Boolean
-     * @short Enumerable methods in the Array package are also available to the Object class. They will perform their normal operations for every property in <obj>.
-     * @extra In cases where a callback is used, instead of %element, index%, the callback will instead be passed %key, value%. Enumerable methods are also available to %extended objects% as instance methods.
-     *
-     * @set
-     *   any
-     *   all
-     *   none
-     *   count
-     *   find
-     *   findAll
-     *   isEmpty
-     *   sum
-     *   average
-     *   min
-     *   max
-     *   least
-     *   most
-     *
-     * @example
-     *
-     *   Object.any({foo:'bar'}, 'bar')            -> true
-     *   Object.extended({foo:'bar'}).any('bar')   -> true
-     *   Object.isEmpty({})                        -> true
-     *   Object.map({ fred: { age: 52 } }, 'age'); -> { fred: 52 }
-     *
-     ***/
-
-    function buildEnumerableMethods(names, mapping) {
-      extendSimilar(Object, names, function(methods, name) {
-        var unwrapped = SugarMethods[Array][name].fn;
-        methods[name] = function(obj, arg1, arg2) {
-          var result, coerced = keysWithObjectCoercion(obj), matcher;
-          if (!mapping) {
-            matcher = getMatcher(arg1, true);
-          }
-          result = unwrapped.call(coerced, function(key) {
-            var value = obj[key];
-            if (mapping) {
-              return transformArgument(value, arg1, obj, [key, value, obj]);
-            } else {
-              return matcher(value, key, obj);
-            }
-          }, arg2);
-          if (isArray(result)) {
-            // The method has returned an array of keys so use this array
-            // to build up the resulting object in the form we want it in.
-            result = result.reduce(function(o, key, i) {
-              o[key] = obj[key];
-              return o;
-            }, {});
-          }
-          return result;
-        };
-      }, false);
-      buildObjectInstanceMethods(names, Hash);
-    }
-
-    function exportSortAlgorithm() {
-      Array[AlphanumericSort] = collateStrings;
-    }
-
-    var EnumerableFindingMethods = 'any,all,none,count,find,findAll,isEmpty'.split(',');
-    var EnumerableMappingMethods = 'sum,average,min,max,least,most'.split(',');
-
-    buildEnhancements();
-    buildAliases();
-    buildAlphanumericSort();
-    buildEnumerableMethods(EnumerableFindingMethods);
-    buildEnumerableMethods(EnumerableMappingMethods, true);
-    exportSortAlgorithm();
-
-    /***
-     * @module Date
-     * @dependency core
-     * @description Date parsing and formatting, relative formats like "1 minute ago", Number methods like "daysAgo", localization support with default English locale definition.
-     *
-     ***/
-
-    var English;
-    var CurrentLocalization;
-
-    var TimeFormat = ['ampm','hour','minute','second','ampm','utc','offsetSign','offsetHours','offsetMinutes','ampm'];
-    var DecimalReg = '(?:[,.]\\d+)?';
-    var HoursReg   = '\\d{1,2}' + DecimalReg;
-    var SixtyReg   = '[0-5]\\d' + DecimalReg;
-    var RequiredTime = '({t})?\\s*('+HoursReg+')(?:{h}('+SixtyReg+')?{m}(?::?('+SixtyReg+'){s})?\\s*(?:({t})|(Z)|(?:([+-])(\\d{2,2})(?::?(\\d{2,2}))?)?)?|\\s*({t}))';
-
-    var KanjiDigits = '〇一二三四五六七八九十百千万';
-    var AsianDigitMap = {};
-    var AsianDigitReg;
-
-    var DateArgumentUnits;
-    var DateUnitsReversed;
-    var CoreDateFormats = [];
-    var CompiledOutputFormats = {};
-
-    var DateFormatTokens = {
-
-      'yyyy': function(d) {
-        return callDateGet(d, 'FullYear');
-      },
-
-      'yy': function(d) {
-        return callDateGet(d, 'FullYear').toString().slice(-2);
-      },
-
-      'ord': function(d) {
-        var date = callDateGet(d, 'Date');
-        return date + getOrdinalizedSuffix(date);
-      },
-
-      'tz': function(d) {
-        return getUTCOffset(d);
-      },
-
-      'isotz': function(d) {
-        return getUTCOffset(d, true);
-      },
-
-      'Z': function(d) {
-        return getUTCOffset(d);
-      },
-
-      'ZZ': function(d) {
-        return getUTCOffset(d).replace(/(\d{2})$/, ':$1');
+    iterateOverDateParams(set, function(name, val, unit, i) {
+      // If there is a time unit set that is more specific than
+      // the matched unit we have a string like "5:30am in 2 minutes",
+      // which is meaningless, so invalidate the date...
+      if (i >= unitIndex) {
+        date.setTime(NaN);
+        return false;
+      } else if (i < unitIndex) {
+        // ...otherwise set the params to set the absolute date
+        // as a callback after the relative date has been set.
+        params = params || {};
+        params[name] = val;
+        deleteDateParam(set, name);
       }
-
-    };
-
-    var DateUnits = [
-      {
-        name: 'year',
-        method: 'FullYear',
-        ambiguous: true,
-        multiplier: 365.25 * 24 * 60 * 60 * 1000
-      },
-      {
-        name: 'month',
-        method: 'Month',
-        ambiguous: true,
-        multiplier: 30.4375 * 24 * 60 * 60 * 1000
-      },
-      {
-        name: 'week',
-        method: 'ISOWeek',
-        multiplier: 7 * 24 * 60 * 60 * 1000
-      },
-      {
-        name: 'day',
-        method: 'Date',
-        ambiguous: true,
-        multiplier: 24 * 60 * 60 * 1000
-      },
-      {
-        name: 'hour',
-        method: 'Hours',
-        multiplier: 60 * 60 * 1000
-      },
-      {
-        name: 'minute',
-        method: 'Minutes',
-        multiplier: 60 * 1000
-      },
-      {
-        name: 'second',
-        method: 'Seconds',
-        multiplier: 1000
-      },
-      {
-        name: 'millisecond',
-        method: 'Milliseconds',
-        multiplier: 1
+    });
+    if (params) {
+      afterDateSet(function() {
+        updateDate(date, params, true, false, getOwn(options, 'prefer'), weekdayDir);
+      });
+      if (set.edge) {
+        // "the end of March of next year"
+        handleEdge(set.edge, params);
+        delete set.edge;
       }
-    ];
-
-
-
-
-    // Date Localization
-
-    var Localizations = {};
-
-    // Localization object
-
-    function Localization(l) {
-      simpleMerge(this, l);
-      this.compiledFormats = CoreDateFormats.concat();
     }
+  }
 
-    Localization.prototype = {
+  if (contextDate && d) {
+    // If a context date is passed ("get" and "unitsFromNow"),
+    // then use it as the starting point.
+    date = cloneDateByFlag(contextDate, true);
+  } else {
+    date = getNewDate();
+  }
 
-      get: function(prop) {
-        return this[prop] || '';
-      },
+  _utc(date, getOwn(options, 'fromUTC'));
 
-      getMonth: function(n) {
-        if (isNumber(n)) {
-          return n - 1;
+  if (isString(d)) {
+    date = parseStringDate(d);
+  } else if (isDate(d)) {
+    date = cloneDateByFlag(d, hasOwn(options, 'clone') || forceClone);
+  } else if (isObjectType(d)) {
+    set = simpleClone(d);
+    updateDate(date, set, true);
+  } else if (isNumber(d) || d === null) {
+    date.setTime(d);
+  }
+  // A date created by parsing a string presumes that the format *itself* is
+  // UTC, but not that the date, once created, should be manipulated as such. In
+  // other words, if you are creating a date object from a server time
+  // "2012-11-15T12:00:00Z", in the majority of cases you are using it to create
+  // a date that will, after creation, be manipulated as local, so reset the utc
+  // flag here unless "setUTC" is also set.
+  _utc(date, !!getOwn(options, 'setUTC'));
+  return {
+    set: set,
+    date: date
+  };
+}
+
+module.exports = getExtendedDate;
+},{"../../common/internal/forEach":129,"../../common/internal/isDefined":149,"../../common/internal/isObjectType":151,"../../common/internal/isUndefined":155,"../../common/internal/simpleClone":172,"../../common/var/_utc":190,"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193,"../../common/var/trunc":198,"../var/DateUnitIndexes":382,"../var/LocaleHelpers":389,"../var/MINUTES":391,"../var/ParsingTokens":392,"./advanceDate":245,"./deleteDateParam":264,"./getNewDate":283,"./getParsingTokenValue":285,"./getYearFromAbbreviation":295,"./iterateOverDateParams":297,"./iterateOverHigherDateParams":299,"./moveToBeginningOfUnit":300,"./moveToEndOfUnit":302,"./resetTime":306,"./setWeekday":312,"./tzOffset":314,"./updateDate":315}],278:[function(require,module,exports){
+'use strict';
+
+var DateUnitIndexes = require('../var/DateUnitIndexes');
+
+var DAY_INDEX = DateUnitIndexes.DAY_INDEX,
+    MONTH_INDEX = DateUnitIndexes.MONTH_INDEX;
+
+function getHigherUnitIndex(index) {
+  return index === DAY_INDEX ? MONTH_INDEX : index + 1;
+}
+
+module.exports = getHigherUnitIndex;
+},{"../var/DateUnitIndexes":382}],279:[function(require,module,exports){
+'use strict';
+
+var callDateGet = require('../../common/internal/callDateGet');
+
+function getHours(d) {
+  return callDateGet(d, 'Hours');
+}
+
+module.exports = getHours;
+},{"../../common/internal/callDateGet":108}],280:[function(require,module,exports){
+'use strict';
+
+var DateUnitIndexes = require('../var/DateUnitIndexes');
+
+var HOURS_INDEX = DateUnitIndexes.HOURS_INDEX,
+    DAY_INDEX = DateUnitIndexes.DAY_INDEX,
+    WEEK_INDEX = DateUnitIndexes.WEEK_INDEX,
+    MONTH_INDEX = DateUnitIndexes.MONTH_INDEX;
+
+function getLowerUnitIndex(index) {
+  if (index === MONTH_INDEX) {
+    return DAY_INDEX;
+  } else if (index === WEEK_INDEX) {
+    return HOURS_INDEX;
+  }
+  return index - 1;
+}
+
+module.exports = getLowerUnitIndex;
+},{"../var/DateUnitIndexes":382}],281:[function(require,module,exports){
+'use strict';
+
+var LocaleHelpers = require('../var/LocaleHelpers'),
+    trunc = require('../../common/var/trunc'),
+    getHours = require('./getHours');
+
+var localeManager = LocaleHelpers.localeManager;
+
+function getMeridiemToken(d, localeCode) {
+  var hours = getHours(d);
+  return localeManager.get(localeCode).ampm[trunc(hours / 12)] || '';
+}
+
+module.exports = getMeridiemToken;
+},{"../../common/var/trunc":198,"../var/LocaleHelpers":389,"./getHours":279}],282:[function(require,module,exports){
+'use strict';
+
+var callDateGet = require('../../common/internal/callDateGet');
+
+function getMonth(d) {
+  return callDateGet(d, 'Month');
+}
+
+module.exports = getMonth;
+},{"../../common/internal/callDateGet":108}],283:[function(require,module,exports){
+'use strict';
+
+var _dateOptions = require('../var/_dateOptions');
+
+function getNewDate() {
+  return _dateOptions('newDateInternal')();
+}
+
+module.exports = getNewDate;
+},{"../var/_dateOptions":394}],284:[function(require,module,exports){
+'use strict';
+
+var LOCALE_ARRAY_FIELDS = require('../var/LOCALE_ARRAY_FIELDS'),
+    ISODefaults = require('../var/ISODefaults'),
+    ParsingTokens = require('../var/ParsingTokens'),
+    CoreParsingFormats = require('../var/CoreParsingFormats'),
+    LocalizedParsingTokens = require('../var/LocalizedParsingTokens'),
+    map = require('../../common/internal/map'),
+    filter = require('../../common/internal/filter'),
+    forEach = require('../../common/internal/forEach'),
+    isDefined = require('../../common/internal/isDefined'),
+    commaSplit = require('../../common/internal/commaSplit'),
+    classChecks = require('../../common/var/classChecks'),
+    isUndefined = require('../../common/internal/isUndefined'),
+    mathAliases = require('../../common/var/mathAliases'),
+    simpleMerge = require('../../common/internal/simpleMerge'),
+    getOrdinalSuffix = require('../../common/internal/getOrdinalSuffix'),
+    getRegNonCapturing = require('./getRegNonCapturing'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases'),
+    getArrayWithOffset = require('./getArrayWithOffset'),
+    iterateOverDateUnits = require('./iterateOverDateUnits'),
+    arrayToRegAlternates = require('./arrayToRegAlternates'),
+    fullwidthNumberHelpers = require('../../common/var/fullwidthNumberHelpers'),
+    getAdjustedUnitForNumber = require('./getAdjustedUnitForNumber'),
+    getParsingTokenWithSuffix = require('./getParsingTokenWithSuffix');
+
+var getOwn = coreUtilityAliases.getOwn,
+    forEachProperty = coreUtilityAliases.forEachProperty,
+    fullWidthNumberMap = fullwidthNumberHelpers.fullWidthNumberMap,
+    fullWidthNumbers = fullwidthNumberHelpers.fullWidthNumbers,
+    pow = mathAliases.pow,
+    max = mathAliases.max,
+    ISO_FIRST_DAY_OF_WEEK = ISODefaults.ISO_FIRST_DAY_OF_WEEK,
+    ISO_FIRST_DAY_OF_WEEK_YEAR = ISODefaults.ISO_FIRST_DAY_OF_WEEK_YEAR,
+    isString = classChecks.isString,
+    isFunction = classChecks.isFunction;
+
+function getNewLocale(def) {
+
+  function Locale(def) {
+    this.init(def);
+  }
+
+  Locale.prototype = {
+
+    getMonthName: function(n, alternate) {
+      if (this.monthSuffix) {
+        return (n + 1) + this.monthSuffix;
+      }
+      return getArrayWithOffset(this.months, n, alternate, 12);
+    },
+
+    getWeekdayName: function(n, alternate) {
+      return getArrayWithOffset(this.weekdays, n, alternate, 7);
+    },
+
+    getTokenValue: function(field, str) {
+      var map = this[field + 'Map'], val;
+      if (map) {
+        val = map[str];
+      }
+      if (isUndefined(val)) {
+        val = this.getNumber(str);
+        if (field === 'month') {
+          // Months are the only numeric date field
+          // whose value is not the same as its number.
+          val -= 1;
+        }
+      }
+      return val;
+    },
+
+    getNumber: function(str) {
+      var num = this.numeralMap[str];
+      if (isDefined(num)) {
+        return num;
+      }
+      // The unary plus operator here show better performance and handles
+      // every format that parseFloat does with the exception of trailing
+      // characters, which are guaranteed not to be in our string at this point.
+      num = +str.replace(/,/, '.');
+      if (!isNaN(num)) {
+        return num;
+      }
+      num = this.getNumeralValue(str);
+      if (!isNaN(num)) {
+        this.numeralMap[str] = num;
+        return num;
+      }
+      return num;
+    },
+
+    getNumeralValue: function(str) {
+      var place = 1, num = 0, lastWasPlace, isPlace, numeral, digit, arr;
+      // Note that "numerals" that need to be converted through this method are
+      // all considered to be single characters in order to handle CJK. This
+      // method is by no means unique to CJK, but the complexity of handling
+      // inflections in non-CJK languages adds too much overhead for not enough
+      // value, so avoiding for now.
+      arr = str.split('');
+      for (var i = arr.length - 1; numeral = arr[i]; i--) {
+        digit = getOwn(this.numeralMap, numeral);
+        if (isUndefined(digit)) {
+          digit = getOwn(fullWidthNumberMap, numeral) || 0;
+        }
+        isPlace = digit > 0 && digit % 10 === 0;
+        if (isPlace) {
+          if (lastWasPlace) {
+            num += place;
+          }
+          if (i) {
+            place = digit;
+          } else {
+            num += digit;
+          }
         } else {
-          return this.months.indexOf(n) % 12;
+          num += digit * place;
+          place *= 10;
         }
-      },
+        lastWasPlace = isPlace;
+      }
+      return num;
+    },
 
-      getWeekday: function(n) {
-        return this.weekdays.indexOf(n) % 7;
-      },
+    getOrdinal: function(n) {
+      var suffix = this.ordinalSuffix;
+      return suffix || getOrdinalSuffix(n);
+    },
 
-      getNumber: function(n, digit) {
-        var mapped = this.ordinalNumberMap[n];
-        if (mapped) {
-          if (digit) {
-            mapped = mapped % 10;
+    getRelativeFormat: function(adu, type) {
+      return this.convertAdjustedToFormat(adu, type);
+    },
+
+    getDuration: function(ms) {
+      return this.convertAdjustedToFormat(getAdjustedUnitForNumber(max(0, ms)), 'duration');
+    },
+
+    getFirstDayOfWeek: function() {
+      var val = this.firstDayOfWeek;
+      return isDefined(val) ? val : ISO_FIRST_DAY_OF_WEEK;
+    },
+
+    getFirstDayOfWeekYear: function() {
+      return this.firstDayOfWeekYear || ISO_FIRST_DAY_OF_WEEK_YEAR;
+    },
+
+    convertAdjustedToFormat: function(adu, type) {
+      var sign, unit, mult,
+          num    = adu[0],
+          u      = adu[1],
+          ms     = adu[2],
+          format = this[type] || this.relative;
+      if (isFunction(format)) {
+        return format.call(this, num, u, ms, type);
+      }
+      mult = !this.plural || num === 1 ? 0 : 1;
+      unit = this.units[mult * 8 + u] || this.units[u];
+      sign = this[ms > 0 ? 'fromNow' : 'ago'];
+      return format.replace(/\{(.*?)\}/g, function(full, match) {
+        switch(match) {
+          case 'num': return num;
+          case 'unit': return unit;
+          case 'sign': return sign;
+        }
+      });
+    },
+
+    cacheFormat: function(dif, i) {
+      this.compiledFormats.splice(i, 1);
+      this.compiledFormats.unshift(dif);
+    },
+
+    addFormat: function(src, to) {
+      var loc = this;
+
+      function getTokenSrc(str) {
+        var suffix, src, val,
+            opt   = str.match(/\?$/),
+            nc    = str.match(/^(\d+)\??$/),
+            slice = str.match(/(\d)(?:-(\d))?/),
+            key   = str.replace(/[^a-z]+$/i, '');
+
+        // Allowing alias tokens such as {time}
+        if (val = getOwn(loc.parsingAliases, key)) {
+          src = replaceParsingTokens(val);
+          if (opt) {
+            src = getRegNonCapturing(src, true);
           }
-          return mapped;
+          return src;
         }
-        return isNumber(n) ? n : 1;
-      },
 
-      getNumericDate: function(n) {
-        var self = this;
-        return n.replace(RegExp(this.num, 'g'), function(d) {
-          var num = self.getNumber(d, true);
-          return num || '';
-        });
-      },
+        if (nc) {
+          src = loc.tokens[nc[1]];
+        } else if (val = getOwn(ParsingTokens, key)) {
+          src = val.src;
+        } else {
+          val = getOwn(loc.parsingTokens, key) || getOwn(loc, key);
 
-      getUnitIndex: function(n) {
-        return this.units.indexOf(n) % 8;
-      },
+          // Both the "months" array and the "month" parsing token can be accessed
+          // by either {month} or {months}, falling back as necessary, however
+          // regardless of whether or not a fallback occurs, the final field to
+          // be passed to addRawFormat must be normalized as singular.
+          key = key.replace(/s$/, '');
 
-      getRelativeFormat: function(adu) {
-        return this.convertAdjustedToFormat(adu, adu[2] > 0 ? 'future' : 'past');
-      },
-
-      getDuration: function(ms) {
-        return this.convertAdjustedToFormat(getAdjustedUnitForNumber(ms), 'duration');
-      },
-
-      hasVariant: function(code) {
-        code = code || this.code;
-        return code === 'en' || code === 'en-US' ? true : this.variant;
-      },
-
-      matchAM: function(str) {
-        return str === this.get('ampm')[0];
-      },
-
-      matchPM: function(str) {
-        return str && str === this.get('ampm')[1];
-      },
-
-      convertAdjustedToFormat: function(adu, mode) {
-        var sign, unit, mult,
-            num    = adu[0],
-            u      = adu[1],
-            ms     = adu[2],
-            format = this[mode] || this.relative;
-        if (isFunction(format)) {
-          return format.call(this, num, u, ms, mode);
-        }
-        mult = !this.plural || num === 1 ? 0 : 1;
-        unit = this.units[mult * 8 + u] || this.units[u];
-        if (this.capitalizeUnit) unit = simpleCapitalize(unit);
-        sign = this.modifiers.filter(function(m) { return m.name == 'sign' && m.value == (ms > 0 ? 1 : -1); })[0];
-        return format.replace(/\{(.*?)\}/g, function(full, match) {
-          switch(match) {
-            case 'num': return num;
-            case 'unit': return unit;
-            case 'sign': return sign.src;
+          if (!val) {
+            val = getOwn(loc.parsingTokens, key) || getOwn(loc, key + 's');
           }
-        });
-      },
 
-      getFormats: function() {
-        return this.cachedFormat ? [this.cachedFormat].concat(this.compiledFormats) : this.compiledFormats;
-      },
-
-      addFormat: function(src, allowsTime, match, variant, iso) {
-        var to = match || [], loc = this, time, timeMarkers, lastIsNumeral;
-
-        src = src.replace(/\s+/g, '[,. ]*');
-        src = src.replace(/\{([^,]+?)\}/g, function(all, k) {
-          var value, arr, result,
-              opt   = k.match(/\?$/),
-              nc    = k.match(/^(\d+)\??$/),
-              slice = k.match(/(\d)(?:-(\d))?/),
-              key   = k.replace(/[^a-z]+$/, '');
-          if (nc) {
-            value = loc.get('tokens')[nc[1]];
-          } else if (loc[key]) {
-            value = loc[key];
-          } else if (loc[key + 's']) {
-            value = loc[key + 's'];
+          if (isString(val)) {
+            src = val;
+            suffix = loc[key + 'Suffix'];
+          } else {
             if (slice) {
-              value = value.filter(function(m, i) {
-                var mod = i % (loc.units ? 8 : value.length);
+              val = filter(val, function(m, i) {
+                var mod = i % (loc.units ? 8 : val.length);
                 return mod >= slice[1] && mod <= (slice[2] || slice[1]);
               });
             }
-            value = arrayToAlternates(value);
+            src = arrayToRegAlternates(val);
           }
-          if (!value) {
-            return '';
-          }
-          if (nc) {
-            result = '(?:' + value + ')';
-          } else {
-            if (!match) {
-              to.push(key);
-            }
-            result = '(' + value + ')';
-          }
-          if (opt) {
-            result += '?';
-          }
-          return result;
-        });
-        if (allowsTime) {
-          time = prepareTime(RequiredTime, loc, iso);
-          timeMarkers = ['t','[\\s\\u3000]'].concat(loc.get('timeMarker'));
-          lastIsNumeral = src.match(/\\d\{\d,\d\}\)+\??$/);
-          addDateInputFormat(loc, '(?:' + time + ')[,\\s\\u3000]+?' + src, TimeFormat.concat(to), variant);
-          addDateInputFormat(loc, src + '(?:[,\\s]*(?:' + timeMarkers.join('|') + (lastIsNumeral ? '+' : '*') +')' + time + ')?', to.concat(TimeFormat), variant);
+        }
+        if (!src) {
+          return '';
+        }
+        if (nc) {
+          // Non-capturing tokens like {0}
+          src = getRegNonCapturing(src);
         } else {
-          addDateInputFormat(loc, src, to, variant);
+          // Capturing group and add to parsed tokens
+          to.push(key);
+          src = '(' + src + ')';
+        }
+        if (suffix) {
+          // Date/time suffixes such as those in CJK
+          src = getParsingTokenWithSuffix(key, src, suffix);
+        }
+        if (opt) {
+          src += '?';
+        }
+        return src;
+      }
+
+      function replaceParsingTokens(str) {
+
+        // Make spaces optional
+        str = str.replace(/ /g, ' ?');
+
+        return str.replace(/\{([^,]+?)\}/g, function(match, token) {
+          var tokens = token.split('|'), src;
+          if (tokens.length > 1) {
+            src = getRegNonCapturing(map(tokens, getTokenSrc).join('|'));
+          } else {
+            src = getTokenSrc(token);
+          }
+          return src;
+        });
+      }
+
+      if (!to) {
+        to = [];
+        src = replaceParsingTokens(src);
+      }
+
+      loc.addRawFormat(src, to);
+    },
+
+    addRawFormat: function(format, to) {
+      this.compiledFormats.unshift({
+        reg: RegExp('^ *' + format + ' *$', 'i'),
+        to: to
+      });
+    },
+
+    init: function(def) {
+      var loc = this;
+
+      // -- Initialization helpers
+
+      function initFormats() {
+        loc.compiledFormats = [];
+        loc.parsingAliases = {};
+        loc.parsingTokens = {};
+      }
+
+      function initDefinition() {
+        simpleMerge(loc, def);
+      }
+
+      function initArrayFields() {
+        forEach(LOCALE_ARRAY_FIELDS, function(name) {
+          var val = loc[name];
+          if (isString(val)) {
+            loc[name] = commaSplit(val);
+          } else if (!val) {
+            loc[name] = [];
+          }
+        });
+      }
+
+      // -- Value array build helpers
+
+      function buildValueArray(name, mod, map, fn) {
+        var field = name, all = [], setMap;
+        if (!loc[field]) {
+          field += 's';
+        }
+        if (!map) {
+          map = {};
+          setMap = true;
+        }
+        forAllAlternates(field, function(alt, j, i) {
+          var idx = j * mod + i, val;
+          val = fn ? fn(i) : i;
+          map[alt] = val;
+          map[alt.toLowerCase()] = val;
+          all[idx] = alt;
+        });
+        loc[field] = all;
+        if (setMap) {
+          loc[name + 'Map'] = map;
         }
       }
 
-    };
-
-
-    // Localization helpers
-
-    function getLocalization(localeCode, fallback) {
-      var loc;
-      if (!isString(localeCode)) localeCode = '';
-      loc = Localizations[localeCode] || Localizations[localeCode.slice(0,2)];
-      if (fallback === false && !loc) {
-        throw new TypeError('Invalid locale.');
-      }
-      return loc || CurrentLocalization;
-    }
-
-    function setLocalization(localeCode, set) {
-      var loc;
-
-      function initializeField(name) {
-        var val = loc[name];
-        if (isString(val)) {
-          loc[name] = val.split(',');
-        } else if (!val) {
-          loc[name] = [];
-        }
+      function forAllAlternates(field, fn) {
+        forEach(loc[field], function(str, i) {
+          forEachAlternate(str, function(alt, j) {
+            fn(alt, j, i);
+          });
+        });
       }
 
-      function eachAlternate(str, fn) {
-        str = str.split('+').map(function(split) {
+      function forEachAlternate(str, fn) {
+        var arr = map(str.split('+'), function(split) {
           return split.replace(/(.+):(.+)$/, function(full, base, suffixes) {
-            return suffixes.split('|').map(function(suffix) {
+            return map(suffixes.split('|'), function(suffix) {
               return base + suffix;
             }).join('|');
           });
         }).join('|');
-        return str.split('|').forEach(fn);
+        forEach(arr.split('|'), fn);
       }
 
-      function setArray(name, abbreviationSize, multiple) {
-        var arr = [];
-        loc[name].forEach(function(full, i) {
-          if (abbreviationSize) {
-            full += '+' + full.slice(0, abbreviationSize);
-          }
-          eachAlternate(full, function(alt, j) {
-            arr[j * multiple + i] = alt.toLowerCase();
-          });
+      function buildNumerals() {
+        var map = {};
+        buildValueArray('numeral', 10, map);
+        buildValueArray('article', 1, map, function() {
+          return 1;
         });
-        loc[name] = arr;
+        buildValueArray('placeholder', 4, map, function(n) {
+          return pow(10, n + 1);
+        });
+        loc.numeralMap = map;
       }
 
-      function getDigit(start, stop, allowNumbers) {
-        var str = '\\d{' + start + ',' + stop + '}';
-        if (allowNumbers) str += '|(?:' + arrayToAlternates(loc.get('numbers')) + ')+';
-        return str;
+      function buildTimeFormats() {
+        loc.parsingAliases['time'] = getTimeFormat();
+        loc.parsingAliases['tzOffset'] = getTZOffsetFormat();
       }
 
-      function getNum() {
-        var numbers = loc.get('numbers');
-        var arr = ['-?\\d+'].concat(loc.get('articles'));
-        if (numbers) {
-          arr = arr.concat(numbers);
+      function getTimeFormat() {
+        var src;
+        if (loc.ampmFront) {
+          // "ampmFront" exists mostly for CJK locales, which also presume that
+          // time suffixes exist, allowing this to be a simpler regex.
+          src = '{ampm?} {hour} (?:{minute} (?::?{second})?)?';
+        } else if(loc.ampm.length) {
+          src = '{hour}(?:[.:]{minute}(?:[.:]{second})? {ampm?}| {ampm})';
+        } else {
+          src = '{hour}(?:[.:]{minute}(?:[.:]{second})?)';
         }
-        return arrayToAlternates(arr);
+        return src;
       }
 
-      function getAbbreviationSize(type) {
-        // Month suffixes like those found in Asian languages
-        // serve as a good proxy to detect month/weekday abbreviations.
-        var hasMonthSuffix = !!loc.monthSuffix;
-        return loc[type + 'Abbreviate'] || (hasMonthSuffix ? null : 3);
+      function getTZOffsetFormat() {
+        return '(?:{Z}|{GMT?}(?:{tzSign}{tzHour}(?::?{tzMinute}(?: \\([\\w\\s]+\\))?)?)?)?';
       }
 
-      function setDefault(name, value) {
-        loc[name] = loc[name] || value;
-      }
-
-      function buildNumbers() {
-        var map = loc.ordinalNumberMap = {}, all = [];
-        loc.numbers.forEach(function(full, i) {
-          eachAlternate(full, function(alt) {
-            all.push(alt);
-            map[alt] = i + 1;
-          });
+      function buildParsingTokens() {
+        forEachProperty(LocalizedParsingTokens, function(token, name) {
+          var src, arr;
+          src = token.base ? ParsingTokens[token.base].src : token.src;
+          if (token.requiresNumerals || loc.numeralUnits) {
+            src += getNumeralSrc();
+          }
+          arr = loc[name + 's'];
+          if (arr && arr.length) {
+            src += '|' + arrayToRegAlternates(arr);
+          }
+          loc.parsingTokens[name] = src;
         });
-        loc.numbers = all;
+      }
+
+      function getNumeralSrc() {
+        var all, src = '';
+        all = loc.numerals.concat(loc.placeholders).concat(loc.articles);
+        if (loc.allowsFullWidth) {
+          all = all.concat(fullWidthNumbers.split(''));
+        }
+        if (all.length) {
+          src = '|(?:' + arrayToRegAlternates(all) + ')+';
+        }
+        return src;
+      }
+
+      function buildTimeSuffixes() {
+        iterateOverDateUnits(function(unit, i) {
+          var token = loc.timeSuffixes[i];
+          if (token) {
+            loc[(unit.alias || unit.name) + 'Suffix'] = token;
+          }
+        });
       }
 
       function buildModifiers() {
-        var arr = [];
-        loc.modifiersByName = {};
-        loc.modifiers.push({ name: 'day', src: 'yesterday', value:-1 });
-        loc.modifiers.push({ name: 'day', src: 'today',     value: 0 });
-        loc.modifiers.push({ name: 'day', src: 'tomorrow',  value: 1 });
-        loc.modifiers.forEach(function(modifier) {
-          var name = modifier.name;
-          eachAlternate(modifier.src, function(t) {
-            var locEntry = loc[name];
-            loc.modifiersByName[t] = modifier;
-            arr.push({ name: name, src: t, value: modifier.value });
-            loc[name] = locEntry ? locEntry + '|' + t : t;
+        forEach(loc.modifiers, function(modifier) {
+          var name = modifier.name, mapKey = name + 'Map', map;
+          map = loc[mapKey] || {};
+          forEachAlternate(modifier.src, function(alt, j) {
+            var token = getOwn(loc.parsingTokens, name), val = modifier.value;
+            map[alt] = val;
+            loc.parsingTokens[name] = token ? token + '|' + alt : alt;
+            if (modifier.name === 'sign' && j === 0) {
+              // Hooking in here to set the first "fromNow" or "ago" modifier
+              // directly on the locale, so that it can be reused in the
+              // relative format.
+              loc[val === 1 ? 'fromNow' : 'ago'] = alt;
+            }
           });
+          loc[mapKey] = map;
         });
-        loc.day += '|' + arrayToAlternates(loc.weekdays);
-        loc.modifiers = arr;
       }
 
-      // Initialize the locale
-      loc = new Localization(set);
-      initializeField('modifiers');
-      'months,weekdays,units,numbers,articles,tokens,timeMarker,ampm,timeSuffixes,dateParse,timeParse'.split(',').forEach(initializeField);
+      // -- Format adding helpers
 
-      buildNumbers();
+      function addCoreFormats() {
+        forEach(CoreParsingFormats, function(df) {
+          var src = df.src;
+          if (df.mdy && loc.mdy) {
+            // Use the mm/dd/yyyy variant if it
+            // exists and the locale requires it
+            src = df.mdy;
+          }
+          if (df.time) {
+            // Core formats that allow time require the time
+            // reg on both sides, so add both versions here.
+            loc.addFormat(getFormatWithTime(src, true));
+            loc.addFormat(getFormatWithTime(src));
+          } else {
+            loc.addFormat(src);
+          }
+        });
+        loc.addFormat('{time}');
+      }
 
-      setArray('months', getAbbreviationSize('month'), 12);
-      setArray('weekdays', getAbbreviationSize('weekday'), 7);
-      setArray('units', false, 8);
+      function addLocaleFormats() {
+        addFormatSet('parse');
+        addFormatSet('timeParse', true);
+        addFormatSet('timeFrontParse', true, true);
+      }
 
-      setDefault('code', localeCode);
-      setDefault('date', getDigit(1,2, loc.digitDate));
-      setDefault('year', "'\\d{2}|" + getDigit(4,4));
-      setDefault('num', getNum());
+      function addFormatSet(field, allowTime, timeFront) {
+        forEach(loc[field], function(format) {
+          if (allowTime) {
+            format = getFormatWithTime(format, timeFront);
+          }
+          loc.addFormat(format);
+        });
+      }
 
+      function getFormatWithTime(baseFormat, timeBefore) {
+        if (timeBefore) {
+          return getTimeBefore() + baseFormat;
+        }
+        return baseFormat + getTimeAfter();
+      }
+
+      function getTimeBefore() {
+        return getRegNonCapturing('{time}[,\\s\\u3000]', true);
+      }
+
+      function getTimeAfter() {
+        var markers = ',?[\\s\\u3000]', localized;
+        localized = arrayToRegAlternates(loc.timeMarkers);
+        if (localized) {
+          markers += '| (?:' + localized + ') ';
+        }
+        markers = getRegNonCapturing(markers, loc.timeMarkerOptional);
+        return getRegNonCapturing(markers + '{time}', true);
+      }
+
+      initFormats();
+      initDefinition();
+      initArrayFields();
+
+      buildValueArray('month', 12);
+      buildValueArray('weekday', 7);
+      buildValueArray('unit', 8);
+      buildValueArray('ampm', 2);
+
+      buildNumerals();
+      buildTimeFormats();
+      buildParsingTokens();
+      buildTimeSuffixes();
       buildModifiers();
 
-      if (loc.monthSuffix) {
-        loc.month = getDigit(1,2);
-        loc.months = '1,2,3,4,5,6,7,8,9,10,11,12'.split(',').map(function(n) { return n + loc.monthSuffix; });
+      // The order of these formats is important. Order is reversed so formats
+      // that are initialized later will take precedence. Generally, this means
+      // that more specific formats should come later.
+      addCoreFormats();
+      addLocaleFormats();
+
+    }
+
+  };
+
+  return new Locale(def);
+}
+
+module.exports = getNewLocale;
+},{"../../common/internal/commaSplit":113,"../../common/internal/filter":127,"../../common/internal/forEach":129,"../../common/internal/getOrdinalSuffix":138,"../../common/internal/isDefined":149,"../../common/internal/isUndefined":155,"../../common/internal/map":158,"../../common/internal/simpleMerge":173,"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193,"../../common/var/fullwidthNumberHelpers":194,"../../common/var/mathAliases":195,"../var/CoreParsingFormats":380,"../var/ISODefaults":386,"../var/LOCALE_ARRAY_FIELDS":387,"../var/LocalizedParsingTokens":390,"../var/ParsingTokens":392,"./arrayToRegAlternates":247,"./getAdjustedUnitForNumber":268,"./getArrayWithOffset":269,"./getParsingTokenWithSuffix":286,"./getRegNonCapturing":287,"./iterateOverDateUnits":298}],285:[function(require,module,exports){
+'use strict';
+
+function getParsingTokenValue(token, str) {
+  var val;
+  if (token.val) {
+    val = token.val;
+  } else if (token.sign) {
+    val = str === '+' ? 1 : -1;
+  } else if (token.bool) {
+    val = !!val;
+  } else {
+    val = +str.replace(/,/, '.');
+  }
+  if (token.param === 'month') {
+    val -= 1;
+  }
+  return val;
+}
+
+module.exports = getParsingTokenValue;
+},{}],286:[function(require,module,exports){
+'use strict';
+
+var LocalizedParsingTokens = require('../var/LocalizedParsingTokens'),
+    getRegNonCapturing = require('./getRegNonCapturing');
+
+function getParsingTokenWithSuffix(field, src, suffix) {
+  var token = LocalizedParsingTokens[field];
+  if (token.requiresSuffix) {
+    src = getRegNonCapturing(src + getRegNonCapturing(suffix));
+  } else if (token.requiresSuffixOr) {
+    src += getRegNonCapturing(token.requiresSuffixOr + '|' + suffix);
+  } else {
+    src += getRegNonCapturing(suffix, true);
+  }
+  return src;
+}
+
+module.exports = getParsingTokenWithSuffix;
+},{"../var/LocalizedParsingTokens":390,"./getRegNonCapturing":287}],287:[function(require,module,exports){
+'use strict';
+
+function getRegNonCapturing(src, opt) {
+  if (src.length > 1) {
+    src = '(?:' + src + ')';
+  }
+  if (opt) {
+    src += '?';
+  }
+  return src;
+}
+
+module.exports = getRegNonCapturing;
+},{}],288:[function(require,module,exports){
+'use strict';
+
+var trunc = require('../../common/var/trunc'),
+    cloneDate = require('./cloneDate'),
+    advanceDate = require('./advanceDate');
+
+function getTimeDistanceForUnit(d1, d2, unit) {
+  var fwd = d2 > d1, num, tmp;
+  if (!fwd) {
+    tmp = d2;
+    d2  = d1;
+    d1  = tmp;
+  }
+  num = d2 - d1;
+  if (unit.multiplier > 1) {
+    num = trunc(num / unit.multiplier);
+  }
+  // For higher order with potential ambiguity, use the numeric calculation
+  // as a starting point, then iterate until we pass the target date.
+  if (unit.ambiguous) {
+    d1 = cloneDate(d1);
+    if (num) {
+      advanceDate(d1, unit.name, num);
+    }
+    while (d1 < d2) {
+      advanceDate(d1, unit.name, 1);
+      if (d1 > d2) {
+        break;
       }
-      loc.fullMonth = getDigit(1,2) + '|' + arrayToAlternates(loc.months);
-
-      // The order of these formats is very important. Order is reversed so formats that come
-      // later will take precedence over formats that come before. This generally means that
-      // more specific formats should come later, however, the {year} format should come before
-      // {day}, as 2011 needs to be parsed as a year (2011) and not date (20) + hours (11)
-
-      // If the locale has time suffixes then add a time only format for that locale
-      // that is separate from the core English-based one.
-      if (loc.timeSuffixes.length > 0) {
-        loc.addFormat(prepareTime(RequiredTime, loc), false, TimeFormat);
-      }
-
-      loc.addFormat('{day}', true);
-      loc.addFormat('{month}' + (loc.monthSuffix || ''));
-      loc.addFormat('{year}' + (loc.yearSuffix || ''));
-
-      loc.timeParse.forEach(function(src) {
-        loc.addFormat(src, true);
-      });
-
-      loc.dateParse.forEach(function(src) {
-        loc.addFormat(src);
-      });
-
-      return Localizations[localeCode] = loc;
+      num += 1;
     }
+  }
+  return fwd ? -num : num;
+}
 
+module.exports = getTimeDistanceForUnit;
+},{"../../common/var/trunc":198,"./advanceDate":245,"./cloneDate":253}],289:[function(require,module,exports){
+'use strict';
 
-    // General helpers
+var _utc = require('../../common/var/_utc'),
+    trunc = require('../../common/var/trunc'),
+    tzOffset = require('./tzOffset'),
+    padNumber = require('../../common/internal/padNumber'),
+    mathAliases = require('../../common/var/mathAliases');
 
-    function addDateInputFormat(locale, format, match, variant) {
-      locale.compiledFormats.unshift({
-        variant: !!variant,
-        locale: locale,
-        reg: RegExp('^' + format + '$', 'i'),
-        to: match
-      });
+var abs = mathAliases.abs;
+
+function getUTCOffset(d, iso) {
+  var offset = _utc(d) ? 0 : tzOffset(d), hours, mins, colon;
+  colon  = iso === true ? ':' : '';
+  if (!offset && iso) return 'Z';
+  hours = padNumber(trunc(-offset / 60), 2, true);
+  mins = padNumber(abs(offset % 60), 2);
+  return  hours + colon + mins;
+}
+
+module.exports = getUTCOffset;
+},{"../../common/internal/padNumber":162,"../../common/var/_utc":190,"../../common/var/mathAliases":195,"../../common/var/trunc":198,"./tzOffset":314}],290:[function(require,module,exports){
+'use strict';
+
+var iterateOverDateParams = require('./iterateOverDateParams');
+
+function getUnitIndexForParamName(name) {
+  var params = {}, unitIndex;
+  params[name] = 1;
+  iterateOverDateParams(params, function(name, val, unit, i) {
+    unitIndex = i;
+    return false;
+  });
+  return unitIndex;
+}
+
+module.exports = getUnitIndexForParamName;
+},{"./iterateOverDateParams":297}],291:[function(require,module,exports){
+'use strict';
+
+var ISODefaults = require('../var/ISODefaults'),
+    setDate = require('./setDate'),
+    getDate = require('./getDate'),
+    cloneDate = require('./cloneDate'),
+    isUndefined = require('../../common/internal/isUndefined'),
+    moveToEndOfWeek = require('./moveToEndOfWeek'),
+    moveToBeginningOfWeek = require('./moveToBeginningOfWeek'),
+    moveToFirstDayOfWeekYear = require('./moveToFirstDayOfWeekYear');
+
+var ISO_FIRST_DAY_OF_WEEK = ISODefaults.ISO_FIRST_DAY_OF_WEEK,
+    ISO_FIRST_DAY_OF_WEEK_YEAR = ISODefaults.ISO_FIRST_DAY_OF_WEEK_YEAR;
+
+function getWeekNumber(d, allowPrevious, firstDayOfWeek, firstDayOfWeekYear) {
+  var isoWeek, n = 0;
+  if (isUndefined(firstDayOfWeek)) {
+    firstDayOfWeek = ISO_FIRST_DAY_OF_WEEK;
+  }
+  if (isUndefined(firstDayOfWeekYear)) {
+    firstDayOfWeekYear = ISO_FIRST_DAY_OF_WEEK_YEAR;
+  }
+  // Moving to the end of the week allows for forward year traversal, ie
+  // Dec 29 2014 is actually week 01 of 2015.
+  isoWeek = moveToEndOfWeek(cloneDate(d), firstDayOfWeek);
+  moveToFirstDayOfWeekYear(isoWeek, firstDayOfWeek, firstDayOfWeekYear);
+  if (allowPrevious && d < isoWeek) {
+    // If the date is still before the start of the year, then it should be
+    // the last week of the previous year, ie Jan 1 2016 is actually week 53
+    // of 2015, so move to the beginning of the week to traverse the year.
+    isoWeek = moveToBeginningOfWeek(cloneDate(d), firstDayOfWeek);
+    moveToFirstDayOfWeekYear(isoWeek, firstDayOfWeek, firstDayOfWeekYear);
+  }
+  while (isoWeek <= d) {
+    // Doing a very simple walk to get the week number.
+    setDate(isoWeek, getDate(isoWeek) + 7);
+    n++;
+  }
+  return n;
+}
+
+module.exports = getWeekNumber;
+},{"../../common/internal/isUndefined":155,"../var/ISODefaults":386,"./cloneDate":253,"./getDate":270,"./moveToBeginningOfWeek":301,"./moveToEndOfWeek":303,"./moveToFirstDayOfWeekYear":304,"./setDate":307}],292:[function(require,module,exports){
+'use strict';
+
+var LocaleHelpers = require('../var/LocaleHelpers'),
+    getYear = require('./getYear'),
+    getMonth = require('./getMonth'),
+    getWeekNumber = require('./getWeekNumber');
+
+var localeManager = LocaleHelpers.localeManager;
+
+function getWeekYear(d, localeCode, iso) {
+  var year, month, firstDayOfWeek, firstDayOfWeekYear, week, loc;
+  year = getYear(d);
+  month = getMonth(d);
+  if (month === 0 || month === 11) {
+    if (!iso) {
+      loc = localeManager.get(localeCode);
+      firstDayOfWeek = loc.getFirstDayOfWeek(localeCode);
+      firstDayOfWeekYear = loc.getFirstDayOfWeekYear(localeCode);
     }
-
-    function simpleCapitalize(str) {
-      return str.slice(0,1).toUpperCase() + str.slice(1);
+    week = getWeekNumber(d, false, firstDayOfWeek, firstDayOfWeekYear);
+    if (month === 0 && week === 0) {
+      year -= 1;
+    } else if (month === 11 && week === 1) {
+      year += 1;
     }
+  }
+  return year;
+}
 
-    function arrayToAlternates(arr) {
-      return arr.filter(function(el) {
-        return !!el;
-      }).join('|');
+module.exports = getWeekYear;
+},{"../var/LocaleHelpers":389,"./getMonth":282,"./getWeekNumber":291,"./getYear":294}],293:[function(require,module,exports){
+'use strict';
+
+var callDateGet = require('../../common/internal/callDateGet');
+
+function getWeekday(d) {
+  return callDateGet(d, 'Day');
+}
+
+module.exports = getWeekday;
+},{"../../common/internal/callDateGet":108}],294:[function(require,module,exports){
+'use strict';
+
+var callDateGet = require('../../common/internal/callDateGet');
+
+function getYear(d) {
+  return callDateGet(d, 'FullYear');
+}
+
+module.exports = getYear;
+},{"../../common/internal/callDateGet":108}],295:[function(require,module,exports){
+'use strict';
+
+var getYear = require('./getYear'),
+    mathAliases = require('../../common/var/mathAliases');
+
+var abs = mathAliases.abs;
+
+function getYearFromAbbreviation(str, d, prefer) {
+  // Following IETF here, adding 1900 or 2000 depending on the last two digits.
+  // Note that this makes no accordance for what should happen after 2050, but
+  // intentionally ignoring this for now. https://www.ietf.org/rfc/rfc2822.txt
+  var val = +str, delta;
+  val += val < 50 ? 2000 : 1900;
+  if (prefer) {
+    delta = val - getYear(d);
+    if (delta / abs(delta) !== prefer) {
+      val += prefer * 100;
     }
+  }
+  return val;
+}
 
-    function getNewDate() {
-      var fn = Date.SugarNewDate;
-      return fn ? fn() : new Date;
+module.exports = getYearFromAbbreviation;
+},{"../../common/var/mathAliases":195,"./getYear":294}],296:[function(require,module,exports){
+'use strict';
+
+var _utc = require('../../common/var/_utc'),
+    tzOffset = require('./tzOffset');
+
+function isUTC(d) {
+  return !!_utc(d) || tzOffset(d) === 0;
+}
+
+module.exports = isUTC;
+},{"../../common/var/_utc":190,"./tzOffset":314}],297:[function(require,module,exports){
+'use strict';
+
+var DateUnitIndexes = require('../var/DateUnitIndexes'),
+    isDefined = require('../../common/internal/isDefined'),
+    getDateParam = require('./getDateParam'),
+    iterateOverDateUnits = require('./iterateOverDateUnits');
+
+var DAY_INDEX = DateUnitIndexes.DAY_INDEX;
+
+function iterateOverDateParams(params, fn, startIndex, endIndex) {
+
+  function run(name, unit, i) {
+    var val = getDateParam(params, name);
+    if (isDefined(val)) {
+      fn(name, val, unit, i);
     }
+  }
 
-    function cloneDate(d) {
-      var cloned = new Date(d.getTime());
-      setUTC(cloned, !!d._utc);
-      return cloned;
+  iterateOverDateUnits(function (unit, i) {
+    var result = run(unit.name, unit, i);
+    if (result !== false && i === DAY_INDEX) {
+      // Check for "weekday", which has a distinct meaning
+      // in the context of setting a date, but has the same
+      // meaning as "day" as a unit of time.
+      result = run('weekday', unit, i);
     }
+    return result;
+  }, startIndex, endIndex);
 
-    // Normal callDateSet method with ability
-    // to handle ISOWeek setting as well.
-    function callDateSetWithWeek(d, method, value) {
-      if (method === 'ISOWeek') {
-        return setWeekNumber(d, value);
+}
+
+module.exports = iterateOverDateParams;
+},{"../../common/internal/isDefined":149,"../var/DateUnitIndexes":382,"./getDateParam":271,"./iterateOverDateUnits":298}],298:[function(require,module,exports){
+'use strict';
+
+var DateUnits = require('../var/DateUnits'),
+    DateUnitIndexes = require('../var/DateUnitIndexes'),
+    isUndefined = require('../../common/internal/isUndefined');
+
+var YEAR_INDEX = DateUnitIndexes.YEAR_INDEX;
+
+function iterateOverDateUnits(fn, startIndex, endIndex) {
+  endIndex = endIndex || 0;
+  if (isUndefined(startIndex)) {
+    startIndex = YEAR_INDEX;
+  }
+  for (var index = startIndex; index >= endIndex; index--) {
+    if (fn(DateUnits[index], index) === false) {
+      break;
+    }
+  }
+}
+
+module.exports = iterateOverDateUnits;
+},{"../../common/internal/isUndefined":155,"../var/DateUnitIndexes":382,"../var/DateUnits":383}],299:[function(require,module,exports){
+'use strict';
+
+var DateUnitIndexes = require('../var/DateUnitIndexes'),
+    iterateOverDateParams = require('./iterateOverDateParams');
+
+var DAY_INDEX = DateUnitIndexes.DAY_INDEX,
+    YEAR_INDEX = DateUnitIndexes.YEAR_INDEX;
+
+function iterateOverHigherDateParams(params, fn) {
+  iterateOverDateParams(params, fn, YEAR_INDEX, DAY_INDEX);
+}
+
+module.exports = iterateOverHigherDateParams;
+},{"../var/DateUnitIndexes":382,"./iterateOverDateParams":297}],300:[function(require,module,exports){
+'use strict';
+
+var LocaleHelpers = require('../var/LocaleHelpers'),
+    DateUnitIndexes = require('../var/DateUnitIndexes'),
+    getLowerUnitIndex = require('./getLowerUnitIndex'),
+    moveToBeginningOfWeek = require('./moveToBeginningOfWeek'),
+    setUnitAndLowerToEdge = require('./setUnitAndLowerToEdge');
+
+var WEEK_INDEX = DateUnitIndexes.WEEK_INDEX,
+    localeManager = LocaleHelpers.localeManager;
+
+function moveToBeginningOfUnit(d, unitIndex, localeCode) {
+  if (unitIndex === WEEK_INDEX) {
+    moveToBeginningOfWeek(d, localeManager.get(localeCode).getFirstDayOfWeek());
+  }
+  return setUnitAndLowerToEdge(d, getLowerUnitIndex(unitIndex));
+}
+
+module.exports = moveToBeginningOfUnit;
+},{"../var/DateUnitIndexes":382,"../var/LocaleHelpers":389,"./getLowerUnitIndex":280,"./moveToBeginningOfWeek":301,"./setUnitAndLowerToEdge":311}],301:[function(require,module,exports){
+'use strict';
+
+var setWeekday = require('./setWeekday'),
+    getWeekday = require('./getWeekday'),
+    mathAliases = require('../../common/var/mathAliases');
+
+var floor = mathAliases.floor;
+
+function moveToBeginningOfWeek(d, firstDayOfWeek) {
+  setWeekday(d, floor((getWeekday(d) - firstDayOfWeek) / 7) * 7 + firstDayOfWeek);
+  return d;
+}
+
+module.exports = moveToBeginningOfWeek;
+},{"../../common/var/mathAliases":195,"./getWeekday":293,"./setWeekday":312}],302:[function(require,module,exports){
+'use strict';
+
+var LocaleHelpers = require('../var/LocaleHelpers'),
+    DateUnitIndexes = require('../var/DateUnitIndexes'),
+    moveToEndOfWeek = require('./moveToEndOfWeek'),
+    getLowerUnitIndex = require('./getLowerUnitIndex'),
+    setUnitAndLowerToEdge = require('./setUnitAndLowerToEdge');
+
+var WEEK_INDEX = DateUnitIndexes.WEEK_INDEX,
+    localeManager = LocaleHelpers.localeManager;
+
+function moveToEndOfUnit(d, unitIndex, localeCode, stopIndex) {
+  if (unitIndex === WEEK_INDEX) {
+    moveToEndOfWeek(d, localeManager.get(localeCode).getFirstDayOfWeek());
+  }
+  return setUnitAndLowerToEdge(d, getLowerUnitIndex(unitIndex), stopIndex, true);
+}
+
+module.exports = moveToEndOfUnit;
+},{"../var/DateUnitIndexes":382,"../var/LocaleHelpers":389,"./getLowerUnitIndex":280,"./moveToEndOfWeek":303,"./setUnitAndLowerToEdge":311}],303:[function(require,module,exports){
+'use strict';
+
+var setWeekday = require('./setWeekday'),
+    getWeekday = require('./getWeekday'),
+    mathAliases = require('../../common/var/mathAliases');
+
+var ceil = mathAliases.ceil;
+
+function moveToEndOfWeek(d, firstDayOfWeek) {
+  var target = firstDayOfWeek - 1;
+  setWeekday(d, ceil((getWeekday(d) - target) / 7) * 7 + target);
+  return d;
+}
+
+module.exports = moveToEndOfWeek;
+},{"../../common/var/mathAliases":195,"./getWeekday":293,"./setWeekday":312}],304:[function(require,module,exports){
+'use strict';
+
+var DateUnitIndexes = require('../var/DateUnitIndexes'),
+    setDate = require('./setDate'),
+    setUnitAndLowerToEdge = require('./setUnitAndLowerToEdge'),
+    moveToBeginningOfWeek = require('./moveToBeginningOfWeek');
+
+var MONTH_INDEX = DateUnitIndexes.MONTH_INDEX;
+
+function moveToFirstDayOfWeekYear(d, firstDayOfWeek, firstDayOfWeekYear) {
+  setUnitAndLowerToEdge(d, MONTH_INDEX);
+  setDate(d, firstDayOfWeekYear);
+  moveToBeginningOfWeek(d, firstDayOfWeek);
+}
+
+module.exports = moveToFirstDayOfWeekYear;
+},{"../var/DateUnitIndexes":382,"./moveToBeginningOfWeek":301,"./setDate":307,"./setUnitAndLowerToEdge":311}],305:[function(require,module,exports){
+'use strict';
+
+var getLowerUnitIndex = require('./getLowerUnitIndex'),
+    setUnitAndLowerToEdge = require('./setUnitAndLowerToEdge');
+
+function resetLowerUnits(d, unitIndex) {
+  return setUnitAndLowerToEdge(d, getLowerUnitIndex(unitIndex));
+}
+
+module.exports = resetLowerUnits;
+},{"./getLowerUnitIndex":280,"./setUnitAndLowerToEdge":311}],306:[function(require,module,exports){
+'use strict';
+
+var DateUnitIndexes = require('../var/DateUnitIndexes'),
+    setUnitAndLowerToEdge = require('./setUnitAndLowerToEdge');
+
+var HOURS_INDEX = DateUnitIndexes.HOURS_INDEX;
+
+function resetTime(d) {
+  return setUnitAndLowerToEdge(d, HOURS_INDEX);
+}
+
+module.exports = resetTime;
+},{"../var/DateUnitIndexes":382,"./setUnitAndLowerToEdge":311}],307:[function(require,module,exports){
+'use strict';
+
+var callDateSet = require('../../common/internal/callDateSet');
+
+function setDate(d, val) {
+  callDateSet(d, 'Date', val);
+}
+
+module.exports = setDate;
+},{"../../common/internal/callDateSet":109}],308:[function(require,module,exports){
+'use strict';
+
+var createDate = require('./createDate'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    setChainableConstructor = require('../../common/internal/setChainableConstructor');
+
+var sugarDate = namespaceAliases.sugarDate;
+
+function setDateChainableConstructor() {
+  setChainableConstructor(sugarDate, createDate);
+}
+
+module.exports = setDateChainableConstructor;
+},{"../../common/internal/setChainableConstructor":169,"../../common/var/namespaceAliases":197,"./createDate":258}],309:[function(require,module,exports){
+'use strict';
+
+var ISODefaults = require('../var/ISODefaults'),
+    getDate = require('./getDate'),
+    setDate = require('./setDate'),
+    setYear = require('./setYear'),
+    getYear = require('./getYear'),
+    getMonth = require('./getMonth'),
+    setMonth = require('./setMonth'),
+    cloneDate = require('./cloneDate'),
+    getWeekday = require('./getWeekday'),
+    setWeekday = require('./setWeekday'),
+    classChecks = require('../../common/var/classChecks'),
+    moveToFirstDayOfWeekYear = require('./moveToFirstDayOfWeekYear');
+
+var isNumber = classChecks.isNumber,
+    ISO_FIRST_DAY_OF_WEEK = ISODefaults.ISO_FIRST_DAY_OF_WEEK,
+    ISO_FIRST_DAY_OF_WEEK_YEAR = ISODefaults.ISO_FIRST_DAY_OF_WEEK_YEAR;
+
+function setISOWeekNumber(d, num) {
+  if (isNumber(num)) {
+    // Intentionally avoiding updateDate here to prevent circular dependencies.
+    var isoWeek = cloneDate(d), dow = getWeekday(d);
+    moveToFirstDayOfWeekYear(isoWeek, ISO_FIRST_DAY_OF_WEEK, ISO_FIRST_DAY_OF_WEEK_YEAR);
+    setDate(isoWeek, getDate(isoWeek) + 7 * (num - 1));
+    setYear(d, getYear(isoWeek));
+    setMonth(d, getMonth(isoWeek));
+    setDate(d, getDate(isoWeek));
+    setWeekday(d, dow || 7);
+  }
+  return d.getTime();
+}
+
+module.exports = setISOWeekNumber;
+},{"../../common/var/classChecks":192,"../var/ISODefaults":386,"./cloneDate":253,"./getDate":270,"./getMonth":282,"./getWeekday":293,"./getYear":294,"./moveToFirstDayOfWeekYear":304,"./setDate":307,"./setMonth":310,"./setWeekday":312,"./setYear":313}],310:[function(require,module,exports){
+'use strict';
+
+var callDateSet = require('../../common/internal/callDateSet');
+
+function setMonth(d, val) {
+  callDateSet(d, 'Month', val);
+}
+
+module.exports = setMonth;
+},{"../../common/internal/callDateSet":109}],311:[function(require,module,exports){
+'use strict';
+
+var isDefined = require('../../common/internal/isDefined'),
+    classChecks = require('../../common/var/classChecks'),
+    callDateSet = require('../../common/internal/callDateSet'),
+    walkUnitDown = require('./walkUnitDown');
+
+var isFunction = classChecks.isFunction;
+
+function setUnitAndLowerToEdge(d, startIndex, stopIndex, end) {
+  walkUnitDown(startIndex, function(unit, i) {
+    var val = end ? unit.end : unit.start;
+    if (isFunction(val)) {
+      val = val(d);
+    }
+    callDateSet(d, unit.method, val);
+    return !isDefined(stopIndex) || i > stopIndex;
+  });
+  return d;
+}
+
+module.exports = setUnitAndLowerToEdge;
+},{"../../common/internal/callDateSet":109,"../../common/internal/isDefined":149,"../../common/var/classChecks":192,"./walkUnitDown":316}],312:[function(require,module,exports){
+'use strict';
+
+var setDate = require('./setDate'),
+    getDate = require('./getDate'),
+    getWeekday = require('./getWeekday'),
+    classChecks = require('../../common/var/classChecks'),
+    mathAliases = require('../../common/var/mathAliases');
+
+var isNumber = classChecks.isNumber,
+    abs = mathAliases.abs;
+
+function setWeekday(d, dow, dir) {
+  if (!isNumber(dow)) return;
+  var currentWeekday = getWeekday(d);
+  if (dir) {
+    // Allow a "direction" parameter to determine whether a weekday can
+    // be set beyond the current weekday in either direction.
+    var ndir = dir > 0 ? 1 : -1;
+    var offset = dow % 7 - currentWeekday;
+    if (offset && offset / abs(offset) !== ndir) {
+      dow += 7 * ndir;
+    }
+  }
+  setDate(d, getDate(d) + dow - currentWeekday);
+  return d.getTime();
+}
+
+module.exports = setWeekday;
+},{"../../common/var/classChecks":192,"../../common/var/mathAliases":195,"./getDate":270,"./getWeekday":293,"./setDate":307}],313:[function(require,module,exports){
+'use strict';
+
+var callDateSet = require('../../common/internal/callDateSet');
+
+function setYear(d, val) {
+  callDateSet(d, 'FullYear', val);
+}
+
+module.exports = setYear;
+},{"../../common/internal/callDateSet":109}],314:[function(require,module,exports){
+'use strict';
+
+function tzOffset(d) {
+  return d.getTimezoneOffset();
+}
+
+module.exports = tzOffset;
+},{}],315:[function(require,module,exports){
+'use strict';
+
+var DateUnits = require('../var/DateUnits'),
+    DateUnitIndexes = require('../var/DateUnitIndexes'),
+    trunc = require('../../common/var/trunc'),
+    setDate = require('./setDate'),
+    getDate = require('./getDate'),
+    getMonth = require('./getMonth'),
+    getNewDate = require('./getNewDate'),
+    setWeekday = require('./setWeekday'),
+    mathAliases = require('../../common/var/mathAliases'),
+    callDateGet = require('../../common/internal/callDateGet'),
+    classChecks = require('../../common/var/classChecks'),
+    resetLowerUnits = require('./resetLowerUnits'),
+    getLowerUnitIndex = require('./getLowerUnitIndex'),
+    getHigherUnitIndex = require('./getHigherUnitIndex'),
+    callDateSetWithWeek = require('./callDateSetWithWeek'),
+    iterateOverDateParams = require('./iterateOverDateParams');
+
+var DAY_INDEX = DateUnitIndexes.DAY_INDEX,
+    WEEK_INDEX = DateUnitIndexes.WEEK_INDEX,
+    MONTH_INDEX = DateUnitIndexes.MONTH_INDEX,
+    YEAR_INDEX = DateUnitIndexes.YEAR_INDEX,
+    round = mathAliases.round,
+    isNumber = classChecks.isNumber;
+
+function updateDate(d, params, reset, advance, prefer, weekdayDir) {
+  var upperUnitIndex;
+
+  function setUpperUnit(unitName, unitIndex) {
+    if (prefer && !upperUnitIndex) {
+      if (unitName === 'weekday') {
+        upperUnitIndex = WEEK_INDEX;
       } else {
-        return callDateSet(d, method, value);
+        upperUnitIndex = getHigherUnitIndex(unitIndex);
       }
     }
+  }
 
-    function isValid(d) {
-      return !isNaN(d.getTime());
+  function setSpecificity(unitIndex) {
+    // Other functions may preemptively set the specificity before arriving
+    // here so concede to them if they have already set more specific units.
+    if (unitIndex > params.specificity) {
+      return;
+    }
+    params.specificity = unitIndex;
+  }
+
+  function canDisambiguate() {
+    if (!upperUnitIndex || upperUnitIndex > YEAR_INDEX) {
+      return;
+    }
+    switch(prefer) {
+      case -1: return d > getNewDate();
+      case  1: return d < getNewDate();
+    }
+  }
+
+  function disambiguateHigherUnit() {
+    var unit = DateUnits[upperUnitIndex];
+    advance = prefer;
+    setUnit(unit.name, 1, unit, upperUnitIndex);
+  }
+
+  function handleFraction(unit, unitIndex, fraction) {
+    if (unitIndex) {
+      var lowerUnit = DateUnits[getLowerUnitIndex(unitIndex)];
+      var val = round(unit.multiplier / lowerUnit.multiplier * fraction);
+      params[lowerUnit.name] = val;
+    }
+  }
+
+  function monthHasShifted(d, targetMonth) {
+    if (targetMonth < 0) {
+      targetMonth = targetMonth % 12 + 12;
+    }
+    return targetMonth % 12 !== getMonth(d);
+  }
+
+  function setUnit(unitName, value, unit, unitIndex) {
+    var method = unit.method, checkMonth, fraction;
+
+    setUpperUnit(unitName, unitIndex);
+    setSpecificity(unitIndex);
+
+    fraction = value % 1;
+    if (fraction) {
+      handleFraction(unit, unitIndex, fraction);
+      value = trunc(value);
     }
 
-    function isLeapYear(d) {
-      var year = callDateGet(d, 'FullYear');
-      return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
-    }
-
-    // UTC helpers
-
-    function setUTC(d, force) {
-      setProperty(d, '_utc', !!force);
-      return d;
-    }
-
-    function isUTC(d) {
-      return !!d._utc || d.getTimezoneOffset() === 0;
-    }
-
-    function getUTCOffset(d, iso) {
-      var offset = d._utc ? 0 : d.getTimezoneOffset();
-      var colon  = iso === true ? ':' : '';
-      if (!offset && iso) return 'Z';
-      return padNumber(floor(-offset / 60), 2, true) + colon + padNumber(abs(offset % 60), 2);
-    }
-
-    // Date argument helpers
-
-    function collectDateArguments(args, allowDuration) {
-      var obj;
-      if (isObjectType(args[0])) {
-        return args;
-      } else if (isNumber(args[0]) && !isNumber(args[1])) {
-        return [args[0]];
-      } else if (isString(args[0]) && allowDuration) {
-        return [getDateParamsFromString(args[0]), args[1]];
+    if (unitName === 'weekday') {
+      if (!advance) {
+        // Weekdays are always considered absolute units so simply set them
+        // here even if it is an "advance" operation. This is to help avoid
+        // ambiguous meanings in "advance" as well as to neatly allow formats
+        // like "Wednesday of next week" without more complex logic.
+        setWeekday(d, value, weekdayDir);
       }
-      obj = {};
-      DateArgumentUnits.forEach(function(u,i) {
-        obj[u.name] = args[i];
-      });
-      return [obj];
+      return;
     }
+    checkMonth = unitIndex === MONTH_INDEX && getDate(d) > 28;
 
-    function getDateParamsFromString(str, num) {
-      var match, num, params = {};
-      match = str.match(/^(-?\d+)?\s?(\w+?)s?$/i);
-      if (match) {
-        if (isUndefined(num)) {
-          num = parseInt(match[1]);
-          if (isNaN(num)) {
-            num = 1;
-          }
-        }
-        params[match[2].toLowerCase()] = num;
+    // If we are advancing or rewinding, then we need we need to set the
+    // absolute time if the unit is "hours" or less. This is due to the fact
+    // that setting by method is ambiguous during DST shifts. For example,
+    // 1:00am on November 1st 2015 occurs twice in North American timezones
+    // with DST, the second time being after the clocks are rolled back at
+    // 2:00am. When springing forward this is automatically handled as there
+    // is no 2:00am so the date automatically jumps to 3:00am. However, when
+    // rolling back, setHours(2) will always choose the first "2am" even if
+    // the date is currently set to the second, causing unintended jumps.
+    // This ambiguity is unavoidable when setting dates as the notation is
+    // ambiguous. However when advancing, we clearly want the resulting date
+    // to be an acutal hour ahead, which can only be accomplished by setting
+    // the absolute time. Conversely, any unit higher than "hours" MUST use
+    // the internal set methods, as they are ambiguous as absolute units of
+    // time. Years may be 365 or 366 days depending on leap years, months are
+    // all over the place, and even days may be 23-25 hours depending on DST
+    // shifts. Finally, note that the kind of jumping described above will
+    // occur when calling ANY "set" method on the date and will occur even if
+    // the value being set is identical to the one currently set (i.e.
+    // setHours(2) on a date at 2am may not be a noop). This is precarious,
+    // so avoiding this situation in callDateSet by checking up front that
+    // the value is not the same before setting.
+    if (advance && !unit.ambiguous) {
+      d.setTime(d.getTime() + (value * advance * unit.multiplier));
+      return;
+    } else if (advance) {
+      if (unitIndex === WEEK_INDEX) {
+        value *= 7;
+        method = DateUnits[DAY_INDEX].method;
       }
-      return params;
+      value = (value * advance) + callDateGet(d, method);
     }
+    callDateSetWithWeek(d, method, value, advance);
+    if (checkMonth && monthHasShifted(d, value)) {
+      // As we are setting the units in reverse order, there is a chance that
+      // our date may accidentally traverse into a new month, such as setting
+      // { month: 1, date 15 } on January 31st. Check for this here and reset
+      // the date to the last day of the previous month if this has happened.
+      setDate(d, 0);
+    }
+  }
 
-    // Date iteration helpers
+  if (isNumber(params) && advance) {
+    // If param is a number and advancing, the number is in milliseconds.
+    params = { millisecond: params };
+  } else if (isNumber(params)) {
+    // Otherwise just set the timestamp and return.
+    d.setTime(params);
+    return d;
+  }
 
-    function iterateOverDateUnits(fn, from, to) {
-      var i, unit;
-      if (isUndefined(to)) to = DateUnitsReversed.length;
-      for(i = from || 0; i < to; i++) {
-        unit = DateUnitsReversed[i];
-        if (fn(unit.name, unit, i) === false) {
-          break;
-        }
+  iterateOverDateParams(params, setUnit);
+
+  if (reset && params.specificity) {
+    resetLowerUnits(d, params.specificity);
+  }
+
+  // If past or future is preferred, then the process of "disambiguation" will
+  // ensure that an ambiguous time/date ("4pm", "thursday", "June", etc.) will
+  // be in the past or future. Weeks are only considered ambiguous if there is
+  // a weekday, i.e. "thursday" is an ambiguous week, but "the 4th" is an
+  // ambiguous month.
+  if (canDisambiguate()) {
+    disambiguateHigherUnit();
+  }
+  return d;
+}
+
+module.exports = updateDate;
+},{"../../common/internal/callDateGet":108,"../../common/var/classChecks":192,"../../common/var/mathAliases":195,"../../common/var/trunc":198,"../var/DateUnitIndexes":382,"../var/DateUnits":383,"./callDateSetWithWeek":252,"./getDate":270,"./getHigherUnitIndex":278,"./getLowerUnitIndex":280,"./getMonth":282,"./getNewDate":283,"./iterateOverDateParams":297,"./resetLowerUnits":305,"./setDate":307,"./setWeekday":312}],316:[function(require,module,exports){
+'use strict';
+
+var DateUnits = require('../var/DateUnits'),
+    getLowerUnitIndex = require('./getLowerUnitIndex');
+
+function walkUnitDown(unitIndex, fn) {
+  while (unitIndex >= 0) {
+    if (fn(DateUnits[unitIndex], unitIndex) === false) {
+      break;
+    }
+    unitIndex = getLowerUnitIndex(unitIndex);
+  }
+}
+
+module.exports = walkUnitDown;
+},{"../var/DateUnits":383,"./getLowerUnitIndex":280}],317:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    fullCompareDate = require('./internal/fullCompareDate');
+
+Sugar.Date.defineInstance({
+
+  'is': function(date, d, margin) {
+    return fullCompareDate(date, d, margin);
+  }
+
+});
+
+module.exports = Sugar.Date.is;
+},{"./internal/fullCompareDate":265,"sugar-core":18}],318:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    createDate = require('./internal/createDate');
+
+Sugar.Date.defineInstance({
+
+  'isAfter': function(date, d, margin) {
+    return date.getTime() > createDate(d).getTime() - (margin || 0);
+  }
+
+});
+
+module.exports = Sugar.Date.isAfter;
+},{"./internal/createDate":258,"sugar-core":18}],319:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    createDate = require('./internal/createDate');
+
+Sugar.Date.defineInstance({
+
+  'isBefore': function(date, d, margin) {
+    return date.getTime() < createDate(d).getTime() + (margin || 0);
+  }
+
+});
+
+module.exports = Sugar.Date.isBefore;
+},{"./internal/createDate":258,"sugar-core":18}],320:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    createDate = require('./internal/createDate'),
+    mathAliases = require('../common/var/mathAliases');
+
+var min = mathAliases.min,
+    max = mathAliases.max;
+
+Sugar.Date.defineInstance({
+
+  'isBetween': function(date, d1, d2, margin) {
+    var t  = date.getTime();
+    var t1 = createDate(d1).getTime();
+    var t2 = createDate(d2).getTime();
+    var lo = min(t1, t2);
+    var hi = max(t1, t2);
+    margin = margin || 0;
+    return (lo - margin <= t) && (hi + margin >= t);
+  }
+
+});
+
+module.exports = Sugar.Date.isBetween;
+},{"../common/var/mathAliases":195,"./internal/createDate":258,"sugar-core":18}],321:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isFriday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],322:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isFuture;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],323:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.isLastMonth;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],324:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.isLastWeek;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],325:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.isLastYear;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],326:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getYear = require('./internal/getYear');
+
+Sugar.Date.defineInstance({
+
+  'isLeapYear': function(date) {
+    var year = getYear(date);
+    return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+  }
+
+});
+
+module.exports = Sugar.Date.isLeapYear;
+},{"./internal/getYear":294,"sugar-core":18}],327:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isMonday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],328:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.isNextMonth;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],329:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.isNextWeek;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],330:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.isNextYear;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],331:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isPast;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],332:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isSaturday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],333:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isSunday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],334:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.isThisMonth;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],335:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.isThisWeek;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],336:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.isThisYear;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],337:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isThursday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],338:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isToday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],339:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isTomorrow;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],340:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isTuesday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],341:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUTC = require('./internal/isUTC');
+
+Sugar.Date.defineInstance({
+
+  'isUTC': function(date) {
+    return isUTC(date);
+  }
+
+});
+
+module.exports = Sugar.Date.isUTC;
+},{"./internal/isUTC":296,"sugar-core":18}],342:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    dateIsValid = require('./internal/dateIsValid');
+
+Sugar.Date.defineInstance({
+
+  'isValid': function(date) {
+    return dateIsValid(date);
+  }
+
+});
+
+module.exports = Sugar.Date.isValid;
+},{"./internal/dateIsValid":261,"sugar-core":18}],343:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isWednesday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],344:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isWeekday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],345:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isWeekend;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],346:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildRelativeAliasesCall');
+
+module.exports = Sugar.Date.isYesterday;
+},{"./build/buildRelativeAliasesCall":216,"sugar-core":18}],347:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.Date.defineInstance({
+
+  'iso': function(date) {
+    return date.toISOString();
+  }
+
+});
+
+module.exports = Sugar.Date.iso;
+},{"sugar-core":18}],348:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.millisecondsAgo;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],349:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.millisecondsFromNow;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],350:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.millisecondsSince;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],351:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.millisecondsUntil;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],352:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.minutesAgo;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],353:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.minutesFromNow;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],354:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.minutesSince;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],355:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.minutesUntil;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],356:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.monthsAgo;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],357:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.monthsFromNow;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],358:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.monthsSince;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],359:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.monthsUntil;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],360:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    DateRangeConstructor = require('../range/var/DateRangeConstructor');
+
+Sugar.Date.defineStatic({
+
+  'range': DateRangeConstructor
+
+});
+
+module.exports = Sugar.Date.range;
+},{"../range/var/DateRangeConstructor":714,"sugar-core":18}],361:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    dateRelative = require('./internal/dateRelative');
+
+Sugar.Date.defineInstance({
+
+  'relative': function(date, localeCode, fn) {
+    return dateRelative(date, null, localeCode, fn);
+  }
+
+});
+
+module.exports = Sugar.Date.relative;
+},{"./internal/dateRelative":262,"sugar-core":18}],362:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    createDate = require('./internal/createDate'),
+    dateRelative = require('./internal/dateRelative');
+
+Sugar.Date.defineInstance({
+
+  'relativeTo': function(date, d, localeCode) {
+    return dateRelative(date, createDate(d), localeCode);
+  }
+
+});
+
+module.exports = Sugar.Date.relativeTo;
+},{"./internal/createDate":258,"./internal/dateRelative":262,"sugar-core":18}],363:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    LocaleHelpers = require('./var/LocaleHelpers');
+
+var localeManager = LocaleHelpers.localeManager;
+
+Sugar.Date.defineStatic({
+
+  'removeLocale': function(code) {
+    return localeManager.remove(code);
+  }
+
+});
+
+module.exports = Sugar.Date.removeLocale;
+},{"./var/LocaleHelpers":389,"sugar-core":18}],364:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    DateUnitIndexes = require('./var/DateUnitIndexes'),
+    moveToBeginningOfUnit = require('./internal/moveToBeginningOfUnit'),
+    getUnitIndexForParamName = require('./internal/getUnitIndexForParamName');
+
+var DAY_INDEX = DateUnitIndexes.DAY_INDEX;
+
+Sugar.Date.defineInstance({
+
+  'reset': function(date, unit, localeCode) {
+    var unitIndex = unit ? getUnitIndexForParamName(unit) : DAY_INDEX;
+    moveToBeginningOfUnit(date, unitIndex, localeCode);
+    return date;
+  }
+
+});
+
+module.exports = Sugar.Date.reset;
+},{"./internal/getUnitIndexForParamName":290,"./internal/moveToBeginningOfUnit":300,"./var/DateUnitIndexes":382,"sugar-core":18}],365:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    advanceDateWithArgs = require('./internal/advanceDateWithArgs');
+
+Sugar.Date.defineInstanceWithArguments({
+
+  'rewind': function(d, args) {
+    return advanceDateWithArgs(d, args, -1);
+  }
+
+});
+
+module.exports = Sugar.Date.rewind;
+},{"./internal/advanceDateWithArgs":246,"sugar-core":18}],366:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.secondsAgo;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],367:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.secondsFromNow;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],368:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.secondsSince;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],369:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.secondsUntil;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],370:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    updateDate = require('./internal/updateDate'),
+    collectDateArguments = require('./internal/collectDateArguments');
+
+Sugar.Date.defineInstanceWithArguments({
+
+  'set': function(d, args) {
+    args = collectDateArguments(args);
+    return updateDate(d, args[0], args[1]);
+  }
+
+});
+
+module.exports = Sugar.Date.set;
+},{"./internal/collectDateArguments":254,"./internal/updateDate":315,"sugar-core":18}],371:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    setISOWeekNumber = require('./internal/setISOWeekNumber');
+
+Sugar.Date.defineInstance({
+
+  'setISOWeek': function(date, num) {
+    return setISOWeekNumber(date, num);
+  }
+
+});
+
+module.exports = Sugar.Date.setISOWeek;
+},{"./internal/setISOWeekNumber":309,"sugar-core":18}],372:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    LocaleHelpers = require('./var/LocaleHelpers');
+
+var localeManager = LocaleHelpers.localeManager;
+
+Sugar.Date.defineStatic({
+
+  'setLocale': function(code) {
+    return localeManager.set(code);
+  }
+
+});
+
+module.exports = Sugar.Date.setLocale;
+},{"./var/LocaleHelpers":389,"sugar-core":18}],373:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    _dateOptions = require('./var/_dateOptions');
+
+module.exports = Sugar.Date.setOption;
+},{"./var/_dateOptions":394,"sugar-core":18}],374:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    _utc = require('../common/var/_utc');
+
+Sugar.Date.defineInstance({
+
+  'setUTC': function(date, on) {
+    return _utc(date, on);
+  }
+
+});
+
+module.exports = Sugar.Date.setUTC;
+},{"../common/var/_utc":190,"sugar-core":18}],375:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    setWeekday = require('./internal/setWeekday');
+
+Sugar.Date.defineInstance({
+
+  'setWeekday': function(date, dow) {
+    return setWeekday(date, dow);
+  }
+
+});
+
+module.exports = Sugar.Date.setWeekday;
+},{"./internal/setWeekday":312,"sugar-core":18}],376:[function(require,module,exports){
+'use strict';
+
+var getEnglishVariant = require('../internal/getEnglishVariant');
+
+var AmericanEnglishDefinition = getEnglishVariant({
+  'mdy': true,
+  'firstDayOfWeek': 0,
+  'firstDayOfWeekYear': 1,
+  'short':  '{MM}/{dd}/{yyyy}',
+  'medium': '{Month} {d}, {yyyy}',
+  'long':   '{Month} {d}, {yyyy} {time}',
+  'full':   '{Weekday}, {Month} {d}, {yyyy} {time}',
+  'stamp':  '{Dow} {Mon} {d} {yyyy} {time}',
+  'time':   '{h}:{mm} {TT}'
+});
+
+module.exports = AmericanEnglishDefinition;
+},{"../internal/getEnglishVariant":276}],377:[function(require,module,exports){
+'use strict';
+
+var getEnglishVariant = require('../internal/getEnglishVariant');
+
+var BritishEnglishDefinition = getEnglishVariant({
+  'short':  '{dd}/{MM}/{yyyy}',
+  'medium': '{d} {Month} {yyyy}',
+  'long':   '{d} {Month} {yyyy} {H}:{mm}',
+  'full':   '{Weekday}, {d} {Month}, {yyyy} {time}',
+  'stamp':  '{Dow} {d} {Mon} {yyyy} {time}'
+});
+
+module.exports = BritishEnglishDefinition;
+},{"../internal/getEnglishVariant":276}],378:[function(require,module,exports){
+'use strict';
+
+var getEnglishVariant = require('../internal/getEnglishVariant');
+
+var CanadianEnglishDefinition = getEnglishVariant({
+  'short':  '{yyyy}-{MM}-{dd}',
+  'medium': '{d} {Month}, {yyyy}',
+  'long':   '{d} {Month}, {yyyy} {H}:{mm}',
+  'full':   '{Weekday}, {d} {Month}, {yyyy} {time}',
+  'stamp':  '{Dow} {d} {Mon} {yyyy} {time}'
+});
+
+module.exports = CanadianEnglishDefinition;
+},{"../internal/getEnglishVariant":276}],379:[function(require,module,exports){
+'use strict';
+
+var CoreOutputFormats = {
+  'ISO8601': '{yyyy}-{MM}-{dd}T{HH}:{mm}:{ss}.{SSS}{Z}',
+  'RFC1123': '{Dow}, {dd} {Mon} {yyyy} {HH}:{mm}:{ss} {ZZ}',
+  'RFC1036': '{Weekday}, {dd}-{Mon}-{yy} {HH}:{mm}:{ss} {ZZ}'
+};
+
+module.exports = CoreOutputFormats;
+},{}],380:[function(require,module,exports){
+'use strict';
+
+var CoreParsingFormats = [
+  {
+    // 12-1978
+    // 08-1978 (MDY)
+    src: '{MM}[-.\\/]{yyyy}'
+  },
+  {
+    // 12/08/1978
+    // 08/12/1978 (MDY)
+    time: true,
+    src: '{dd}[-.\\/]{MM}(?:[-.\\/]{yyyy|yy|y})?',
+    mdy: '{MM}[-.\\/]{dd}(?:[-.\\/]{yyyy|yy|y})?'
+  },
+  {
+    // 1975-08-25
+    time: true,
+    src: '{yyyy}[-.\\/]{MM}(?:[-.\\/]{dd})?'
+  },
+  {
+    // .NET JSON
+    src: '\\\\/Date\\({timestamp}(?:[+-]\\d{4,4})?\\)\\\\/'
+  },
+  {
+    // ISO-8601
+    src: '{yearSign?}{yyyy}(?:-?{MM}(?:-?{dd}(?:T{ihh}(?::?{imm}(?::?{ss})?)?)?)?)?{tzOffset?}'
+  }
+];
+
+module.exports = CoreParsingFormats;
+},{}],381:[function(require,module,exports){
+'use strict';
+
+var defaultNewDate = require('../internal/defaultNewDate');
+
+var DATE_OPTIONS = {
+  'newDateInternal': defaultNewDate
+};
+
+module.exports = DATE_OPTIONS;
+},{"../internal/defaultNewDate":263}],382:[function(require,module,exports){
+'use strict';
+
+module.exports = {
+  HOURS_INDEX: 3,
+  DAY_INDEX: 4,
+  WEEK_INDEX: 5,
+  MONTH_INDEX: 6,
+  YEAR_INDEX: 7
+};
+},{}],383:[function(require,module,exports){
+'use strict';
+
+var getDaysInMonth = require('../internal/getDaysInMonth');
+
+var DateUnits = [
+  {
+    name: 'millisecond',
+    method: 'Milliseconds',
+    multiplier: 1,
+    start: 0,
+    end: 999
+  },
+  {
+    name: 'second',
+    method: 'Seconds',
+    multiplier: 1000,
+    start: 0,
+    end: 59
+  },
+  {
+    name: 'minute',
+    method: 'Minutes',
+    multiplier: 60 * 1000,
+    start: 0,
+    end: 59
+  },
+  {
+    name: 'hour',
+    method: 'Hours',
+    multiplier: 60 * 60 * 1000,
+    start: 0,
+    end: 23
+  },
+  {
+    name: 'day',
+    alias: 'date',
+    method: 'Date',
+    ambiguous: true,
+    multiplier: 24 * 60 * 60 * 1000,
+    start: 1,
+    end: function(d) {
+      return getDaysInMonth(d);
+    }
+  },
+  {
+    name: 'week',
+    method: 'ISOWeek',
+    ambiguous: true,
+    multiplier: 7 * 24 * 60 * 60 * 1000
+  },
+  {
+    name: 'month',
+    method: 'Month',
+    ambiguous: true,
+    multiplier: 30.4375 * 24 * 60 * 60 * 1000,
+    start: 0,
+    end: 11
+  },
+  {
+    name: 'year',
+    method: 'FullYear',
+    ambiguous: true,
+    multiplier: 365.25 * 24 * 60 * 60 * 1000,
+    start: 0
+  }
+];
+
+module.exports = DateUnits;
+},{"../internal/getDaysInMonth":274}],384:[function(require,module,exports){
+'use strict';
+
+var EnglishLocaleBaseDefinition = {
+  'code': 'en',
+  'plural': true,
+  'timeMarkers': 'at',
+  'ampm': 'AM|A.M.|a,PM|P.M.|p',
+  'units': 'millisecond:|s,second:|s,minute:|s,hour:|s,day:|s,week:|s,month:|s,year:|s',
+  'months': 'Jan:uary|,Feb:ruary|,Mar:ch|,Apr:il|,May,Jun:e|,Jul:y|,Aug:ust|,Sep:tember|t|,Oct:ober|,Nov:ember|,Dec:ember|',
+  'weekdays': 'Sun:day|,Mon:day|,Tue:sday|,Wed:nesday|,Thu:rsday|,Fri:day|,Sat:urday|+weekend',
+  'numerals': 'zero,one|first,two|second,three|third,four:|th,five|fifth,six:|th,seven:|th,eight:|h,nin:e|th,ten:|th',
+  'articles': 'a,an,the',
+  'tokens': 'the,st|nd|rd|th,of|in,a|an,on',
+  'time': '{H}:{mm}',
+  'past': '{num} {unit} {sign}',
+  'future': '{num} {unit} {sign}',
+  'duration': '{num} {unit}',
+  'modifiers': [
+    { 'name': 'half',   'src': 'half', 'value': .5 },
+    { 'name': 'midday', 'src': 'noon', 'value': 12 },
+    { 'name': 'midday', 'src': 'midnight', 'value': 24 },
+    { 'name': 'day',    'src': 'yesterday', 'value': -1 },
+    { 'name': 'day',    'src': 'today|tonight', 'value': 0 },
+    { 'name': 'day',    'src': 'tomorrow', 'value': 1 },
+    { 'name': 'sign',   'src': 'ago|before', 'value': -1 },
+    { 'name': 'sign',   'src': 'from now|after|from|in|later', 'value': 1 },
+    { 'name': 'edge',   'src': 'first day|first|beginning', 'value': -2 },
+    { 'name': 'edge',   'src': 'last day', 'value': 1 },
+    { 'name': 'edge',   'src': 'end|last', 'value': 2 },
+    { 'name': 'shift',  'src': 'last', 'value': -1 },
+    { 'name': 'shift',  'src': 'the|this', 'value': 0 },
+    { 'name': 'shift',  'src': 'next', 'value': 1 }
+  ],
+  'parse': [
+    '(?:just)? now',
+    '{shift} {unit:5-7}',
+    "{months?} (?:{year}|'{yy})",
+    '{midday} {4?} {day|weekday}',
+    '{months},?(?:[-.\\/\\s]{year})?',
+    '{edge} of (?:day)? {day|weekday}',
+    '{0} {num}{1?} {weekday} {2} {months},? {year?}',
+    '{shift?} {day?} {weekday?} {timeMarker?} {midday}',
+    '{sign?} {3?} {half} {3?} {unit:3-4|unit:7} {sign?}',
+    '{0?} {edge} {weekday?} {2} {shift?} {unit:4-7?} {months?},? {year?}'
+  ],
+  'timeParse': [
+    '{day|weekday}',
+    '{shift} {unit:5?} {weekday}',
+    '{0?} {date}{1?} {2?} {months?}',
+    '{weekday} {2?} {shift} {unit:5}',
+    '{0?} {num} {2?} {months}\\.?,? {year?}',
+    '{num?} {unit:4-5} {sign} {day|weekday}',
+    '{year}[-.\\/\\s]{months}[-.\\/\\s]{date}',
+    '{0|months} {date?}{1?} of {shift} {unit:6-7}',
+    '{0?} {num}{1?} {weekday} of {shift} {unit:6}',
+    "{date}[-.\\/\\s]{months}[-.\\/\\s](?:{year}|'?{yy})",
+    "{weekday?}\\.?,? {months}\\.?,? {date}{1?},? (?:{year}|'{yy})?"
+  ],
+  'timeFrontParse': [
+    '{sign} {num} {unit}',
+    '{num} {unit} {sign}',
+    '{4?} {day|weekday}'
+  ]
+};
+
+module.exports = EnglishLocaleBaseDefinition;
+},{}],385:[function(require,module,exports){
+'use strict';
+
+var TIMEZONE_ABBREVIATION_REG = require('./TIMEZONE_ABBREVIATION_REG'),
+    LocaleHelpers = require('./LocaleHelpers'),
+    DateUnitIndexes = require('./DateUnitIndexes'),
+    trunc = require('../../common/var/trunc'),
+    getDate = require('../internal/getDate'),
+    getYear = require('../internal/getYear'),
+    getHours = require('../internal/getHours'),
+    getMonth = require('../internal/getMonth'),
+    cloneDate = require('../internal/cloneDate'),
+    padNumber = require('../../common/internal/padNumber'),
+    getWeekday = require('../internal/getWeekday'),
+    callDateGet = require('../../common/internal/callDateGet'),
+    mathAliases = require('../../common/var/mathAliases'),
+    getWeekYear = require('../internal/getWeekYear'),
+    getUTCOffset = require('../internal/getUTCOffset'),
+    getDaysSince = require('../internal/getDaysSince'),
+    getWeekNumber = require('../internal/getWeekNumber'),
+    getMeridiemToken = require('../internal/getMeridiemToken'),
+    setUnitAndLowerToEdge = require('../internal/setUnitAndLowerToEdge');
+
+var localeManager = LocaleHelpers.localeManager,
+    MONTH_INDEX = DateUnitIndexes.MONTH_INDEX,
+    ceil = mathAliases.ceil;
+
+var FormatTokensBase = [
+  {
+    ldml: 'Dow',
+    strf: 'a',
+    lowerToken: 'dow',
+    get: function(d, localeCode) {
+      return localeManager.get(localeCode).getWeekdayName(getWeekday(d), 2);
+    }
+  },
+  {
+    ldml: 'Weekday',
+    strf: 'A',
+    lowerToken: 'weekday',
+    allowAlternates: true,
+    get: function(d, localeCode, alternate) {
+      return localeManager.get(localeCode).getWeekdayName(getWeekday(d), alternate);
+    }
+  },
+  {
+    ldml: 'Mon',
+    strf: 'b h',
+    lowerToken: 'mon',
+    get: function(d, localeCode) {
+      return localeManager.get(localeCode).getMonthName(getMonth(d), 2);
+    }
+  },
+  {
+    ldml: 'Month',
+    strf: 'B',
+    lowerToken: 'month',
+    allowAlternates: true,
+    get: function(d, localeCode, alternate) {
+      return localeManager.get(localeCode).getMonthName(getMonth(d), alternate);
+    }
+  },
+  {
+    strf: 'C',
+    get: function(d) {
+      return getYear(d).toString().slice(0, 2);
+    }
+  },
+  {
+    ldml: 'd date day',
+    strf: 'd',
+    strfPadding: 2,
+    ldmlPaddedToken: 'dd',
+    ordinalToken: 'do',
+    get: function(d) {
+      return getDate(d);
+    }
+  },
+  {
+    strf: 'e',
+    get: function(d) {
+      return padNumber(getDate(d), 2, false, 10, ' ');
+    }
+  },
+  {
+    ldml: 'H 24hr',
+    strf: 'H',
+    strfPadding: 2,
+    ldmlPaddedToken: 'HH',
+    get: function(d) {
+      return getHours(d);
+    }
+  },
+  {
+    ldml: 'h hours 12hr',
+    strf: 'I',
+    strfPadding: 2,
+    ldmlPaddedToken: 'hh',
+    get: function(d) {
+      return getHours(d) % 12 || 12;
+    }
+  },
+  {
+    ldml: 'D',
+    strf: 'j',
+    strfPadding: 3,
+    ldmlPaddedToken: 'DDD',
+    get: function(d) {
+      var s = setUnitAndLowerToEdge(cloneDate(d), MONTH_INDEX);
+      return getDaysSince(d, s) + 1;
+    }
+  },
+  {
+    ldml: 'M',
+    strf: 'm',
+    strfPadding: 2,
+    ordinalToken: 'Mo',
+    ldmlPaddedToken: 'MM',
+    get: function(d) {
+      return getMonth(d) + 1;
+    }
+  },
+  {
+    ldml: 'm minutes',
+    strf: 'M',
+    strfPadding: 2,
+    ldmlPaddedToken: 'mm',
+    get: function(d) {
+      return callDateGet(d, 'Minutes');
+    }
+  },
+  {
+    ldml: 'Q',
+    get: function(d) {
+      return ceil((getMonth(d) + 1) / 3);
+    }
+  },
+  {
+    ldml: 'TT',
+    strf: 'p',
+    get: function(d, localeCode) {
+      return getMeridiemToken(d, localeCode);
+    }
+  },
+  {
+    ldml: 'tt',
+    strf: 'P',
+    get: function(d, localeCode) {
+      return getMeridiemToken(d, localeCode).toLowerCase();
+    }
+  },
+  {
+    ldml: 'T',
+    lowerToken: 't',
+    get: function(d, localeCode) {
+      return getMeridiemToken(d, localeCode).charAt(0);
+    }
+  },
+  {
+    ldml: 's seconds',
+    strf: 'S',
+    strfPadding: 2,
+    ldmlPaddedToken: 'ss',
+    get: function(d) {
+      return callDateGet(d, 'Seconds');
+    }
+  },
+  {
+    ldml: 'S ms',
+    strfPadding: 3,
+    ldmlPaddedToken: 'SSS',
+    get: function(d) {
+      return callDateGet(d, 'Milliseconds');
+    }
+  },
+  {
+    ldml: 'e',
+    strf: 'u',
+    ordinalToken: 'eo',
+    get: function(d) {
+      return getWeekday(d) || 7;
+    }
+  },
+  {
+    strf: 'U',
+    strfPadding: 2,
+    get: function(d) {
+      // Sunday first, 0-53
+      return getWeekNumber(d, false, 0);
+    }
+  },
+  {
+    ldml: 'W',
+    strf: 'V',
+    strfPadding: 2,
+    ordinalToken: 'Wo',
+    ldmlPaddedToken: 'WW',
+    get: function(d) {
+      // Monday first, 1-53 (ISO8601)
+      return getWeekNumber(d, true);
+    }
+  },
+  {
+    strf: 'w',
+    get: function(d) {
+      return getWeekday(d);
+    }
+  },
+  {
+    ldml: 'w',
+    ordinalToken: 'wo',
+    ldmlPaddedToken: 'ww',
+    get: function(d, localeCode) {
+      // Locale dependent, 1-53
+      var loc = localeManager.get(localeCode),
+          dow = loc.getFirstDayOfWeek(localeCode),
+          doy = loc.getFirstDayOfWeekYear(localeCode);
+      return getWeekNumber(d, true, dow, doy);
+    }
+  },
+  {
+    strf: 'W',
+    strfPadding: 2,
+    get: function(d) {
+      // Monday first, 0-53
+      return getWeekNumber(d, false);
+    }
+  },
+  {
+    ldmlPaddedToken: 'gggg',
+    ldmlTwoDigitToken: 'gg',
+    get: function(d, localeCode) {
+      return getWeekYear(d, localeCode);
+    }
+  },
+  {
+    strf: 'G',
+    strfPadding: 4,
+    strfTwoDigitToken: 'g',
+    ldmlPaddedToken: 'GGGG',
+    ldmlTwoDigitToken: 'GG',
+    get: function(d, localeCode) {
+      return getWeekYear(d, localeCode, true);
+    }
+  },
+  {
+    ldml: 'year',
+    ldmlPaddedToken: 'yyyy',
+    ldmlTwoDigitToken: 'yy',
+    strf: 'Y',
+    strfPadding: 4,
+    strfTwoDigitToken: 'y',
+    get: function(d) {
+      return getYear(d);
+    }
+  },
+  {
+    ldml: 'ZZ',
+    strf: 'z',
+    get: function(d) {
+      return getUTCOffset(d);
+    }
+  },
+  {
+    ldml: 'X',
+    get: function(d) {
+      return trunc(d.getTime() / 1000);
+    }
+  },
+  {
+    ldml: 'x',
+    get: function(d) {
+      return d.getTime();
+    }
+  },
+  {
+    ldml: 'Z',
+    get: function(d) {
+      return getUTCOffset(d, true);
+    }
+  },
+  {
+    ldml: 'z',
+    strf: 'Z',
+    get: function(d) {
+      // Note that this is not accurate in all browsing environments!
+      // https://github.com/moment/moment/issues/162
+      // It will continue to be supported for Node and usage with the
+      // understanding that it may be blank.
+      var match = d.toString().match(TIMEZONE_ABBREVIATION_REG);
+      return match ? match[1]: '';
+    }
+  },
+  {
+    strf: 'D',
+    alias: '%m/%d/%y'
+  },
+  {
+    strf: 'F',
+    alias: '%Y-%m-%d'
+  },
+  {
+    strf: 'r',
+    alias: '%I:%M:%S %p'
+  },
+  {
+    strf: 'R',
+    alias: '%H:%M'
+  },
+  {
+    strf: 'T',
+    alias: '%H:%M:%S'
+  },
+  {
+    strf: 'x',
+    alias: '{short}'
+  },
+  {
+    strf: 'X',
+    alias: '{time}'
+  },
+  {
+    strf: 'c',
+    alias: '{stamp}'
+  }
+];
+
+module.exports = FormatTokensBase;
+},{"../../common/internal/callDateGet":108,"../../common/internal/padNumber":162,"../../common/var/mathAliases":195,"../../common/var/trunc":198,"../internal/cloneDate":253,"../internal/getDate":270,"../internal/getDaysSince":275,"../internal/getHours":279,"../internal/getMeridiemToken":281,"../internal/getMonth":282,"../internal/getUTCOffset":289,"../internal/getWeekNumber":291,"../internal/getWeekYear":292,"../internal/getWeekday":293,"../internal/getYear":294,"../internal/setUnitAndLowerToEdge":311,"./DateUnitIndexes":382,"./LocaleHelpers":389,"./TIMEZONE_ABBREVIATION_REG":393}],386:[function(require,module,exports){
+'use strict';
+
+module.exports = {
+  ISO_FIRST_DAY_OF_WEEK: 1,
+  ISO_FIRST_DAY_OF_WEEK_YEAR: 4
+};
+},{}],387:[function(require,module,exports){
+'use strict';
+
+var LOCALE_ARRAY_FIELDS = [
+  'months', 'weekdays', 'units', 'numerals', 'placeholders',
+  'articles', 'tokens', 'timeMarkers', 'ampm', 'timeSuffixes',
+  'parse', 'timeParse', 'timeFrontParse', 'modifiers'
+];
+
+module.exports = LOCALE_ARRAY_FIELDS;
+},{}],388:[function(require,module,exports){
+'use strict';
+
+var BritishEnglishDefinition = require('./BritishEnglishDefinition'),
+    AmericanEnglishDefinition = require('./AmericanEnglishDefinition'),
+    CanadianEnglishDefinition = require('./CanadianEnglishDefinition');
+
+var LazyLoadedLocales = {
+  'en-US': AmericanEnglishDefinition,
+  'en-GB': BritishEnglishDefinition,
+  'en-AU': BritishEnglishDefinition,
+  'en-CA': CanadianEnglishDefinition
+};
+
+module.exports = LazyLoadedLocales;
+},{"./AmericanEnglishDefinition":376,"./BritishEnglishDefinition":377,"./CanadianEnglishDefinition":378}],389:[function(require,module,exports){
+'use strict';
+
+var LazyLoadedLocales = require('./LazyLoadedLocales'),
+    AmericanEnglishDefinition = require('./AmericanEnglishDefinition'),
+    getNewLocale = require('../internal/getNewLocale');
+
+var English, localeManager;
+
+function buildLocales() {
+
+  function LocaleManager(loc) {
+    this.locales = {};
+    this.add(loc);
+  }
+
+  LocaleManager.prototype = {
+
+    get: function(code, fallback) {
+      var loc = this.locales[code];
+      if (!loc && LazyLoadedLocales[code]) {
+        loc = this.add(code, LazyLoadedLocales[code]);
+      } else if (!loc && code) {
+        loc = this.locales[code.slice(0, 2)];
       }
-    }
+      return loc || fallback === false ? loc : this.current;
+    },
 
-    // Date shifting helpers
+    getAll: function() {
+      return this.locales;
+    },
 
-    function advanceDate(d, args) {
-      var set = collectDateArguments(args, true);
-      return updateDate(d, set[0], set[1], 1);
-    }
-
-    function setDate(d, args) {
-      var set = collectDateArguments(args);
-      return updateDate(d, set[0], set[1])
-    }
-
-    function resetDate(d, unit) {
-      var params = {}, recognized;
-      unit = unit || 'hours';
-      if (unit === 'date') unit = 'days';
-      recognized = DateUnits.some(function(u) {
-        return unit === u.name || unit === u.name + 's';
-      });
-      params[unit] = unit.match(/^days?/) ? 1 : 0;
-      return recognized ? setDate(d, [params, true]) : d;
-    }
-
-    function setWeekday(d, dow, forward) {
-      if (!isNumber(dow)) return;
-      // Dates like "the 2nd Tuesday of June" need to be set forward
-      // so make sure that the day of the week reflects that here.
-      if (forward && dow % 7 < d.getDay()) {
-        dow += 7;
+    set: function(code) {
+      var loc = this.get(code, false);
+      if (!loc) {
+        throw new TypeError('Invalid Locale: ' + code);
       }
-      return callDateSet(d, 'Date', callDateGet(d, 'Date') + dow - callDateGet(d, 'Day'));
-    }
+      return this.current = loc;
+    },
 
-    function moveToBeginningOfUnit(d, unit) {
-      var set = {};
-      switch(unit) {
-        case 'year':  set.year    = callDateGet(d, 'FullYear'); break;
-        case 'month': set.month   = callDateGet(d, 'Month');    break;
-        case 'day':   set.day     = callDateGet(d, 'Date');     break;
-        case 'week':  set.weekday = 0; break;
-      }
-      return setDate(d, [set, true]);
-    }
-
-    function moveToEndOfUnit(d, unit) {
-      var set = { hours: 23, minutes: 59, seconds: 59, milliseconds: 999 };
-      switch(unit) {
-        case 'year':  set.month   = 11; set.day = 31;  break;
-        case 'month': set.day     = getDaysInMonth(d); break;
-        case 'week':  set.weekday = 6;                 break;
-      }
-      return setDate(d, [set, true]);
-    }
-
-    // Date parsing helpers
-
-    function getFormatMatch(match, arr) {
-      var obj = {}, value, num;
-      arr.forEach(function(key, i) {
-        value = match[i + 1];
-        if (isUndefined(value) || value === '') return;
-        if (key === 'year') {
-          obj.yearAsString = value.replace(/'/, '');
-        }
-        num = parseFloat(value.replace(/'/, '').replace(/,/, '.'));
-        obj[key] = !isNaN(num) ? num : value.toLowerCase();
-      });
-      return obj;
-    }
-
-    function cleanDateInput(str) {
-      str = str.trim().replace(/^just (?=now)|\.+$/i, '');
-      return convertAsianDigits(str);
-    }
-
-    function convertAsianDigits(str) {
-      return str.replace(AsianDigitReg, function(full, disallowed, match) {
-        var sum = 0, place = 1, lastWasHolder, lastHolder;
-        if (disallowed) return full;
-        match.split('').reverse().forEach(function(letter) {
-          var value = AsianDigitMap[letter], holder = value > 9;
-          if (holder) {
-            if (lastWasHolder) sum += place;
-            place *= value / (lastHolder || 1);
-            lastHolder = value;
-          } else {
-            if (lastWasHolder === false) {
-              place *= 10;
-            }
-            sum += place * value;
-          }
-          lastWasHolder = holder;
-        });
-        if (lastWasHolder) sum += place;
-        return sum;
-      });
-    }
-
-    function getExtendedDate(contextDate, f, localeCode, prefer, forceUTC) {
-      // TODO can we split this up into smaller methods?
-      var d, relative, baseLocalization, afterCallbacks, loc, set, unit, unitIndex, weekday, num, tmp, weekdayForward;
-
-      afterCallbacks = [];
-
-      function afterDateSet(fn) {
-        afterCallbacks.push(fn);
-      }
-
-      function fireCallbacks() {
-        afterCallbacks.forEach(function(fn) {
-          fn.call();
-        });
-      }
-
-      function getWeekdayWithMultiplier(w) {
-        var num = set.num && !set.unit ? set.num : 1;
-        return (7 * (num - 1)) + w;
-      }
-
-      function setWeekdayOfMonth() {
-        setWeekday(d, set.weekday, true);
-      }
-
-      function setUnitEdge() {
-        var modifier = loc.modifiersByName[set.edge];
-        iterateOverDateUnits(function(name) {
-          if (isDefined(set[name])) {
-            unit = name;
-            return false;
-          }
-        }, 4);
-        if (unit === 'year') {
-          set.specificity = 'month';
-        } else if (unit === 'month' || unit === 'week') {
-          set.specificity = 'day';
-        }
-        if (modifier.value < 0) {
-          moveToEndOfUnit(d, unit);
-        } else {
-          moveToBeginningOfUnit(d, unit);
-        }
-        // This value of -2 is arbitrary but it's a nice clean way to hook into this system.
-        if (modifier.value === -2) resetDate(d);
-      }
-
-      function separateAbsoluteUnits() {
-        var params;
-        iterateOverDateUnits(function(name, u, i) {
-          if (name === 'day') name = 'date';
-          if (isDefined(set[name])) {
-            // If there is a time unit set that is more specific than
-            // the matched unit we have a string like "5:30am in 2 minutes",
-            // which is meaningless, so invalidate the date...
-            if (i >= unitIndex) {
-              invalidateDate(d);
-              return false;
-            }
-            // ...otherwise set the params to set the absolute date
-            // as a callback after the relative date has been set.
-            params = params || {};
-            params[name] = set[name];
-            delete set[name];
-          }
-        });
-        if (params) {
-          afterDateSet(function() {
-            setDate(d, [params, true]);
-          });
-        }
-      }
-
-      if (contextDate && f) {
-        // If a context date is passed, (in the case of "get"
-        // and "[unit]FromNow") then use it as the starting point.
-        d = cloneDate(contextDate);
+    add: function(code, def) {
+      if (!def) {
+        def = code;
+        code = def.code;
       } else {
-        d = getNewDate();
+        def.code = code;
       }
-
-      setUTC(d, forceUTC);
-
-      if (isDate(f)) {
-        // If the source here is already a date object, then the operation
-        // is the same as cloning the date, which preserves the UTC flag.
-        setUTC(d, isUTC(f)).setTime(f.getTime());
-      } else if (isNumber(f) || f === null) {
-        d.setTime(f);
-      } else if (isObjectType(f)) {
-        setDate(d, [f, true]);
-        set = f;
-      } else if (isString(f)) {
-
-        // The act of getting the localization will pre-initialize
-        // if it is missing and add the required formats.
-        baseLocalization = getLocalization(localeCode);
-
-        // Clean the input and convert Kanji based numerals if they exist.
-        f = cleanDateInput(f);
-
-        if (baseLocalization) {
-          iterateOverObject(baseLocalization.getFormats(), function(i, dif) {
-            var match = f.match(dif.reg);
-            if (match) {
-
-              loc = dif.locale;
-              set = getFormatMatch(match, dif.to, loc);
-              loc.cachedFormat = dif;
-
-              if (set.utc) {
-                setUTC(d, true);
-              }
-
-              if (set.timestamp) {
-                set = set.timestamp;
-                return false;
-              }
-
-              if (dif.variant && !isString(set.month) && (isString(set.date) || baseLocalization.hasVariant(localeCode))) {
-                // If there's a variant (crazy Endian American format), swap the month and day.
-                tmp = set.month;
-                set.month = set.date;
-                set.date  = tmp;
-              }
-
-              if (hasAbbreviatedYear(set)) {
-                // If the year is 2 digits then get the implied century.
-                set.year = getYearFromAbbreviation(set.year);
-              }
-
-              if (set.month) {
-                // Set the month which may be localized.
-                set.month = loc.getMonth(set.month);
-                if (set.shift && !set.unit) set.unit = loc.units[7];
-              }
-
-              if (set.weekday && set.date) {
-                // If there is both a weekday and a date, the date takes precedence.
-                delete set.weekday;
-              } else if (set.weekday) {
-                // Otherwise set a localized weekday.
-                set.weekday = loc.getWeekday(set.weekday);
-                if (set.shift && !set.unit) {
-                  set.unit = loc.units[5];
-                }
-              }
-
-              if (set.day && (tmp = loc.modifiersByName[set.day])) {
-                // Relative day localizations such as "today" and "tomorrow".
-                set.day = tmp.value;
-                resetDate(d);
-                relative = true;
-              } else if (set.day && (weekday = loc.getWeekday(set.day)) > -1) {
-                // If the day is a weekday, then set that instead.
-                delete set.day;
-                set.weekday = getWeekdayWithMultiplier(weekday);
-                if (set.num && set.month) {
-                  // If we have "the 2nd Tuesday of June", then pass the "weekdayForward" flag
-                  // along to updateDate so that the date does not accidentally traverse into
-                  // the previous month. This needs to be independent of the "prefer" flag because
-                  // we are only ensuring that the weekday is in the future, not the entire date.
-                  weekdayForward = true;
-                }
-              }
-
-              if (set.date && !isNumber(set.date)) {
-                set.date = loc.getNumericDate(set.date);
-              }
-
-              if (loc.matchPM(set.ampm) && set.hour < 12) {
-                // If the time is 1pm-11pm advance the time by 12 hours.
-                set.hour += 12;
-              } else if (loc.matchAM(set.ampm) && set.hour === 12) {
-                // If it is 12:00am then set the hour to 0.
-                set.hour = 0;
-              }
-
-              if (isNumber(set.offsetHours) || isNumber(set.offsetMinutes)) {
-                // Adjust for timezone offset
-                setUTC(d, true);
-                set.offsetMinutes = set.offsetMinutes || 0;
-                set.offsetMinutes += set.offsetHours * 60;
-                if (set.offsetSign === '-') {
-                  set.offsetMinutes *= -1;
-                }
-                set.minute -= set.offsetMinutes;
-              }
-
-              if (set.unit) {
-                // Date has a unit like "days", "months", etc. are all relative to the current date.
-                relative  = true;
-                num       = loc.getNumber(set.num);
-                unitIndex = loc.getUnitIndex(set.unit);
-                unit      = English.units[unitIndex];
-
-                // Formats like "the 15th of last month" or "6:30pm of next week"
-                // contain absolute units in addition to relative ones, so separate
-                // them here, remove them from the params, and set up a callback to
-                // set them after the relative ones have been set.
-                separateAbsoluteUnits();
-
-                if (set.shift) {
-                  // Shift and unit, ie "next month", "last week", etc.
-                  num *= (tmp = loc.modifiersByName[set.shift]) ? tmp.value : 0;
-                }
-
-                if (set.sign && (tmp = loc.modifiersByName[set.sign])) {
-                  // Unit and sign, ie "months ago", "weeks from now", etc.
-                  num *= tmp.value;
-                }
-
-                if (isDefined(set.weekday)) {
-                  // Units can be with non-relative dates, set here. ie "the day after monday"
-                  setDate(d, [{ weekday: set.weekday }, true]);
-                  delete set.weekday;
-                }
-
-                // Finally shift the unit.
-                set[unit] = (set[unit] || 0) + num;
-              }
-
-              if (set.edge) {
-                // If there is an "edge" it needs to be set after the
-                // other fields are set. ie "the end of February"
-                afterDateSet(setUnitEdge);
-              }
-
-              if (set.yearSign === '-') {
-                set.year *= -1;
-              }
-
-              iterateOverDateUnits(function(name, unit, i) {
-                var value = set[name] || 0, fraction = value % 1;
-                if (fraction) {
-                  set[DateUnitsReversed[i - 1].name] = round(fraction * (name === 'second' ? 1000 : 60));
-                  set[name] = floor(value);
-                }
-              }, 1, 4);
-              return false;
-            }
-          });
-        }
-        if (!set) {
-          // The Date constructor does something tricky like checking the number
-          // of arguments so simply passing in undefined won't work.
-          if (!/^now$/i.test(f)) {
-            d = new Date(f);
-          }
-          if (forceUTC) {
-            // Falling back to system date here which cannot be parsed as UTC,
-            // so if we're forcing UTC then simply add the offset.
-            d.addMinutes(-d.getTimezoneOffset());
-          }
-        } else if (relative) {
-          advanceDate(d, [set]);
-        } else {
-          if (d._utc) {
-            // UTC times can traverse into other days or even months,
-            // so preemtively reset the time here to prevent this.
-            resetDate(d);
-          }
-          updateDate(d, set, true, false, prefer, weekdayForward);
-        }
-        fireCallbacks();
-        // A date created by parsing a string presumes that the format *itself* is UTC, but
-        // not that the date, once created, should be manipulated as such. In other words,
-        // if you are creating a date object from a server time "2012-11-15T12:00:00Z",
-        // in the majority of cases you are using it to create a date that will, after creation,
-        // be manipulated as local, so reset the utc flag here.
-        setUTC(d, false);
+      var loc = def.compiledFormats ? def : getNewLocale(def);
+      this.locales[code] = loc;
+      if (!this.current) {
+        this.current = loc;
       }
-      return {
-        date: d,
-        set: set
+      return loc;
+    },
+
+    remove: function(code) {
+      if (this.current.code === code) {
+        this.current = this.get('en');
       }
+      return delete this.locales[code];
     }
 
-    function hasAbbreviatedYear(obj) {
-      return obj.yearAsString && obj.yearAsString.length === 2;
-    }
+  };
 
-    // If the year is two digits, add the most appropriate century prefix.
-    function getYearFromAbbreviation(year) {
-      return round(callDateGet(getNewDate(), 'FullYear') / 100) * 100 - round(year / 100) * 100 + year;
-    }
+  // Sorry about this guys...
+  English = getNewLocale(AmericanEnglishDefinition);
+  localeManager = new LocaleManager(English);
+}
 
-    function getShortHour(d) {
-      var hours = callDateGet(d, 'Hours');
-      return hours === 0 ? 12 : hours - (floor(hours / 13) * 12);
-    }
+buildLocales();
 
-    // weeksSince won't work here as the result needs to be floored, not rounded.
-    function getWeekNumber(date) {
-      date = cloneDate(date);
-      var dow = callDateGet(date, 'Day') || 7;
-      resetDate(advanceDate(date, [(4 - dow) + ' days']));
-      return 1 + floor(date.daysSince(moveToBeginningOfUnit(cloneDate(date), 'year')) / 7);
-    }
+module.exports = {
+  English: English,
+  localeManager: localeManager
+};
+},{"../internal/getNewLocale":284,"./AmericanEnglishDefinition":376,"./LazyLoadedLocales":388}],390:[function(require,module,exports){
+'use strict';
 
-    function setWeekNumber(date, num) {
-      var weekday = callDateGet(date, 'Day') || 7;
-      if (isUndefined(num)) return;
-      setDate(date, [{ month: 0, date: 4 }]);
-      setDate(date, [{ weekday: 1 }]);
-      if (num > 1) {
-        advanceDate(date, [{ weeks: num - 1 }]);
-      }
-      if (weekday !== 1) {
-        advanceDate(date, [{ days: weekday - 1 }]);
-      }
-      return date.getTime();
-    }
+var LocalizedParsingTokens = {
+  'year': {
+    base: 'yyyy',
+    requiresSuffix: true
+  },
+  'month': {
+    base: 'MM',
+    requiresSuffix: true
+  },
+  'date': {
+    base: 'dd',
+    requiresSuffix: true
+  },
+  'hour': {
+    base: 'hh',
+    requiresSuffixOr: ':'
+  },
+  'minute': {
+    base: 'mm'
+  },
+  'second': {
+    base: 'ss'
+  },
+  'num': {
+    src: '\\d+',
+    requiresNumerals: true
+  }
+};
 
-    function getDaysInMonth(d) {
-      return 32 - callDateGet(new Date(callDateGet(d, 'FullYear'), callDateGet(d, 'Month'), 32), 'Date');
-    }
+module.exports = LocalizedParsingTokens;
+},{}],391:[function(require,module,exports){
+'use strict';
 
-    // Gets an "adjusted date unit" which is a way of representing
-    // the largest possible meaningful unit. In other words, if passed
-    // 3600000, this will return an array which represents "1 hour".
-    function getAdjustedUnit(ms, fn) {
-      var unitIndex = 0, value = 0;
-      iterateOverObject(DateUnits, function(i, unit) {
-        value = abs(fn(unit));
-        if (value >= 1) {
-          unitIndex = 7 - i;
-          return false;
-        }
-      });
-      return [value, unitIndex, ms];
-    }
+module.exports = 60 * 1000;
+},{}],392:[function(require,module,exports){
+'use strict';
 
-    // Gets the adjusted unit based on simple division by
-    // date unit multiplier.
-    function getAdjustedUnitForNumber(ms) {
-      return getAdjustedUnit(ms, function(unit) {
-        return floor(withPrecision(ms / unit.multiplier, 1));
+var ParsingTokens = {
+  'yyyy': {
+    param: 'year',
+    src: '\\d{4}'
+  },
+  'MM': {
+    param: 'month',
+    src: '[01]?\\d'
+  },
+  'dd': {
+    param: 'date',
+    src: '[0123]?\\d'
+  },
+  'hh': {
+    param: 'hour',
+    src: '[0-2]?\\d'
+  },
+  'mm': {
+    param: 'minute',
+    src: '[0-5]\\d'
+  },
+  'ss': {
+    param: 'second',
+    src: '[0-5]\\d(?:[,.]\\d+)?'
+  },
+  'yy': {
+    param: 'year',
+    src: '\\d{2}'
+  },
+  'y': {
+    param: 'year',
+    src: '\\d'
+  },
+  'yearSign': {
+    src: '[+-]',
+    sign: true
+  },
+  'tzHour': {
+    src: '[0-1]\\d'
+  },
+  'tzMinute': {
+    src: '[0-5]\\d'
+  },
+  'tzSign': {
+    src: '[+−-]',
+    sign: true
+  },
+  'ihh': {
+    param: 'hour',
+    src: '[0-2]?\\d(?:[,.]\\d+)?'
+  },
+  'imm': {
+    param: 'minute',
+    src: '[0-5]\\d(?:[,.]\\d+)?'
+  },
+  'GMT': {
+    param: 'utc',
+    src: 'GMT',
+    val: 1
+  },
+  'Z': {
+    param: 'utc',
+    src: 'Z',
+    val: 1
+  },
+  'timestamp': {
+    src: '\\d+'
+  }
+};
+
+module.exports = ParsingTokens;
+},{}],393:[function(require,module,exports){
+'use strict';
+
+module.exports = /(\w{3})[()\s\d]*$/;
+},{}],394:[function(require,module,exports){
+'use strict';
+
+var DATE_OPTIONS = require('./DATE_OPTIONS'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    defineOptionsAccessor = require('../../common/internal/defineOptionsAccessor');
+
+var sugarDate = namespaceAliases.sugarDate;
+
+module.exports = defineOptionsAccessor(sugarDate, DATE_OPTIONS);
+},{"../../common/internal/defineOptionsAccessor":124,"../../common/var/namespaceAliases":197,"./DATE_OPTIONS":381}],395:[function(require,module,exports){
+'use strict';
+
+var LocaleHelpers = require('./LocaleHelpers'),
+    FormatTokensBase = require('./FormatTokensBase'),
+    CoreOutputFormats = require('./CoreOutputFormats'),
+    forEach = require('../../common/internal/forEach'),
+    padNumber = require('../../common/internal/padNumber'),
+    spaceSplit = require('../../common/internal/spaceSplit'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases'),
+    createFormatMatcher = require('../../common/internal/createFormatMatcher'),
+    defineInstanceSimilar = require('../../common/internal/defineInstanceSimilar');
+
+var localeManager = LocaleHelpers.localeManager,
+    hasOwn = coreUtilityAliases.hasOwn,
+    getOwn = coreUtilityAliases.getOwn,
+    forEachProperty = coreUtilityAliases.forEachProperty,
+    sugarDate = namespaceAliases.sugarDate;
+
+var ldmlTokens, strfTokens;
+
+function buildDateFormatTokens() {
+
+  function addFormats(target, tokens, fn) {
+    if (tokens) {
+      forEach(spaceSplit(tokens), function(token) {
+        target[token] = fn;
       });
     }
-
-    // Gets the adjusted unit using the [unit]FromNow methods,
-    // which use internal date methods that neatly avoid vaguely
-    // defined units of time (days in month, leap years, etc).
-    function getAdjustedUnitForDate(d) {
-      var ms = d - new Date();
-      if (d.getTime() > Date.now()) {
-
-        // This adjustment is solely to allow
-        // Date.create('1 year from now').relative() to remain
-        // "1 year from now" instead of "11 months from now",
-        // as it would be due to the fact that the internal
-        // "now" date in "relative" is created slightly after
-        // that in "create".
-        d = new Date(d.getTime() + 10);
-      }
-      return getAdjustedUnit(ms, function(unit) {
-        return abs(d[unit.name + 'sFromNow']());
-      });
-    }
-
-    // Date format token helpers
-
-    function createMeridianTokens(slice, caps) {
-      var fn = function(d, localeCode) {
-        var hours = callDateGet(d, 'Hours');
-        return getLocalization(localeCode).get('ampm')[floor(hours / 12)] || '';
-      }
-      createFormatToken('t', fn, 1);
-      createFormatToken('tt', fn);
-      createFormatToken('T', fn, 1, 1);
-      createFormatToken('TT', fn, null, 2);
-    }
-
-    function createWeekdayTokens(slice, caps) {
-      var fn = function(d, localeCode) {
-        var dow = callDateGet(d, 'Day');
-        return getLocalization(localeCode).weekdays[dow];
-      }
-      createFormatToken('do', fn, 2);
-      createFormatToken('Do', fn, 2, 1);
-      createFormatToken('dow', fn, 3);
-      createFormatToken('Dow', fn, 3, 1);
-      createFormatToken('weekday', fn);
-      createFormatToken('Weekday', fn, null, 1);
-    }
-
-    function createMonthTokens(slice, caps) {
-      createMonthToken('mon', 0, 3);
-      createMonthToken('month', 0);
-
-      // For inflected month forms, namely Russian.
-      createMonthToken('month2', 1);
-      createMonthToken('month3', 2);
-    }
-
-    function createMonthToken(token, multiplier, slice) {
-      var fn = function(d, localeCode) {
-        var month = callDateGet(d, 'Month');
-        return getLocalization(localeCode).months[month + (multiplier * 12)];
-      };
-      createFormatToken(token, fn, slice);
-      createFormatToken(simpleCapitalize(token), fn, slice, 1);
-    }
-
-    function createFormatToken(t, fn, slice, caps) {
-      DateFormatTokens[t] = function(d, localeCode) {
-        var str = fn(d, localeCode);
-        if (slice) str = str.slice(0, slice);
-        if (caps)  str = str.slice(0, caps).toUpperCase() + str.slice(caps);
-        return str;
-      }
-    }
-
-    function createPaddedToken(t, fn, ms) {
-      DateFormatTokens[t] = fn;
-      DateFormatTokens[t + t] = function (d, localeCode) {
-        return padNumber(fn(d, localeCode), 2);
-      };
-      if (ms) {
-        DateFormatTokens[t + t + t] = function (d, localeCode) {
-          return padNumber(fn(d, localeCode), 3);
-        };
-        DateFormatTokens[t + t + t + t] = function (d, localeCode) {
-          return padNumber(fn(d, localeCode), 4);
-        };
-      }
-    }
-
-
-    // Date formatting helpers
-
-    function buildCompiledOutputFormat(format) {
-      var match = format.match(/(\{\w+\})|[^{}]+/g);
-      CompiledOutputFormats[format] = match.map(function(p) {
-        p.replace(/\{(\w+)\}/, function(full, token) {
-          p = DateFormatTokens[token] || token;
-          return token;
-        });
-        return p;
-      });
-    }
-
-    function executeCompiledOutputFormat(date, format, localeCode) {
-      var compiledFormat, length, i, t, result = '';
-      compiledFormat = CompiledOutputFormats[format];
-      for(i = 0, length = compiledFormat.length; i < length; i++) {
-        t = compiledFormat[i];
-        result += isFunction(t) ? t(date, localeCode) : t;
-      }
-      return result;
-    }
-
-    function formatDate(date, format, relative, localeCode) {
-      var adu;
-      if (!isValid(date)) {
-        return 'Invalid Date';
-      } else if (isString(Date[format])) {
-        format = Date[format];
-      } else if (isFunction(format)) {
-        adu = getAdjustedUnitForDate(date);
-        format = format.apply(date, adu.concat(getLocalization(localeCode)));
-      }
-      if (!format && relative) {
-        adu = adu || getAdjustedUnitForDate(date);
-        // Adjust up if time is in ms, as this doesn't
-        // look very good for a standard relative date.
-        if (adu[1] === 0) {
-          adu[1] = 1;
-          adu[0] = 1;
-        }
-        return getLocalization(localeCode).getRelativeFormat(adu);
-      }
-      format = format || 'long';
-      if (format === 'short' || format === 'long' || format === 'full') {
-        format = getLocalization(localeCode)[format];
-      }
-
-      if (!CompiledOutputFormats[format]) {
-        buildCompiledOutputFormat(format);
-      }
-
-      return executeCompiledOutputFormat(date, format, localeCode);
-    }
-
-    // Date comparison helpers
-
-    function fullCompareDate(d, f, margin, utc) {
-      var tmp, comp;
-      if (!isValid(d)) return;
-      if (isString(f)) {
-        f = f.trim().toLowerCase();
-        comp = setUTC(cloneDate(d), utc);
-        switch(true) {
-          case f === 'future':  return d.getTime() > getNewDate().getTime();
-          case f === 'past':    return d.getTime() < getNewDate().getTime();
-          case f === 'weekday': return callDateGet(comp, 'Day') > 0 && callDateGet(comp, 'Day') < 6;
-          case f === 'weekend': return callDateGet(comp, 'Day') === 0 || callDateGet(comp, 'Day') === 6;
-          case (tmp = English.weekdays.indexOf(f) % 7) > -1: return callDateGet(comp, 'Day') === tmp;
-          case (tmp = English.months.indexOf(f) % 12) > -1:  return callDateGet(comp, 'Month') === tmp;
-        }
-      }
-      return compareDate(d, f, null, margin, utc);
-    }
-
-    function compareDate(d, find, localeCode, buffer, forceUTC) {
-      var p, t, min, max, override, accuracy = 0, loBuffer = 0, hiBuffer = 0;
-      p = getExtendedDate(null, find, localeCode, null, forceUTC);
-      if (buffer > 0) {
-        loBuffer = hiBuffer = buffer;
-        override = true;
-      }
-      if (!isValid(p.date)) return false;
-      if (p.set && p.set.specificity) {
-        if (p.set.edge || p.set.shift) {
-          moveToBeginningOfUnit(p.date, p.set.specificity);
-        }
-        if (p.set.specificity === 'month') {
-          max = moveToEndOfUnit(cloneDate(p.date), p.set.specificity).getTime();
-        } else {
-          max = advanceDate(cloneDate(p.date), ['1 ' + p.set.specificity]).getTime() - 1;
-        }
-        if (!override && p.set.sign && p.set.specificity !== 'millisecond') {
-          // If the time is relative, there can occasionally be an disparity between the relative date
-          // and "now", which it is being compared to, so set an extra buffer to account for this.
-          loBuffer = 50;
-          hiBuffer = -50;
-        }
-      }
-      t   = d.getTime();
-      min = p.date.getTime();
-      max = max || (min + accuracy);
-      max = compensateForTimezoneTraversal(d, min, max);
-      return t >= (min - loBuffer) && t <= (max + hiBuffer);
-    }
-
-    function compensateForTimezoneTraversal(d, min, max) {
-      var dMin, dMax, minOffset, maxOffset;
-      dMin = new Date(min);
-      dMax = setUTC(new Date(max), isUTC(d));
-      if (callDateGet(dMax, 'Hours') !== 23) {
-        minOffset = dMin.getTimezoneOffset();
-        maxOffset = dMax.getTimezoneOffset();
-        if (minOffset !== maxOffset) {
-          max += (maxOffset - minOffset).minutes();
-        }
-      }
-      return max;
-    }
-
-    function updateDate(d, params, reset, advance, prefer, weekdayForward) {
-      var specificityIndex, noop = true;
-
-      function getParam(key) {
-        return isDefined(params[key]) ? params[key] : params[key + 's'];
-      }
-
-      function paramExists(key) {
-        return isDefined(getParam(key));
-      }
-
-      function uniqueParamExists(key, isDay) {
-        return paramExists(key) || (isDay && paramExists('weekday') && !paramExists('month'));
-      }
-
-      function canDisambiguate() {
-        switch(prefer) {
-          case -1: return d > getNewDate();
-          case  1: return d < getNewDate();
-        }
-      }
-
-      if (isNumber(params) && advance) {
-        // If param is a number and we're advancing, the number is presumed to be milliseconds.
-        params = { milliseconds: params };
-      } else if (isNumber(params)) {
-        // Otherwise just set the timestamp and return.
-        d.setTime(params);
-        return d;
-      }
-
-      // "date" can also be passed for the day
-      if (isDefined(params.date)) {
-        params.day = params.date;
-      }
-
-      // Reset any unit lower than the least specific unit set. Do not do this for
-      // weeks or for years. This needs to be performed before the acutal setting
-      // of the date because the order needs to be reversed in order to get the
-      // lowest specificity, also because higher order units can be overridden by
-      // lower order units, such as setting hour: 3, minute: 345, etc.
-      iterateOverDateUnits(function(name, unit, i) {
-        var isDay = name === 'day';
-        if (uniqueParamExists(name, isDay)) {
-          params.specificity = name;
-          specificityIndex = +i;
-          return false;
-        } else if (reset && name !== 'week' && (!isDay || !paramExists('week'))) {
-          // Days are relative to months, not weeks, so don't reset if a week exists.
-          callDateSet(d, unit.method, (isDay ? 1 : 0));
-        }
-      });
-
-      // Now actually set or advance the date in order, higher units first.
-      DateUnits.forEach(function(u, i) {
-        var name = u.name, method = u.method, value, checkMonth;
-        value = getParam(name)
-        if (isUndefined(value)) return;
-
-        noop = false;
-        checkMonth = name === 'month' && callDateGet(d, 'Date') > 28;
-
-        // If we are advancing or rewinding, then we need we need to set the
-        // absolute time if the unit is "hours" or less. This is due to the fact
-        // that setting by method is ambiguous during DST shifts. For example,
-        // 1:00am on November 1st 2015 occurs twice in North American timezones
-        // with DST, the second time being after the clocks are rolled back at
-        // 2:00am. When springing forward this is automatically handled as there
-        // is no 2:00am so the date automatically jumps to 3:00am. However, when
-        // rolling back, a date at 1:00am that has setHours(2) called on it will
-        // jump forward and extra hour as the period between 1:00am and 1:59am
-        // occurs twice. This ambiguity is unavoidable when setting dates as the
-        // notation is ambiguous. However, when advancing we clearly want the
-        // resulting date to be an acutal hour ahead, which can only accomplished
-        // by setting the absolute time. Conversely, any unit higher than "hours"
-        // MUST use the internal set methods, as they are ambiguous as absolute
-        // units of time. Years may be 365 or 366 days depending on leap years,
-        // months are all over the place, and even days may be 23-25 hours
-        // depending on DST shifts.
-        if (advance && i > 3) {
-          d.setTime(d.getTime() + (value * advance * u.multiplier));
-          return;
-        } else if (advance) {
-          if (name === 'week') {
-            value *= 7;
-            method = 'Date';
-          }
-          value = (value * advance) + callDateGet(d, method);
-        }
-        callDateSetWithWeek(d, method, value);
-        if (checkMonth && monthHasShifted(d, value)) {
-          // As we are setting the units in reverse order, there is a chance that
-          // our date may accidentally traverse into a new month, such as setting
-          // { month: 1, date 15 } on January 31st. Check for this here and reset
-          // the date to the last day of the previous month if this has happened.
-          callDateSet(d, 'Date', 0);
-        }
-      });
-
-      // If a weekday is included in the params and no 'date' parameter is
-      // overriding, set it here after all other units have been set. Note that
-      // the date has to be perfectly set before disambiguation so that a proper
-      // comparison can be made.
-      if (!advance && !paramExists('day') && paramExists('weekday')) {
-        setWeekday(d, getParam('weekday'), weekdayForward);
-      }
-
-      // If no action has been taken on the date
-      // then it should be considered invalid.
-      if (noop && !params.specificity) {
-        invalidateDate(d);
-        return d;
-      }
-
-      // If past or future is preferred, then the process of "disambiguation" will
-      // ensure that an ambiguous time/date ("4pm", "thursday", "June", etc.) will
-      // be in the past or future.
-      if (canDisambiguate()) {
-        iterateOverDateUnits(function(name, u) {
-          var ambiguous = u.ambiguous || (name === 'week' && paramExists('weekday'));
-          if (ambiguous && !uniqueParamExists(name, name === 'day')) {
-            d[u.addMethod](prefer);
-            return false;
-          } else if (name === 'year' && hasAbbreviatedYear(params)) {
-            updateDate(d, { years: 100 * prefer }, false, 1);
-          }
-        }, specificityIndex + 1);
-      }
-      return d;
-    }
-
-    function monthHasShifted(d, targetMonth) {
-      if (targetMonth < 0) {
-        targetMonth = targetMonth % 12 + 12;
-      }
-      return targetMonth % 12 !== callDateGet(d, 'Month');
-    }
-
-    // The ISO format allows times strung together without a demarcating ":", so make sure
-    // that these markers are now optional.
-    function prepareTime(format, loc, iso) {
-      var timeSuffixMapping = {'h':0,'m':1,'s':2}, add;
-      loc = loc || English;
-      return format.replace(/{([a-z])}/g, function(full, token) {
-        var separators = [],
-            isHours = token === 'h',
-            tokenIsRequired = isHours && !iso;
-        if (token === 't') {
-          return loc.get('ampm').join('|');
-        } else {
-          if (isHours) {
-            separators.push(':');
-          }
-          if (add = loc.timeSuffixes[timeSuffixMapping[token]]) {
-            separators.push(add + '\\s*');
-          }
-          return separators.length === 0 ? '' : '(?:' + separators.join('|') + ')' + (tokenIsRequired ? '' : '?');
-        }
-      });
-    }
-
-    // If the month is being set, then we don't want to accidentally
-    // traverse into a new month just because the target month doesn't have enough
-    // days. In other words, "5 months ago" from July 30th is still February, even
-    // though there is no February 30th, so it will of necessity be February 28th
-    // (or 29th in the case of a leap year).
-    function checkMonthTraversal(date, targetMonth) {
-      if (targetMonth < 0) {
-        targetMonth = targetMonth % 12 + 12;
-      }
-      if (targetMonth % 12 !== callDateGet(date, 'Month')) {
-        callDateSet(date, 'Date', 0);
-      }
-    }
-
-    function createDateFromArgs(contextDate, args, prefer, forceUTC) {
-      var f, localeCode;
-      if (isNumber(args[1])) {
-        // If the second argument is a number, then we have an
-        // enumerated constructor type as in "new Date(2003, 2, 12);"
-        f = collectDateArguments(args)[0];
-      } else {
-        f = args[0];
-        localeCode = args[1];
-      }
-      return createDate(contextDate, f, localeCode, prefer, forceUTC);
-    }
-
-    function createDate(contextDate, f, localeCode, prefer, forceUTC) {
-      return getExtendedDate(contextDate, f, localeCode, prefer, forceUTC).date;
-    }
-
-    function invalidateDate(d) {
-      d.setTime(NaN);
-    }
-
-    function buildDateUnits() {
-      DateUnitsReversed = DateUnits.concat().reverse();
-      DateArgumentUnits = DateUnits.concat();
-      DateArgumentUnits.splice(2,1);
-    }
-
-
-    /***
-     * @method [units]Since([d], [locale] = currentLocale)
-     * @returns Number
-     * @short Returns the time since [d] in the appropriate unit.
-     * @extra [d] will accept a date object, timestamp, or text format. If not specified, [d] is assumed to be now. [locale] can be passed to specify the locale that the date is in. %[unit]Ago% is provided as an alias to make this more readable when [d] is assumed to be the current date. For more see %date_format%.
-     *
-     * @set
-     *   millisecondsSince
-     *   secondsSince
-     *   minutesSince
-     *   hoursSince
-     *   daysSince
-     *   weeksSince
-     *   monthsSince
-     *   yearsSince
-     *
-     * @example
-     *
-     *   Date.create().millisecondsSince('1 hour ago') -> 3,600,000
-     *   Date.create().daysSince('1 week ago')         -> 7
-     *   Date.create().yearsSince('15 years ago')      -> 15
-     *   Date.create('15 years ago').yearsAgo()        -> 15
-     *
-     ***
-     * @method [units]Ago()
-     * @returns Number
-     * @short Returns the time ago in the appropriate unit.
-     *
-     * @set
-     *   millisecondsAgo
-     *   secondsAgo
-     *   minutesAgo
-     *   hoursAgo
-     *   daysAgo
-     *   weeksAgo
-     *   monthsAgo
-     *   yearsAgo
-     *
-     * @example
-     *
-     *   Date.create('last year').millisecondsAgo() -> 3,600,000
-     *   Date.create('last year').daysAgo()         -> 7
-     *   Date.create('last year').yearsAgo()        -> 15
-     *
-     ***
-     * @method [units]Until([d], [locale] = currentLocale)
-     * @returns Number
-     * @short Returns the time until [d] in the appropriate unit.
-     * @extra [d] will accept a date object, timestamp, or text format. If not specified, [d] is assumed to be now. [locale] can be passed to specify the locale that the date is in. %[unit]FromNow% is provided as an alias to make this more readable when [d] is assumed to be the current date. For more see %date_format%.
-     *
-     * @set
-     *   millisecondsUntil
-     *   secondsUntil
-     *   minutesUntil
-     *   hoursUntil
-     *   daysUntil
-     *   weeksUntil
-     *   monthsUntil
-     *   yearsUntil
-     *
-     * @example
-     *
-     *   Date.create().millisecondsUntil('1 hour from now') -> 3,600,000
-     *   Date.create().daysUntil('1 week from now')         -> 7
-     *   Date.create().yearsUntil('15 years from now')      -> 15
-     *   Date.create('15 years from now').yearsFromNow()    -> 15
-     *
-     ***
-     * @method [units]FromNow()
-     * @returns Number
-     * @short Returns the time from now in the appropriate unit.
-     *
-     * @set
-     *   millisecondsFromNow
-     *   secondsFromNow
-     *   minutesFromNow
-     *   hoursFromNow
-     *   daysFromNow
-     *   weeksFromNow
-     *   monthsFromNow
-     *   yearsFromNow
-     *
-     * @example
-     *
-     *   Date.create('next year').millisecondsFromNow() -> 3,600,000
-     *   Date.create('next year').daysFromNow()         -> 7
-     *   Date.create('next year').yearsFromNow()        -> 15
-     *
-     ***
-     * @method add[Units](<num>, [reset] = false)
-     * @returns Date
-     * @short Adds <num> of the unit to the date. If [reset] is true, all lower units will be reset.
-     * @extra Note that "months" is ambiguous as a unit of time. If the target date falls on a day that does not exist (ie. August 31 -> February 31), the date will be shifted to the last day of the month. Don't use %addMonths% if you need precision.
-     *
-     * @set
-     *   addMilliseconds
-     *   addSeconds
-     *   addMinutes
-     *   addHours
-     *   addDays
-     *   addWeeks
-     *   addMonths
-     *   addYears
-     *
-     * @example
-     *
-     *   Date.create().addMilliseconds(5) -> current time + 5 milliseconds
-     *   Date.create().addDays(5)         -> current time + 5 days
-     *   Date.create().addYears(5)        -> current time + 5 years
-     *
-     ***
-     * @method isLast[Unit]()
-     * @returns Boolean
-     * @short Returns true if the date is last week/month/year.
-     *
-     * @set
-     *   isLastWeek
-     *   isLastMonth
-     *   isLastYear
-     *
-     * @example
-     *
-     *   Date.create('yesterday').isLastWeek()  -> true or false?
-     *   Date.create('yesterday').isLastMonth() -> probably not...
-     *   Date.create('yesterday').isLastYear()  -> even less likely...
-     *
-     ***
-     * @method isThis[Unit]()
-     * @returns Boolean
-     * @short Returns true if the date is this week/month/year.
-     *
-     * @set
-     *   isThisWeek
-     *   isThisMonth
-     *   isThisYear
-     *
-     * @example
-     *
-     *   Date.create('tomorrow').isThisWeek()  -> true or false?
-     *   Date.create('tomorrow').isThisMonth() -> probably...
-     *   Date.create('tomorrow').isThisYear()  -> signs point to yes...
-     *
-     ***
-     * @method isNext[Unit]()
-     * @returns Boolean
-     * @short Returns true if the date is next week/month/year.
-     *
-     * @set
-     *   isNextWeek
-     *   isNextMonth
-     *   isNextYear
-     *
-     * @example
-     *
-     *   Date.create('tomorrow').isNextWeek()  -> true or false?
-     *   Date.create('tomorrow').isNextMonth() -> probably not...
-     *   Date.create('tomorrow').isNextYear()  -> even less likely...
-     *
-     ***
-     * @method beginningOf[Unit]()
-     * @returns Date
-     * @short Sets the date to the beginning of the appropriate unit.
-     *
-     * @set
-     *   beginningOfDay
-     *   beginningOfWeek
-     *   beginningOfMonth
-     *   beginningOfYear
-     *
-     * @example
-     *
-     *   Date.create().beginningOfDay()   -> the beginning of today (resets the time)
-     *   Date.create().beginningOfWeek()  -> the beginning of the week
-     *   Date.create().beginningOfMonth() -> the beginning of the month
-     *   Date.create().beginningOfYear()  -> the beginning of the year
-     *
-     ***
-     * @method endOf[Unit]()
-     * @returns Date
-     * @short Sets the date to the end of the appropriate unit.
-     *
-     * @set
-     *   endOfDay
-     *   endOfWeek
-     *   endOfMonth
-     *   endOfYear
-     *
-     * @example
-     *
-     *   Date.create().endOfDay()   -> the end of today (sets the time to 23:59:59.999)
-     *   Date.create().endOfWeek()  -> the end of the week
-     *   Date.create().endOfMonth() -> the end of the month
-     *   Date.create().endOfYear()  -> the end of the year
-     *
-     ***/
-
-    function buildDateMethods() {
-      extendSimilar(Date, DateUnits, function(methods, u, i) {
-        var name = u.name, caps = simpleCapitalize(name), since, until;
-        u.addMethod = 'add' + caps + 's';
-
-        function add(num, reset) {
-          var set = {};
-          set[name] = num;
-          return advanceDate(this, [set, reset]);
-        }
-
-        function timeDistanceNumeric(d1, d2) {
-          var n = (d1.getTime() - d2.getTime()) / u.multiplier;
-          return n < 0 ? ceil(n) : floor(n);
-        }
-
-        function addUnit(d, n, dsc) {
-          var d2;
-          add.call(d, n);
-          // "dsc" = "date shift compensation"
-          // This number should only be passed when traversing months to
-          // compensate for date shifting. For example, calling "1 month ago"
-          // on March 30th will result in February 28th, as there are not enough
-          // days. This is not an issue when creating new dates, as "2 months ago"
-          // gives an exact target to set, and the date shift is expected. However,
-          // when counting months using unit traversal, the date needs to stay the
-          // same if possible. To compensate for this, we need to try to reset the
-          // date after every iteration, and use the result if possible.
-          if (dsc && callDateGet(d, 'Date') !== dsc) {
-            d2 = cloneDate(d);
-            callDateSet(d2, 'Date', dsc);
-            if (callDateGet(d2, 'Date') === dsc) {
-              return d2;
-            }
-          }
-          return d;
-        }
-
-        function timeDistanceTraversal(d1, d2) {
-          var d, inc, n, dsc, count = 0;
-          d = cloneDate(d1);
-          inc = d1 < d2;
-          n = inc ? 1 : -1
-          dsc = name === 'month' && callDateGet(d, 'Date');
-          d = addUnit(d, n, dsc);
-          while (inc ? d <= d2 : d >= d2) {
-            count += -n;
-            d = addUnit(d, n, dsc);
-          }
-          return count;
-        }
-
-        function compareSince(fn, d, args) {
-          return fn(d, createDateFromArgs(d, args, 0, false));
-        }
-
-        function compareUntil(fn, d, args) {
-          return fn(createDateFromArgs(d, args, 0, false), d);
-        }
-
-        if (i < 3) {
-          ['Last','This','Next'].forEach(function(shift) {
-            methods['is' + shift + caps] = function() {
-              return compareDate(this, shift + ' ' + name, 'en');
-            };
-          });
-        }
-        if (i < 4) {
-          methods['beginningOf' + caps] = function() {
-            return moveToBeginningOfUnit(this, name);
-          };
-          methods['endOf' + caps] = function() {
-            return moveToEndOfUnit(this, name);
-          };
-          since = function() {
-            // Optimized: no leaking arguments
-            var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-            return compareSince(timeDistanceTraversal, this, args);
-          };
-          until = function() {
-            // Optimized: no leaking arguments
-            var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-            return compareUntil(timeDistanceTraversal, this, args);
-          };
-        } else {
-          since = function() {
-            // Optimized: no leaking arguments
-            var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-            return compareSince(timeDistanceNumeric, this, args);
-          };
-          until = function() {
-            // Optimized: no leaking arguments
-            var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-            return compareUntil(timeDistanceNumeric, this, args);
-          };
-        }
-        methods[name + 'sAgo']     = until;
-        methods[name + 'sUntil']   = until;
-        methods[name + 'sSince']   = since;
-        methods[name + 'sFromNow'] = since;
-
-        methods[u.addMethod] = add;
-        buildNumberToDateAlias(u, u.multiplier);
-      });
-    }
-
-    function buildCoreInputFormats() {
-      English.addFormat('([+-])?(\\d{4,4})[-.\\/]?{fullMonth}[-.]?(\\d{1,2})?', true, ['yearSign','year','month','date'], false, true);
-      English.addFormat('(\\d{1,2})[-.\\/]{fullMonth}(?:[-.\\/](\\d{2,4}))?', true, ['date','month','year'], true);
-      English.addFormat('{fullMonth}[-.](\\d{4,4})', false, ['month','year']);
-      English.addFormat('\\/Date\\((\\d+(?:[+-]\\d{4,4})?)\\)\\/', false, ['timestamp'])
-      English.addFormat(prepareTime(RequiredTime, English), false, TimeFormat)
-
-      // When a new locale is initialized it will have the CoreDateFormats initialized by default.
-      // From there, adding new formats will push them in front of the previous ones, so the core
-      // formats will be the last to be reached. However, the core formats themselves have English
-      // months in them, which means that English needs to first be initialized and creates a race
-      // condition. I'm getting around this here by adding these generalized formats in the order
-      // specific -> general, which will mean they will be added to the English localization in
-      // general -> specific order, then chopping them off the front and reversing to get the correct
-      // order. Note that there are 7 formats as 2 have times which adds a front and a back format.
-      CoreDateFormats = English.compiledFormats.slice(0,7).reverse();
-      English.compiledFormats = English.compiledFormats.slice(7).concat(CoreDateFormats);
-    }
-
-    function buildFormatTokens() {
-
-      createPaddedToken('f', function(d) {
-        return callDateGet(d, 'Milliseconds');
-      }, true);
-
-      createPaddedToken('s', function(d) {
-        return callDateGet(d, 'Seconds');
-      });
-
-      createPaddedToken('m', function(d) {
-        return callDateGet(d, 'Minutes');
-      });
-
-      createPaddedToken('h', function(d) {
-        return callDateGet(d, 'Hours') % 12 || 12;
-      });
-
-      createPaddedToken('H', function(d) {
-        return callDateGet(d, 'Hours');
-      });
-
-      createPaddedToken('d', function(d) {
-        return callDateGet(d, 'Date');
-      });
-
-      createPaddedToken('M', function(d) {
-        return callDateGet(d, 'Month') + 1;
-      });
-
-      createMeridianTokens();
-      createWeekdayTokens();
-      createMonthTokens();
-
-      // Aliases
-      DateFormatTokens['ms']           = DateFormatTokens['f'];
-      DateFormatTokens['milliseconds'] = DateFormatTokens['f'];
-      DateFormatTokens['seconds']      = DateFormatTokens['s'];
-      DateFormatTokens['minutes']      = DateFormatTokens['m'];
-      DateFormatTokens['hours']        = DateFormatTokens['h'];
-      DateFormatTokens['24hr']         = DateFormatTokens['H'];
-      DateFormatTokens['12hr']         = DateFormatTokens['h'];
-      DateFormatTokens['date']         = DateFormatTokens['d'];
-      DateFormatTokens['day']          = DateFormatTokens['d'];
-      DateFormatTokens['year']         = DateFormatTokens['yyyy'];
-
-    }
-
-    function buildFormatShortcuts() {
-      extendSimilar(Date, 'short,long,full', function(methods, name) {
-        methods[name] = function(localeCode) {
-          return formatDate(this, name, false, localeCode);
-        }
-      });
-    }
-
-    function buildAsianDigits() {
-      KanjiDigits.split('').forEach(function(digit, value) {
-        var holder;
-        if (value > 9) {
-          value = pow(10, value - 9);
-        }
-        AsianDigitMap[digit] = value;
-      });
-      simpleMerge(AsianDigitMap, NumberNormalizeMap);
-      // Kanji numerals may also be included in phrases which are text-based rather
-      // than actual numbers such as Chinese weekdays (上周三), and "the day before
-      // yesterday" (一昨日) in Japanese, so don't match these.
-      AsianDigitReg = RegExp('([期週周])?([' + KanjiDigits + FullWidthDigits + ']+)(?!昨)', 'g');
-    }
-
-     /***
-     * @method is[Day]()
-     * @returns Boolean
-     * @short Returns true if the date falls on that day.
-     * @extra Also available: %isYesterday%, %isToday%, %isTomorrow%, %isWeekday%, and %isWeekend%.
-     *
-     * @set
-     *   isToday
-     *   isYesterday
-     *   isTomorrow
-     *   isWeekday
-     *   isWeekend
-     *   isSunday
-     *   isMonday
-     *   isTuesday
-     *   isWednesday
-     *   isThursday
-     *   isFriday
-     *   isSaturday
-     *
-     * @example
-     *
-     *   Date.create('tomorrow').isToday() -> false
-     *   Date.create('thursday').isTomorrow() -> ?
-     *   Date.create('yesterday').isWednesday() -> ?
-     *   Date.create('today').isWeekend() -> ?
-     *
-     ***
-     * @method isFuture()
-     * @returns Boolean
-     * @short Returns true if the date is in the future.
-     * @example
-     *
-     *   Date.create('next week').isFuture() -> true
-     *   Date.create('last week').isFuture() -> false
-     *
-     ***
-     * @method isPast()
-     * @returns Boolean
-     * @short Returns true if the date is in the past.
-     * @example
-     *
-     *   Date.create('last week').isPast() -> true
-     *   Date.create('next week').isPast() -> false
-     *
-     ***/
-    function buildRelativeAliases() {
-      var special  = 'today,yesterday,tomorrow,weekday,weekend,future,past'.split(',');
-      var weekdays = English.weekdays.slice(0,7);
-      var months   = English.months.slice(0,12);
-      extendSimilar(Date, special.concat(weekdays).concat(months), function(methods, name) {
-        methods['is'+ simpleCapitalize(name)] = function(utc) {
-          return fullCompareDate(this, name, 0, utc);
-        };
-      });
-    }
-
-    function buildUTCAliases() {
-      extend(Date, {
-        'utc': {
-          'create': function() {
-            // Optimized: no leaking arguments
-            var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-            return createDateFromArgs(null, args, 0, true);
-          },
-
-          'past': function() {
-            // Optimized: no leaking arguments
-            var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-            return createDateFromArgs(null, args, -1, true);
-          },
-
-          'future': function() {
-            // Optimized: no leaking arguments
-            var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-            return createDateFromArgs(null, args, 1, true);
-          }
-        }
-      }, false);
-    }
-
-    function setDateProperties() {
-      extend(Date, {
-        'RFC1123': '{Dow}, {dd} {Mon} {yyyy} {HH}:{mm}:{ss} {tz}',
-        'RFC1036': '{Weekday}, {dd}-{Mon}-{yy} {HH}:{mm}:{ss} {tz}',
-        'ISO8601_DATE': '{yyyy}-{MM}-{dd}',
-        'ISO8601_DATETIME': '{yyyy}-{MM}-{dd}T{HH}:{mm}:{ss}.{fff}{isotz}'
-      }, false);
-    }
-
-
-    extend(Date, {
-
-       /***
-       * @method Date.create(<d>, [locale] = currentLocale)
-       * @returns Date
-       * @short Alternate Date constructor which understands many different text formats, a timestamp, or another date.
-       * @extra If no argument is given, date is assumed to be now. %Date.create% additionally can accept enumerated parameters as with the standard date constructor. [locale] can be passed to specify the locale that the date is in. When unspecified, the current locale (default is English) is assumed. UTC-based dates can be created through the %utc% object. For more see %date_format%.
-       * @set
-       *   Date.utc.create
-       *
-       * @example
-       *
-       *   Date.create('July')          -> July of this year
-       *   Date.create('1776')          -> 1776
-       *   Date.create('today')         -> today
-       *   Date.create('wednesday')     -> This wednesday
-       *   Date.create('next friday')   -> Next friday
-       *   Date.create('July 4, 1776')  -> July 4, 1776
-       *   Date.create(-446806800000)   -> November 5, 1955
-       *   Date.create(1776, 6, 4)      -> July 4, 1776
-       *   Date.create('1776年07月04日', 'ja') -> July 4, 1776
-       *   Date.utc.create('July 4, 1776', 'en')  -> July 4, 1776
-       *
-       ***/
-      'create': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return createDateFromArgs(null, args);
-      },
-
-       /***
-       * @method Date.past(<d>, [locale] = currentLocale)
-       * @returns Date
-       * @short Alternate form of %Date.create% with any ambiguity assumed to be the past.
-       * @extra For example %"Sunday"% can be either "the Sunday coming up" or "the Sunday last" depending on context. Note that dates explicitly in the future ("next Sunday") will remain in the future. This method simply provides a hint when ambiguity exists. UTC-based dates can be created through the %utc% object. For more, see %date_format%.
-       * @set
-       *   Date.utc.past
-       *
-       * @example
-       *
-       *   Date.past('July')          -> July of this year or last depending on the current month
-       *   Date.past('Wednesday')     -> This wednesday or last depending on the current weekday
-       *
-       ***/
-      'past': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return createDateFromArgs(null, args, -1);
-      },
-
-       /***
-       * @method Date.future(<d>, [locale] = currentLocale)
-       * @returns Date
-       * @short Alternate form of %Date.create% with any ambiguity assumed to be the future.
-       * @extra For example %"Sunday"% can be either "the Sunday coming up" or "the Sunday last" depending on context. Note that dates explicitly in the past ("last Sunday") will remain in the past. This method simply provides a hint when ambiguity exists. UTC-based dates can be created through the %utc% object. For more, see %date_format%.
-       * @set
-       *   Date.utc.future
-       *
-       * @example
-       *
-       *   Date.future('July')          -> July of this year or next depending on the current month
-       *   Date.future('Wednesday')     -> This wednesday or next depending on the current weekday
-       *
-       ***/
-      'future': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return createDateFromArgs(null, args, 1);
-      },
-
-       /***
-       * @method Date.addLocale(<code>, <set>)
-       * @returns Locale
-       * @short Adds a locale <set> to the locales understood by Sugar.
-       * @extra For more see %date_format%.
-       *
-       ***/
-      'addLocale': function(localeCode, set) {
-        return setLocalization(localeCode, set);
-      },
-
-       /***
-       * @method Date.setLocale(<code>)
-       * @returns Locale
-       * @short Sets the current locale to be used with dates.
-       * @extra Sugar has support for 13 locales that are available through the "Date Locales" package. In addition you can define a new locale with %Date.addLocale%. For more see %date_format%.
-       *
-       ***/
-      'setLocale': function(localeCode, set) {
-        var loc = getLocalization(localeCode, false);
-        CurrentLocalization = loc;
-        // The code is allowed to be more specific than the codes which are required:
-        // i.e. zh-CN or en-US. Currently this only affects US date variants such as 8/10/2000.
-        if (localeCode && localeCode !== loc.code) {
-          loc.code = localeCode;
-        }
-        return loc;
-      },
-
-       /***
-       * @method Date.getLocale([code] = current)
-       * @returns Locale
-       * @short Gets the locale for the given code, or the current locale.
-       * @extra The resulting locale object can be manipulated to provide more control over date localizations. For more about locales, see %date_format%.
-       *
-       ***/
-      'getLocale': function(localeCode) {
-        return !localeCode ? CurrentLocalization : getLocalization(localeCode, false);
-      },
-
-       /**
-       * @method Date.addFormat(<format>, <match>, [code] = null)
-       * @returns Nothing
-       * @short Manually adds a new date input format.
-       * @extra This method allows fine grained control for alternate formats. <format> is a string that can have regex tokens inside. <match> is an array of the tokens that each regex capturing group will map to, for example %year%, %date%, etc. For more, see %date_format%.
-       *
-       **/
-      'addFormat': function(format, match, localeCode) {
-        addDateInputFormat(getLocalization(localeCode), format, match);
-      }
-
-    }, false);
-
-    extend(Date, {
-
-       /***
-       * @method get(<d>, [locale] = currentLocale)
-       * @returns Date
-       * @short Gets a new date using the current one as a starting point.
-       * @extra For most purposes, this method is identical to %Date.create%, except that if a relative format such as "next week" is passed, it will be relative to the instance rather than the current time.
-       *
-       * @example
-       *
-       *   new Date(2010, 0).get('next week') -> 1 week after 2010-01-01
-       *   new Date(2004, 4).get('2 years before') -> 2 years before May, 2004
-       *
-       ***/
-      'get': function(s) {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return createDateFromArgs(this, args);
-      },
-
-       /***
-       * @method set(<set>, [reset] = false)
-       * @returns Date
-       * @short Sets the date object.
-       * @extra This method can accept multiple formats including a single number as a timestamp, an object, or enumerated parameters (as with the Date constructor). If [reset] is %true%, any units more specific than those passed will be reset.
-       *
-       * @example
-       *
-       *   new Date().set({ year: 2011, month: 11, day: 31 }) -> December 31, 2011
-       *   new Date().set(2011, 11, 31)                       -> December 31, 2011
-       *   new Date().set(86400000)                           -> 1 day after Jan 1, 1970
-       *   new Date().set({ year: 2004, month: 6 }, true)     -> June 1, 2004, 00:00:00.000
-       *
-       ***/
-      'set': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return setDate(this, args);
-      },
-
-       /***
-       * @method setWeekday()
-       * @returns Nothing
-       * @short Sets the weekday of the date.
-       * @extra In order to maintain a parallel with %getWeekday% (which itself is an alias for Javascript native %getDay%), Sunday is considered day %0%. This contrasts with ISO-8601 standard (used in %getISOWeek% and %setISOWeek%) which places Sunday at the end of the week (day 7). This effectively means that passing %0% to this method while in the middle of a week will rewind the date, where passing %7% will advance it.
-       *
-       * @example
-       *
-       *   d = new Date(); d.setWeekday(1); d; -> Monday of this week
-       *   d = new Date(); d.setWeekday(6); d; -> Saturday of this week
-       *
-       ***/
-      'setWeekday': function(dow) {
-        return setWeekday(this, dow);
-      },
-
-       /***
-       * @method setISOWeek(<num>)
-       * @returns Nothing
-       * @short Sets the week (of the year) as defined by the ISO-8601 standard.
-       * @extra Note that this standard places Sunday at the end of the week (day 7).
-       *
-       * @example
-       *
-       *   d = new Date(); d.setISOWeek(15); d; -> 15th week of the year
-       *
-       ***/
-      'setISOWeek': function(num) {
-        return setWeekNumber(this, num);
-      },
-
-       /***
-       * @method getISOWeek()
-       * @returns Number
-       * @short Gets the date's week (of the year) as defined by the ISO-8601 standard.
-       * @extra Note that this standard places Sunday at the end of the week (day 7). If %utc% is set on the date, the week will be according to UTC time.
-       *
-       * @example
-       *
-       *   new Date().getISOWeek()    -> today's week of the year
-       *
-       ***/
-      'getISOWeek': function() {
-        return getWeekNumber(this);
-      },
-
-       /***
-       * @method beginningOfISOWeek()
-       * @returns Date
-       * @short Set the date to the beginning of week as defined by this ISO-8601 standard.
-       * @extra Note that this standard places Monday at the start of the week.
-       * @example
-       *
-       *   Date.create().beginningOfISOWeek() -> Monday
-       *
-       ***/
-      'beginningOfISOWeek': function() {
-        var day = this.getDay();
-        if (day === 0) {
-          day = -6;
-        } else if (day !== 1) {
-          day = 1;
-        }
-        setWeekday(this, day);
-        return resetDate(this);
-      },
-
-       /***
-       * @method endOfISOWeek()
-       * @returns Date
-       * @short Set the date to the end of week as defined by this ISO-8601 standard.
-       * @extra Note that this standard places Sunday at the end of the week.
-       * @example
-       *
-       *   Date.create().endOfISOWeek() -> Sunday
-       *
-       ***/
-      'endOfISOWeek': function() {
-        if (this.getDay() !== 0) {
-          setWeekday(this, 7);
-        }
-        return moveToEndOfUnit(this, 'day');
-      },
-
-       /***
-       * @method getUTCOffset([iso])
-       * @returns String
-       * @short Returns a string representation of the offset from UTC time. If [iso] is true the offset will be in ISO8601 format.
-       * @example
-       *
-       *   new Date().getUTCOffset()     -> "+0900"
-       *   new Date().getUTCOffset(true) -> "+09:00"
-       *
-       ***/
-      'getUTCOffset': function(iso) {
-        return getUTCOffset(this, iso);
-      },
-
-       /***
-       * @method utc([on] = true)
-       * @returns Date
-       * @short Sets the internal utc flag for the date. When on, UTC-based methods will be called internally.
-       * @extra For more see %date_format%.
-       * @example
-       *
-       *   new Date().utc(true)
-       *   new Date().utc(false)
-       *
-       ***/
-      'utc': function(set) {
-        return setUTC(this, set !== false);
-      },
-
-       /***
-       * @method isUTC()
-       * @returns Boolean
-       * @short Returns true if the date has no timezone offset.
-       * @extra This will also return true for utc-based dates (dates that have the %utc% method set true). Note that even if the utc flag is set, %getTimezoneOffset% will always report the same thing as Javascript always reports that based on the environment's locale.
-       * @example
-       *
-       *   new Date().isUTC()           -> true or false?
-       *   new Date().utc(true).isUTC() -> true
-       *
-       ***/
-      'isUTC': function() {
-        return isUTC(this);
-      },
-
-       /***
-       * @method advance(<set>, [reset] = false)
-       * @returns Date
-       * @short Sets the date forward.
-       * @extra This method can accept multiple formats including an object, a string in the format %3 days%, a single number as milliseconds, or enumerated parameters (as with the Date constructor). If [reset] is %true%, any units more specific than those passed will be reset. For more see %date_format%.
-       * @example
-       *
-       *   new Date().advance({ year: 2 }) -> 2 years in the future
-       *   new Date().advance('2 days')    -> 2 days in the future
-       *   new Date().advance(0, 2, 3)     -> 2 months 3 days in the future
-       *   new Date().advance(86400000)    -> 1 day in the future
-       *
-       ***/
-      'advance': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return advanceDate(this, args);
-      },
-
-       /***
-       * @method rewind(<set>, [reset] = false)
-       * @returns Date
-       * @short Sets the date back.
-       * @extra This method can accept multiple formats including a single number as a timestamp, an object, or enumerated parameters (as with the Date constructor). If [reset] is %true%, any units more specific than those passed will be reset. For more see %date_format%.
-       * @example
-       *
-       *   new Date().rewind({ year: 2 }) -> 2 years in the past
-       *   new Date().rewind(0, 2, 3)     -> 2 months 3 days in the past
-       *   new Date().rewind(86400000)    -> 1 day in the past
-       *
-       ***/
-      'rewind': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        var a = collectDateArguments(args, true);
-        return updateDate(this, a[0], a[1], -1);
-      },
-
-       /***
-       * @method isValid()
-       * @returns Boolean
-       * @short Returns true if the date is valid.
-       * @example
-       *
-       *   new Date().isValid()         -> true
-       *   new Date('flexor').isValid() -> false
-       *
-       ***/
-      'isValid': function() {
-        return isValid(this);
-      },
-
-       /***
-       * @method isAfter(<d>, [margin] = 0)
-       * @returns Boolean
-       * @short Returns true if the date is after the <d>.
-       * @extra [margin] is to allow extra margin of error (in ms). <d> will accept a date object, timestamp, or text format. If not specified, <d> is assumed to be now. See %date_format% for more.
-       * @example
-       *
-       *   new Date().isAfter('tomorrow')  -> false
-       *   new Date().isAfter('yesterday') -> true
-       *
-       ***/
-      'isAfter': function(d, margin, utc) {
-        return this.getTime() > createDate(null, d).getTime() - (margin || 0);
-      },
-
-       /***
-       * @method isBefore(<d>, [margin] = 0)
-       * @returns Boolean
-       * @short Returns true if the date is before <d>.
-       * @extra [margin] is to allow extra margin of error (in ms). <d> will accept a date object, timestamp, or text format. If not specified, <d> is assumed to be now. See %date_format% for more.
-       * @example
-       *
-       *   new Date().isBefore('tomorrow')  -> true
-       *   new Date().isBefore('yesterday') -> false
-       *
-       ***/
-      'isBefore': function(d, margin) {
-        return this.getTime() < createDate(null, d).getTime() + (margin || 0);
-      },
-
-       /***
-       * @method isBetween(<d1>, <d2>, [margin] = 0)
-       * @returns Boolean
-       * @short Returns true if the date is later or equal to <d1> and before or equal to <d2>.
-       * @extra [margin] is to allow extra margin of error (in ms). <d1> and <d2> will accept a date object, timestamp, or text format. If not specified, they are assumed to be now. See %date_format% for more.
-       * @example
-       *
-       *   new Date().isBetween('yesterday', 'tomorrow')    -> true
-       *   new Date().isBetween('last year', '2 years ago') -> false
-       *
-       ***/
-      'isBetween': function(d1, d2, margin) {
-        var t  = this.getTime();
-        var t1 = createDate(null, d1).getTime();
-        var t2 = createDate(null, d2).getTime();
-        var lo = min(t1, t2);
-        var hi = max(t1, t2);
-        margin = margin || 0;
-        return (lo - margin <= t) && (hi + margin >= t);
-      },
-
-       /***
-       * @method isLeapYear()
-       * @returns Boolean
-       * @short Returns true if the date is a leap year.
-       * @example
-       *
-       *   Date.create('2000').isLeapYear() -> true
-       *
-       ***/
-      'isLeapYear': function() {
-        return isLeapYear(this);
-      },
-
-       /***
-       * @method daysInMonth()
-       * @returns Number
-       * @short Returns the number of days in the date's month.
-       * @example
-       *
-       *   Date.create('May').daysInMonth()            -> 31
-       *   Date.create('February, 2000').daysInMonth() -> 29
-       *
-       ***/
-      'daysInMonth': function() {
-        return getDaysInMonth(this);
-      },
-
-       /***
-       * @method format(<format>, [locale] = currentLocale)
-       * @returns String
-       * @short Formats and outputs the date.
-       * @extra <format> can be a number of pre-determined formats or a string of tokens. Locale-specific formats are %short%, %long%, and %full% which have their own aliases and can be called with %date.short()%, etc. If <format> is not specified the %long% format is assumed. [locale] specifies a locale code to use (if not specified the current locale is used). See %date_format% for more details.
-       *
-       * @set
-       *   short
-       *   long
-       *   full
-       *
-       * @example
-       *
-       *   Date.create().format()                                   -> ex. July 4, 2003
-       *   Date.create().format('{Weekday} {d} {Month}, {yyyy}')    -> ex. Monday July 4, 2003
-       *   Date.create().format('{hh}:{mm}')                        -> ex. 15:57
-       *   Date.create().format('{12hr}:{mm}{tt}')                  -> ex. 3:57pm
-       *   Date.create().format(Date.ISO8601_DATETIME)              -> ex. 2011-07-05 12:24:55.528Z
-       *   Date.create('last week').format('short', 'ja')                -> ex. 先週
-       *   Date.create('yesterday').format(function(value,unit,ms,loc) {
-       *     // value = 1, unit = 3, ms = -86400000, loc = [current locale object]
-       *   });                                                      -> ex. 1 day ago
-       *
-       ***/
-      'format': function(f, localeCode) {
-        return formatDate(this, f, false, localeCode);
-      },
-
-       /***
-       * @method relative([fn], [locale] = currentLocale)
-       * @returns String
-       * @short Returns a relative date string offset to the current time.
-       * @extra [fn] can be passed to provide for more granular control over the resulting string. [fn] is passed 4 arguments: the adjusted value, unit, offset in milliseconds, and a localization object. As an alternate syntax, [locale] can also be passed as the first (and only) parameter. For more, see %date_format%.
-       * @example
-       *
-       *   Date.create('90 seconds ago').relative() -> 1 minute ago
-       *   Date.create('January').relative()        -> ex. 5 months ago
-       *   Date.create('January').relative('ja')    -> 3ヶ月前
-       *   Date.create('120 minutes ago').relative(function(val,unit,ms,loc) {
-       *     // value = 2, unit = 3, ms = -7200, loc = [current locale object]
-       *   });                                      -> ex. 5 months ago
-       *
-       ***/
-      'relative': function(fn, localeCode) {
-        if (isString(fn)) {
-          localeCode = fn;
-          fn = null;
-        }
-        return formatDate(this, fn, true, localeCode);
-      },
-
-       /***
-       * @method is(<f>, [margin] = 0, [utc] = false)
-       * @returns Boolean
-       * @short Returns true if the date is <f>.
-       * @extra <f> will accept a date object, timestamp, or text format. %is% additionally understands more generalized expressions like month/weekday names, 'today', etc, and compares to the precision implied in <f>. [margin] allows an extra margin of error in milliseconds. [utc] will treat the compared date as UTC. For more, see %date_format%.
-       * @example
-       *
-       *   Date.create().is('July')               -> true or false?
-       *   Date.create().is('1776')               -> false
-       *   Date.create().is('today')              -> true
-       *   Date.create().is('weekday')            -> true or false?
-       *   Date.create().is('July 4, 1776')       -> false
-       *   Date.create().is(-6106093200000)       -> false
-       *   Date.create().is(new Date(1776, 6, 4)) -> false
-       *
-       ***/
-      'is': function(f, margin, utc) {
-        return fullCompareDate(this, f, margin, utc);
-      },
-
-       /***
-       * @method reset([unit] = 'hours')
-       * @returns Date
-       * @short Resets the unit passed and all smaller units. Default is "hours", effectively resetting the time.
-       * @example
-       *
-       *   Date.create().reset('day')   -> Beginning of today
-       *   Date.create().reset('month') -> 1st of the month
-       *
-       ***/
-      'reset': function(unit) {
-        return resetDate(this, unit);
-      },
-
-       /***
-       * @method clone()
-       * @returns Date
-       * @short Clones the date.
-       * @example
-       *
-       *   Date.create().clone() -> Copy of now
-       *
-       ***/
-      'clone': function() {
-        return cloneDate(this);
-      },
-
-       /***
-       * @method iso()
-       * @alias toISOString
-       *
-       ***/
-      'iso': function() {
-        return this.toISOString();
-      },
-
-       /***
-       * @method getWeekday()
-       * @returns Number
-       * @short Alias for %getDay%.
-       * @set
-       *   getUTCWeekday
-       *
-       * @example
-       *
-       +   Date.create().getWeekday();    -> (ex.) 3
-       +   Date.create().getUTCWeekday();    -> (ex.) 3
-       *
-       ***/
-      'getWeekday': function() {
-        return this.getDay();
-      },
-
-      'getUTCWeekday': function() {
-        return this.getUTCDay();
-      }
-
-    });
-
-
-    /***
-     * @namespace Number
-     *
-     ***/
-
-    /***
-     * @method [unit]()
-     * @returns Number
-     * @short Takes the number as a corresponding unit of time and converts to milliseconds.
-     * @extra Method names can be singular or plural.  Note that as "a month" is ambiguous as a unit of time, %months% will be equivalent to 30.4375 days, the average number in a month. Be careful using %months% if you need exact precision.
-     *
-     * @set
-     *   millisecond
-     *   milliseconds
-     *   second
-     *   seconds
-     *   minute
-     *   minutes
-     *   hour
-     *   hours
-     *   day
-     *   days
-     *   week
-     *   weeks
-     *   month
-     *   months
-     *   year
-     *   years
-     *
-     * @example
-     *
-     *   (5).milliseconds() -> 5
-     *   (10).hours()       -> 36000000
-     *   (1).day()          -> 86400000
-     *
-     ***
-     * @method [unit]Before([d], [locale] = currentLocale)
-     * @returns Date
-     * @short Returns a date that is <n> units before [d], where <n> is the number.
-     * @extra [d] will accept a date object, timestamp, or text format. Note that "months" is ambiguous as a unit of time. If the target date falls on a day that does not exist (ie. August 31 -> February 31), the date will be shifted to the last day of the month. Be careful using %monthsBefore% if you need exact precision. See %date_format% for more.
-     *
-     * @set
-     *   millisecondBefore
-     *   millisecondsBefore
-     *   secondBefore
-     *   secondsBefore
-     *   minuteBefore
-     *   minutesBefore
-     *   hourBefore
-     *   hoursBefore
-     *   dayBefore
-     *   daysBefore
-     *   weekBefore
-     *   weeksBefore
-     *   monthBefore
-     *   monthsBefore
-     *   yearBefore
-     *   yearsBefore
-     *
-     * @example
-     *
-     *   (5).daysBefore('tuesday')          -> 5 days before tuesday of this week
-     *   (1).yearBefore('January 23, 1997') -> January 23, 1996
-     *
-     ***
-     * @method [unit]Ago()
-     * @returns Date
-     * @short Returns a date that is <n> units ago.
-     * @extra Note that "months" is ambiguous as a unit of time. If the target date falls on a day that does not exist (ie. August 31 -> February 31), the date will be shifted to the last day of the month. Be careful using %monthsAgo% if you need exact precision.
-     *
-     * @set
-     *   millisecondAgo
-     *   millisecondsAgo
-     *   secondAgo
-     *   secondsAgo
-     *   minuteAgo
-     *   minutesAgo
-     *   hourAgo
-     *   hoursAgo
-     *   dayAgo
-     *   daysAgo
-     *   weekAgo
-     *   weeksAgo
-     *   monthAgo
-     *   monthsAgo
-     *   yearAgo
-     *   yearsAgo
-     *
-     * @example
-     *
-     *   (5).weeksAgo() -> 5 weeks ago
-     *   (1).yearAgo()  -> January 23, 1996
-     *
-     ***
-     * @method [unit]After([d], [locale] = currentLocale)
-     * @returns Date
-     * @short Returns a date <n> units after [d], where <n> is the number.
-     * @extra [d] will accept a date object, timestamp, or text format. Note that "months" is ambiguous as a unit of time. If the target date falls on a day that does not exist (ie. August 31 -> February 31), the date will be shifted to the last day of the month. Be careful using %monthsAfter% if you need exact precision. See %date_format% for more.
-     *
-     * @set
-     *   millisecondAfter
-     *   millisecondsAfter
-     *   secondAfter
-     *   secondsAfter
-     *   minuteAfter
-     *   minutesAfter
-     *   hourAfter
-     *   hoursAfter
-     *   dayAfter
-     *   daysAfter
-     *   weekAfter
-     *   weeksAfter
-     *   monthAfter
-     *   monthsAfter
-     *   yearAfter
-     *   yearsAfter
-     *
-     * @example
-     *
-     *   (5).daysAfter('tuesday')          -> 5 days after tuesday of this week
-     *   (1).yearAfter('January 23, 1997') -> January 23, 1998
-     *
-     ***
-     * @method [unit]FromNow()
-     * @returns Date
-     * @short Returns a date <n> units from now.
-     * @extra Note that "months" is ambiguous as a unit of time. If the target date falls on a day that does not exist (ie. August 31 -> February 31), the date will be shifted to the last day of the month. Be careful using %monthsFromNow% if you need exact precision.
-     *
-     * @set
-     *   millisecondFromNow
-     *   millisecondsFromNow
-     *   secondFromNow
-     *   secondsFromNow
-     *   minuteFromNow
-     *   minutesFromNow
-     *   hourFromNow
-     *   hoursFromNow
-     *   dayFromNow
-     *   daysFromNow
-     *   weekFromNow
-     *   weeksFromNow
-     *   monthFromNow
-     *   monthsFromNow
-     *   yearFromNow
-     *   yearsFromNow
-     *
-     * @example
-     *
-     *   (5).weeksFromNow() -> 5 weeks ago
-     *   (1).yearFromNow()  -> January 23, 1998
-     *
-     ***/
-    function buildNumberToDateAlias(u, multiplier) {
-      var name = u.name, methods = {};
-      function base() {
-        return round(this * multiplier);
-      }
-      function after() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return createDateFromArgs(null, args)[u.addMethod](this);
-      }
-      function before() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return createDateFromArgs(null, args)[u.addMethod](-this);
-      }
-      methods[name] = base;
-      methods[name + 's'] = base;
-      methods[name + 'Before'] = before;
-      methods[name + 'sBefore'] = before;
-      methods[name + 'Ago'] = before;
-      methods[name + 'sAgo'] = before;
-      methods[name + 'After'] = after;
-      methods[name + 'sAfter'] = after;
-      methods[name + 'FromNow'] = after;
-      methods[name + 'sFromNow'] = after;
-      extend(Number, methods);
-    }
-
-    extend(Number, {
-
-       /***
-       * @method duration([locale] = currentLocale)
-       * @returns String
-       * @short Takes the number as milliseconds and returns a unit-adjusted localized string.
-       * @extra This method is the same as %Date#relative% without the localized equivalent of "from now" or "ago". [locale] can be passed as the first (and only) parameter. Note that this method is only available when the dates package is included.
-       * @example
-       *
-       *   (500).duration() -> '500 milliseconds'
-       *   (1200).duration() -> '1 second'
-       *   (75).minutes().duration() -> '1 hour'
-       *   (75).minutes().duration('es') -> '1 hora'
-       *
-       ***/
-      'duration': function(localeCode) {
-        return getLocalization(localeCode).getDuration(this);
-      }
-
-    });
-
-    English = CurrentLocalization = Date.addLocale('en', {
-      'plural':     true,
-      'timeMarker': 'at',
-      'ampm':       'am,pm',
-      'months':     'January,February,March,April,May,June,July,August,September,October,November,December',
-      'weekdays':   'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday',
-      'units':      'millisecond:|s,second:|s,minute:|s,hour:|s,day:|s,week:|s,month:|s,year:|s',
-      'numbers':    'one,two,three,four,five,six,seven,eight,nine,ten',
-      'articles':   'a,an,the',
-      'tokens':     'the,st|nd|rd|th,of',
-      'short':      '{Month} {d}, {yyyy}',
-      'long':       '{Month} {d}, {yyyy} {h}:{mm}{tt}',
-      'full':       '{Weekday} {Month} {d}, {yyyy} {h}:{mm}:{ss}{tt}',
-      'past':       '{num} {unit} {sign}',
-      'future':     '{num} {unit} {sign}',
-      'duration':   '{num} {unit}',
-      'modifiers': [
-        { 'name': 'sign',  'src': 'ago|before', 'value': -1 },
-        { 'name': 'sign',  'src': 'from now|after|from|in|later', 'value': 1 },
-        { 'name': 'edge',  'src': 'last day', 'value': -2 },
-        { 'name': 'edge',  'src': 'end', 'value': -1 },
-        { 'name': 'edge',  'src': 'first day|beginning', 'value': 1 },
-        { 'name': 'shift', 'src': 'last', 'value': -1 },
-        { 'name': 'shift', 'src': 'the|this', 'value': 0 },
-        { 'name': 'shift', 'src': 'next', 'value': 1 }
-      ],
-      'dateParse': [
-        '{month} {year}',
-        '{shift} {unit=5-7}',
-        '{0?} {date}{1}',
-        '{0?} {edge} of {shift?} {unit=4-7?} {month?} {year?}'
-      ],
-      'timeParse': [
-        '{num} {unit} {sign}',
-        '{sign} {num} {unit}',
-        '{0} {num}{1} {day} of {month} {year?}',
-        '{weekday?} {month} {date}{1?} {year?}',
-        '{date} {month} {year}',
-        '{date} {month}',
-        '{shift} {weekday}',
-        '{shift} week {weekday}',
-        '{weekday} {2?} {shift} week',
-        '{num} {unit=4-5} {sign} {day}',
-        '{0?} {date}{1} of {month}',
-        '{0?}{month?} {date?}{1?} of {shift} {unit=6-7}',
-        '{edge} of {day}'
-      ]
-    });
-
-    buildDateUnits();
-    buildDateMethods();
-    buildCoreInputFormats();
-    buildFormatTokens();
-    buildFormatShortcuts();
-    buildAsianDigits();
-    buildRelativeAliases();
-    buildUTCAliases();
-    setDateProperties();
-
-    /***
-     * @module Function
-     * @dependency core
-     * @description Lazy, throttled, and memoized functions, delayed functions and handling of timers, argument currying.
-     *
-     ***/
-
-    function setDelay(fn, ms, after, scope, args) {
-      // Delay of infinity is never called of course...
-      ms = coercePositiveInteger(ms || 0);
-      if (!fn.timers) fn.timers = [];
-      // This is a workaround for <= IE8, which apparently has the
-      // ability to call timeouts in the queue on the same tick (ms?)
-      // even if functionally they have already been cleared.
-      fn._canceled = false;
-      fn.timers.push(setTimeout(function() {
-        if (!fn._canceled) {
-          after.apply(scope, args || []);
-        }
-      }, ms));
-    }
-
-    function cancelFunction(fn) {
-      var timers = fn.timers, timer;
-      if (isArray(timers)) {
-        while(timer = timers.shift()) {
-          clearTimeout(timer);
-        }
-      }
-      fn._canceled = true;
-      return fn;
-    }
-
-    function createLazyFunction(fn, ms, immediate, limit) {
-      var queue = [], locked = false, execute, rounded, perExecution, result;
-      ms = ms || 1;
-      limit = limit || Infinity;
-      rounded = ceil(ms);
-      perExecution = round(rounded / ms) || 1;
-      execute = function() {
-        var queueLength = queue.length, maxPerRound;
-        if (queueLength == 0) return;
-        // Allow fractions of a millisecond by calling
-        // multiple times per actual timeout execution
-        maxPerRound = max(queueLength - perExecution, 0);
-        while(queueLength > maxPerRound) {
-          // Getting uber-meta here...
-          result = Function.prototype.apply.apply(fn, queue.shift());
-          queueLength--;
-        }
-        setDelay(lazy, rounded, function() {
-          locked = false;
-          execute();
-        });
-      }
-      function lazy() {
-        // If the execution has locked and it's immediate, then
-        // allow 1 less in the queue as 1 call has already taken place.
-        if (queue.length < limit - (locked && immediate ? 1 : 0)) {
-          // Optimized: no leaking arguments
-          var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-          queue.push([this, args]);
-        }
-        if (!locked) {
-          locked = true;
-          if (immediate) {
-            execute();
-          } else {
-            setDelay(lazy, rounded, execute);
-          }
-        }
-        // Return the memoized result
-        return result;
-      }
-      return lazy;
-    }
-
-    function stringifyArguments() {
-      var str = '';
-      for (var i = 0; i < arguments.length; i++) {
-        str += stringify(arguments[i]);
-      }
-      return str;
-    }
-
-    function createMemoizedFunction(fn, hashFn) {
-      var cache = {};
-      if (!hashFn) {
-        hashFn = stringifyArguments;
-      }
-      return function memoized() {
-        var key = hashFn.apply(this, arguments);
-        if (hasOwnProperty(cache, key)) {
-          return cache[key];
-        }
-        return cache[key] = fn.apply(this, arguments);
-      }
-    }
-
-    extend(Function, {
-
-       /***
-       * @method lazy([ms] = 1, [immediate] = false, [limit] = Infinity)
-       * @returns Function
-       * @short Creates a lazy function that, when called repeatedly, will queue execution and wait [ms] milliseconds to execute.
-       * @extra If [immediate] is %true%, first execution will happen immediately, then lock. If [limit] is a fininte number, calls past [limit] will be ignored while execution is locked. Compare this to %throttle%, which will execute only once per [ms] milliseconds. Note that [ms] can also be a fraction. Calling %cancel% on a lazy function will clear the entire queue. For more see %functions%.
-       * @example
-       *
-       *   (function() {
-       *     // Executes immediately.
-       *   }).lazy()();
-       *   (3).times(function() {
-       *     // Executes 3 times, with each execution 20ms later than the last.
-       *   }.lazy(20));
-       *   (100).times(function() {
-       *     // Executes 50 times, with each execution 20ms later than the last.
-       *   }.lazy(20, false, 50));
-       *
-       ***/
-      'lazy': function(ms, immediate, limit) {
-        return createLazyFunction(this, ms, immediate, limit);
-      },
-
-       /***
-       * @method throttle([ms] = 1)
-       * @returns Function
-       * @short Creates a "throttled" version of the function that will only be executed once per <ms> milliseconds.
-       * @extra This is functionally equivalent to calling %lazy% with a [limit] of %1% and [immediate] as %true%. %throttle% is appropriate when you want to make sure a function is only executed at most once for a given duration. For more see %functions%.
-       * @example
-       *
-       *   (3).times(function() {
-       *     // called only once. will wait 50ms until it responds again
-       *   }.throttle(50));
-       *
-       ***/
-      'throttle': function(ms) {
-        return createLazyFunction(this, ms, true, 1);
-      },
-
-       /***
-       * @method debounce([ms] = 1)
-       * @returns Function
-       * @short Creates a "debounced" function that postpones its execution until after <ms> milliseconds have passed.
-       * @extra This method is useful to execute a function after things have "settled down". A good example of this is when a user tabs quickly through form fields, execution of a heavy operation should happen after a few milliseconds when they have "settled" on a field. For more see %functions%.
-       * @example
-       *
-       *   var fn = (function(arg1) {
-       *     // called once 50ms later
-       *   }).debounce(50); fn(); fn(); fn();
-       *
-       ***/
-      'debounce': function(ms) {
-        var fn = this;
-        function debounced() {
-          // Optimized: no leaking arguments
-          var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-          cancelFunction(debounced);
-          setDelay(debounced, ms, fn, this, args);
-        };
-        return debounced;
-      },
-
-       /***
-       * @method delay([ms] = 1, [arg1], ...)
-       * @returns Function
-       * @short Executes the function after <ms> milliseconds.
-       * @extra Returns a reference to itself. %delay% is also a way to execute non-blocking operations that will wait until the CPU is free. Delayed functions can be canceled using the %cancel% method. Can also curry arguments passed in after <ms>.
-       * @example
-       *
-       *   (function(arg1) {
-       *     // called 1s later
-       *   }).delay(1000, 'arg1');
-       *
-       ***/
-      'delay': function(ms) {
-        var fn = this;
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 1; $i < arguments.length; $i++) args.push(arguments[$i]);
-        setDelay(fn, ms, fn, fn, args);
-        return fn;
-      },
-
-       /***
-       * @method every([ms] = 1, [arg1], ...)
-       * @returns Function
-       * @short Executes the function every <ms> milliseconds.
-       * @extra Returns a reference to itself. %every% uses %setTimeout%, which means that you are guaranteed a period of idle time equal to [ms] after execution has finished. Compare this to %setInterval% which will try to run a function every [ms], even when execution itself takes up a portion of that time. In most cases avoiding %setInterval% is better as calls won't "back up" when the CPU is under strain, however this also means that calls are less likely to happen at exact intervals of [ms], so the use case here should be considered. Additionally, %every% can curry arguments passed in after [ms], and also be canceled with %cancel%.
-       * @example
-       *
-       *   (function(arg1) {
-       *     // called every 1s
-       *   }).every(1000, 'arg1');
-       *
-       ***/
-      'every': function(ms) {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 1; $i < arguments.length; $i++) args.push(arguments[$i]);
-        var fn = this;
-        function execute () {
-          // Set the delay first here, so that cancel
-          // can be called within the executing function.
-          setDelay(fn, ms, execute);
-          fn.apply(fn, args);
-        }
-        setDelay(fn, ms, execute);
-        return fn;
-      },
-
-       /***
-       * @method cancel()
-       * @returns Function
-       * @short Cancels a delayed function scheduled to be run.
-       * @extra %delay%, %lazy%, %throttle%, and %debounce% can all set delays.
-       * @example
-       *
-       *   (function() {
-       *     alert('hay'); -> Never called
-       *   }).delay(500).cancel();
-       *
-       ***/
-      'cancel': function() {
-        return cancelFunction(this);
-      },
-
-       /***
-       * @method after(<num>, [mult] = true)
-       * @returns Function
-       * @short Creates a function that will execute after [num] calls.
-       * @extra %after% is useful for running a final callback after a series of asynchronous operations, when the order in which the operations will complete is unknown. If [mult] is %true%, the function will continue to fire multiple times. The created function will be passed an array of the arguments that it has collected from each call so far.
-       * @example
-       *
-       *   var fn = (function() {
-       *     // Will be executed once only
-       *   }).after(3); fn(); fn(); fn();
-       *
-       ***/
-      'after': function(num) {
-        var fn = this, count = 0, collectedArgs = [];
-        num = coercePositiveInteger(num);
-        return function() {
-          // Optimized: no leaking arguments
-          var args = []; for(var $i = 0, $len = arguments.length; $i < $len; $i++) args.push(arguments[$i]);
-          collectedArgs.push(args);
-          count++;
-          if (count >= num) {
-            return fn.call(this, collectedArgs);
-          }
-        }
-      },
-
-       /***
-       * @method once()
-       * @returns Function
-       * @short Creates a function that will execute only once and store the result.
-       * @extra %once% is useful for creating functions that will cache the result of an expensive operation and use it on subsequent calls. Also it can be useful for creating initialization functions that only need to be run once.
-       * @example
-       *
-       *   var fn = (function() {
-       *     // Will be executed once only
-       *   }).once(); fn(); fn(); fn();
-       *
-       ***/
-      'once': function() {
-        // noop always returns "undefined" as the cache key.
-        return createMemoizedFunction(this, function() {});
-      },
-
-       /***
-       * @method memoize([fn])
-       * @returns Function
-       * @short Creates a function that will cache results for unique calls.
-       * @extra %memoize% can be thought of as a more power %once%. Where %once% will only call a function once ever, memoized functions will be called once per unique call. A "unique call" is determined by the result of [fn], which is a hashing function. If empty, [fn] will stringify all arguments, such that any different argument signature will result in a unique call. This includes objects passed as arguments, which will be deep inspected to produce the cache key.
-       * @example
-       *
-       *   var fn = (function() {
-       *     // Will be executed twice, returning the memoized
-       *     // result of the first call again on the last.
-       *   }).memoize(); fn(1); fn(2); fn(1);
-       *
-       ***/
-      'memoize': function(fn) {
-        return createMemoizedFunction(this, fn);
-      },
-
-       /***
-       * @method fill(<arg1>, <arg2>, ...)
-       * @returns Function
-       * @short Returns a new version of the function which when called will have some of its arguments pre-emptively filled in, also known as "currying".
-       * @extra Arguments passed to a "filled" function are generally appended to the curried arguments. However, if %undefined% is passed as any of the arguments to %fill%, it will be replaced, when the "filled" function is executed. This allows currying of arguments even when they occur toward the end of an argument list (the example demonstrates this much more clearly).
-       * @example
-       *
-       *   var delayOneSecond = setTimeout.fill(undefined, 1000);
-       *   delayOneSecond(function() {
-       *     // Will be executed 1s later
-       *   });
-       *
-       ***/
-      'fill': function() {
-        // Optimized: no leaking arguments
-        var curried = [], $i; for($i = 0; $i < arguments.length; $i++) curried.push(arguments[$i]);
-        var fn = this;
-        return function() {
-          var argIndex = 0, result = [];
-          for (var i = 0; i < curried.length; i++) {
-            if (curried[i] != null) {
-              result[i] = curried[i];
-            } else {
-              result[i] = arguments[i];
-              argIndex++;
-            }
-          }
-          for (var i = argIndex; i < arguments.length; i++) {
-            result.push(arguments[i]);
-          }
-          return fn.apply(this, result);
-        }
-      }
-
-
-    });
-
-    /***
-     * @module Inflections
-     * @dependency string
-     * @description Pluralization similar to ActiveSupport including uncountable words and acronyms. Humanized and URL-friendly strings.
-     *
-     ***/
-
-    /***
-     * @namespace String
-     *
-     ***/
-
-
-    var plurals      = [],
-        singulars    = [],
-        uncountables = [],
-        humans       = [],
-        acronyms     = {},
-        Downcased,
-        Inflector,
-        NormalizeMap = {},
-        NormalizeReg,
-        NormalizeSource;
-
-    function removeFromArray(arr, find) {
-      var index = arr.indexOf(find);
-      if (index > -1) {
-        arr.splice(index, 1);
-      }
-    }
-
-    function removeFromUncountablesAndAddTo(arr, rule, replacement) {
-      if (isString(rule)) {
-        removeFromArray(uncountables, rule);
-      }
-      removeFromArray(uncountables, replacement);
-      arr.unshift({ rule: rule, replacement: replacement })
-    }
-
-    function paramMatchesType(param, type) {
-      return param == type || param == 'all' || !param;
-    }
-
-    function isUncountable(word) {
-      return uncountables.some(function(uncountable) {
-        return new RegExp('\\b' + uncountable + '$', 'i').test(word);
-      });
-    }
-
-    function inflect(word, pluralize) {
-      word = isString(word) ? word.toString() : '';
-      if (isBlank(word) || isUncountable(word)) {
-        return word;
-      } else {
-        return runReplacements(word, pluralize ? plurals : singulars);
-      }
-    }
-
-    function runReplacements(word, table) {
-      iterateOverObject(table, function(i, inflection) {
-        if (word.match(inflection.rule)) {
-          word = word.replace(inflection.rule, inflection.replacement);
-          return false;
-        }
-      });
-      return word;
-    }
-
-    function capitalizeWithoutDowncasing(word) {
-      return word.replace(/^\W*[a-z]/, function(w){
-        return w.toUpperCase();
-      });
-    }
-
-    function humanize(str) {
-      var str = runReplacements(str, humans), acronym;
-      str = str.replace(/_id$/g, '');
-      str = str.replace(/(_)?([a-z\d]*)/gi, function(match, _, word){
-        var lower = word.toLowerCase();
-        acronym = hasOwnProperty(acronyms, lower) ? acronyms[lower] : null;
-        return (_ ? ' ' : '') + (acronym || lower);
-      });
-      return capitalizeWithoutDowncasing(str);
-    }
-
-    function toAscii(str) {
-      return str.replace(NormalizeReg, function(character) {
-        return NormalizeMap[character];
-      });
-    }
-
-    function buildNormalizeMap() {
-      var normalized, str, all = '';
-      for(normalized in NormalizeSource) {
-        if (!NormalizeSource.hasOwnProperty(normalized)) continue;
-        str = NormalizeSource[normalized];
-        str.split('').forEach(function(character) {
-          NormalizeMap[character] = normalized;
-        });
-        all += str;
-      }
-      NormalizeReg = RegExp('[' + all + ']', 'g');
-    }
-
-
-    Inflector = {
-
-      /*
-       * Specifies a new acronym. An acronym must be specified as it will appear in a camelized string.  An underscore
-       * string that contains the acronym will retain the acronym when passed to %camelize%, %humanize%, or %titleize%.
-       * A camelized string that contains the acronym will maintain the acronym when titleized or humanized, and will
-       * convert the acronym into a non-delimited single lowercase word when passed to String#underscore.
-       *
-       * Examples:
-       *   String.Inflector.acronym('HTML')
-       *   'html'.titleize()     -> 'HTML'
-       *   'html'.camelize()     -> 'HTML'
-       *   'MyHTML'.underscore() -> 'my_html'
-       *
-       * The acronym, however, must occur as a delimited unit and not be part of another word for conversions to recognize it:
-       *
-       *   String.Inflector.acronym('HTTP')
-       *   'my_http_delimited'.camelize() -> 'MyHTTPDelimited'
-       *   'https'.camelize()             -> 'Https', not 'HTTPs'
-       *   'HTTPS'.underscore()           -> 'http_s', not 'https'
-       *
-       *   String.Inflector.acronym('HTTPS')
-       *   'https'.camelize()   -> 'HTTPS'
-       *   'HTTPS'.underscore() -> 'https'
-       *
-       * Note: Acronyms that are passed to %pluralize% will no longer be recognized, since the acronym will not occur as
-       * a delimited unit in the pluralized result. To work around this, you must specify the pluralized form as an
-       * acronym as well:
-       *
-       *    String.Inflector.acronym('API')
-       *    'api'.pluralize().camelize() -> 'Apis'
-       *
-       *    String.Inflector.acronym('APIs')
-       *    'api'.pluralize().camelize() -> 'APIs'
-       *
-       * %acronym% may be used to specify any word that contains an acronym or otherwise needs to maintain a non-standard
-       * capitalization. The only restriction is that the word must begin with a capital letter.
-       *
-       * Examples:
-       *   String.Inflector.acronym('RESTful')
-       *   'RESTful'.underscore()           -> 'restful'
-       *   'RESTfulController'.underscore() -> 'restful_controller'
-       *   'RESTfulController'.titleize()   -> 'RESTful Controller'
-       *   'restful'.camelize()             -> 'RESTful'
-       *   'restful_controller'.camelize()  -> 'RESTfulController'
-       *
-       *   String.Inflector.acronym('McDonald')
-       *   'McDonald'.underscore() -> 'mcdonald'
-       *   'mcdonald'.camelize()   -> 'McDonald'
-       */
-      'acronym': function(word) {
-        acronyms[word.toLowerCase()] = word;
-        var all = Object.keys(acronyms).map(function(key) {
-          return acronyms[key];
-        });
-        Inflector.acronymRegExp = RegExp(all.join('|'), 'g');
-      },
-
-      /*
-       * Specifies a new pluralization rule and its replacement. The rule can either be a string or a regular expression.
-       * The replacement should always be a string that may include references to the matched data from the rule.
-       */
-      'plural': function(rule, replacement) {
-        removeFromUncountablesAndAddTo(plurals, rule, replacement);
-      },
-
-      /*
-       * Specifies a new singularization rule and its replacement. The rule can either be a string or a regular expression.
-       * The replacement should always be a string that may include references to the matched data from the rule.
-       */
-      'singular': function(rule, replacement) {
-        removeFromUncountablesAndAddTo(singulars, rule, replacement);
-      },
-
-      /*
-       * Specifies a new irregular that applies to both pluralization and singularization at the same time. This can only be used
-       * for strings, not regular expressions. You simply pass the irregular in singular and plural form.
-       *
-       * Examples:
-       *   String.Inflector.irregular('octopus', 'octopi')
-       *   String.Inflector.irregular('person', 'people')
-       */
-      'irregular': function(singular, plural) {
-        var singularFirst      = stringFirst(singular),
-            singularRest       = stringFrom(singular, 1),
-            pluralFirst        = stringFirst(plural),
-            pluralRest         = stringFrom(plural, 1),
-            pluralFirstUpper   = pluralFirst.toUpperCase(),
-            pluralFirstLower   = pluralFirst.toLowerCase(),
-            singularFirstUpper = singularFirst.toUpperCase(),
-            singularFirstLower = singularFirst.toLowerCase();
-        removeFromArray(uncountables, singular);
-        removeFromArray(uncountables, plural);
-        if (singularFirstUpper == pluralFirstUpper) {
-          Inflector.plural(new RegExp(stringAssign('({1}){2}$', [singularFirst, singularRest]), 'i'), '$1' + pluralRest);
-          Inflector.plural(new RegExp(stringAssign('({1}){2}$', [pluralFirst, pluralRest]), 'i'), '$1' + pluralRest);
-          Inflector.singular(new RegExp(stringAssign('({1}){2}$', [pluralFirst, pluralRest]), 'i'), '$1' + singularRest);
-        } else {
-          Inflector.plural(new RegExp(stringAssign('{1}{2}$', [singularFirstUpper, singularRest])), pluralFirstUpper + pluralRest);
-          Inflector.plural(new RegExp(stringAssign('{1}{2}$', [singularFirstLower, singularRest])), pluralFirstLower + pluralRest);
-          Inflector.plural(new RegExp(stringAssign('{1}{2}$', [pluralFirstUpper, pluralRest])), pluralFirstUpper + pluralRest);
-          Inflector.plural(new RegExp(stringAssign('{1}{2}$', [pluralFirstLower, pluralRest])), pluralFirstLower + pluralRest);
-          Inflector.singular(new RegExp(stringAssign('{1}{2}$', [pluralFirstUpper, pluralRest])), singularFirstUpper + singularRest);
-          Inflector.singular(new RegExp(stringAssign('{1}{2}$', [pluralFirstLower, pluralRest])), singularFirstLower + singularRest);
-        }
-      },
-
-      /*
-       * Add uncountable words that shouldn't be attempted inflected.
-       *
-       * Examples:
-       *   String.Inflector.uncountable('money')
-       *   String.Inflector.uncountable('money', 'information')
-       *   String.Inflector.uncountable(['money', 'information', 'rice'])
-       */
-      'uncountable': function(first) {
-        var add;
-        if (Array.isArray(first)) {
-          add = first;
-        } else {
-          // Optimized: no leaking arguments
-          var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-          add = args;
-        }
-        uncountables = uncountables.concat(add);
-      },
-
-      /*
-       * Specifies a humanized form of a string by a regular expression rule or by a string mapping.
-       * When using a regular expression based replacement, the normal humanize formatting is called after the replacement.
-       * When a string is used, the human form should be specified as desired (example: 'The name', not 'the_name')
-       *
-       * Examples:
-       *   String.Inflector.human(/_cnt$/i, '_count')
-       *   String.Inflector.human('legacy_col_person_name', 'Name')
-       */
-      'human': function(rule, replacement) {
-        humans.unshift({ rule: rule, replacement: replacement })
-      },
-
-
-      /*
-       * Clears the loaded inflections within a given scope (default is 'all').
-       * Options are: 'all', 'plurals', 'singulars', 'uncountables', 'humans'.
-       *
-       * Examples:
-       *   String.Inflector.clear('all')
-       *   String.Inflector.clear('plurals')
-       */
-      'clear': function(type) {
-        if (paramMatchesType(type, 'singulars'))    singulars    = [];
-        if (paramMatchesType(type, 'plurals'))      plurals      = [];
-        if (paramMatchesType(type, 'uncountables')) uncountables = [];
-        if (paramMatchesType(type, 'humans'))       humans       = [];
-        if (paramMatchesType(type, 'acronyms'))     acronyms     = {};
-      }
-
+  }
+
+  function buildLowercase(get) {
+    return function(d, localeCode) {
+      return get(d, localeCode).toLowerCase();
     };
+  }
 
-    Downcased = [
-      'and', 'or', 'nor', 'a', 'an', 'the', 'so', 'but', 'to', 'of', 'at',
-      'by', 'from', 'into', 'on', 'onto', 'off', 'out', 'in', 'over',
-      'with', 'for'
-    ];
-
-    Inflector.plural(/$/, 's');
-    Inflector.plural(/s$/gi, 's');
-    Inflector.plural(/(ax|test)is$/gi, '$1es');
-    Inflector.plural(/(octop|fung|foc|radi|alumn|cact)(i|us)$/gi, '$1i');
-    Inflector.plural(/(census|alias|status|fetus|genius|virus)$/gi, '$1es');
-    Inflector.plural(/(bu)s$/gi, '$1ses');
-    Inflector.plural(/(buffal|tomat)o$/gi, '$1oes');
-    Inflector.plural(/([ti])um$/gi, '$1a');
-    Inflector.plural(/([ti])a$/gi, '$1a');
-    Inflector.plural(/sis$/gi, 'ses');
-    Inflector.plural(/f+e?$/gi, 'ves');
-    Inflector.plural(/(cuff|roof)$/gi, '$1s');
-    Inflector.plural(/([ht]ive)$/gi, '$1s');
-    Inflector.plural(/([^aeiouy]o)$/gi, '$1es');
-    Inflector.plural(/([^aeiouy]|qu)y$/gi, '$1ies');
-    Inflector.plural(/(x|ch|ss|sh)$/gi, '$1es');
-    Inflector.plural(/(tr|vert)(?:ix|ex)$/gi, '$1ices');
-    Inflector.plural(/([ml])ouse$/gi, '$1ice');
-    Inflector.plural(/([ml])ice$/gi, '$1ice');
-    Inflector.plural(/^(ox)$/gi, '$1en');
-    Inflector.plural(/^(oxen)$/gi, '$1');
-    Inflector.plural(/(quiz)$/gi, '$1zes');
-    Inflector.plural(/(phot|cant|hom|zer|pian|portic|pr|quart|kimon)o$/gi, '$1os');
-    Inflector.plural(/(craft)$/gi, '$1');
-    Inflector.plural(/([ft])[eo]{2}(th?)$/gi, '$1ee$2');
-
-    Inflector.singular(/s$/gi, '');
-    Inflector.singular(/([pst][aiu]s)$/gi, '$1');
-    Inflector.singular(/([aeiouy])ss$/gi, '$1ss');
-    Inflector.singular(/(n)ews$/gi, '$1ews');
-    Inflector.singular(/([ti])a$/gi, '$1um');
-    Inflector.singular(/((a)naly|(b)a|(d)iagno|(p)arenthe|(p)rogno|(s)ynop|(t)he)ses$/gi, '$1$2sis');
-    Inflector.singular(/(^analy)ses$/gi, '$1sis');
-    Inflector.singular(/(i)(f|ves)$/i, '$1fe');
-    Inflector.singular(/([aeolr]f?)(f|ves)$/i, '$1f');
-    Inflector.singular(/([ht]ive)s$/gi, '$1');
-    Inflector.singular(/([^aeiouy]|qu)ies$/gi, '$1y');
-    Inflector.singular(/(s)eries$/gi, '$1eries');
-    Inflector.singular(/(m)ovies$/gi, '$1ovie');
-    Inflector.singular(/(x|ch|ss|sh)es$/gi, '$1');
-    Inflector.singular(/([ml])(ous|ic)e$/gi, '$1ouse');
-    Inflector.singular(/(bus)(es)?$/gi, '$1');
-    Inflector.singular(/(o)es$/gi, '$1');
-    Inflector.singular(/(shoe)s?$/gi, '$1');
-    Inflector.singular(/(cris|ax|test)[ie]s$/gi, '$1is');
-    Inflector.singular(/(octop|fung|foc|radi|alumn|cact)(i|us)$/gi, '$1us');
-    Inflector.singular(/(census|alias|status|fetus|genius|virus)(es)?$/gi, '$1');
-    Inflector.singular(/^(ox)(en)?/gi, '$1');
-    Inflector.singular(/(vert)(ex|ices)$/gi, '$1ex');
-    Inflector.singular(/tr(ix|ices)$/gi, 'trix');
-    Inflector.singular(/(quiz)(zes)?$/gi, '$1');
-    Inflector.singular(/(database)s?$/gi, '$1');
-    Inflector.singular(/ee(th?)$/gi, 'oo$1');
-
-    Inflector.irregular('person', 'people');
-    Inflector.irregular('man', 'men');
-    Inflector.irregular('deer', 'deer');
-    Inflector.irregular('human', 'humans');
-    Inflector.irregular('child', 'children');
-    Inflector.irregular('sex', 'sexes');
-    Inflector.irregular('move', 'moves');
-    Inflector.irregular('save', 'saves');
-    Inflector.irregular('goose', 'geese');
-    Inflector.irregular('zombie', 'zombies');
-
-    Inflector.uncountable('equipment,information,rice,money,species,series,fish,sheep,jeans'.split(','));
-
-    NormalizeSource = {
-      'A':  'AⒶＡÀÁÂẦẤẪẨÃĀĂẰẮẴẲȦǠÄǞẢÅǺǍȀȂẠẬẶḀĄȺⱯ',
-      'B':  'BⒷＢḂḄḆɃƂƁ',
-      'C':  'CⒸＣĆĈĊČÇḈƇȻꜾ',
-      'D':  'DⒹＤḊĎḌḐḒḎĐƋƊƉꝹ',
-      'E':  'EⒺＥÈÉÊỀẾỄỂẼĒḔḖĔĖËẺĚȄȆẸỆȨḜĘḘḚƐƎ',
-      'F':  'FⒻＦḞƑꝻ',
-      'G':  'GⒼＧǴĜḠĞĠǦĢǤƓꞠꝽꝾ',
-      'H':  'HⒽＨĤḢḦȞḤḨḪĦⱧⱵꞍ',
-      'I':  'IⒾＩÌÍÎĨĪĬİÏḮỈǏȈȊỊĮḬƗ',
-      'J':  'JⒿＪĴɈ',
-      'K':  'KⓀＫḰǨḲĶḴƘⱩꝀꝂꝄꞢ',
-      'L':  'LⓁＬĿĹĽḶḸĻḼḺŁȽⱢⱠꝈꝆꞀ',
-      'M':  'MⓂＭḾṀṂⱮƜ',
-      'N':  'NⓃＮǸŃÑṄŇṆŅṊṈȠƝꞐꞤ',
-      'O':  'OⓄＯÒÓÔỒỐỖỔÕṌȬṎŌṐṒŎȮȰÖȪỎŐǑȌȎƠỜỚỠỞỢỌỘǪǬØǾƆƟꝊꝌ',
-      'P':  'PⓅＰṔṖƤⱣꝐꝒꝔ',
-      'Q':  'QⓆＱꝖꝘɊ',
-      'R':  'RⓇＲŔṘŘȐȒṚṜŖṞɌⱤꝚꞦꞂ',
-      'S':  'SⓈＳẞŚṤŜṠŠṦṢṨȘŞⱾꞨꞄ',
-      'T':  'TⓉＴṪŤṬȚŢṰṮŦƬƮȾꞆ',
-      'U':  'UⓊＵÙÚÛŨṸŪṺŬÜǛǗǕǙỦŮŰǓȔȖƯỪỨỮỬỰỤṲŲṶṴɄ',
-      'V':  'VⓋＶṼṾƲꝞɅ',
-      'W':  'WⓌＷẀẂŴẆẄẈⱲ',
-      'X':  'XⓍＸẊẌ',
-      'Y':  'YⓎＹỲÝŶỸȲẎŸỶỴƳɎỾ',
-      'Z':  'ZⓏＺŹẐŻŽẒẔƵȤⱿⱫꝢ',
-      'a':  'aⓐａẚàáâầấẫẩãāăằắẵẳȧǡäǟảåǻǎȁȃạậặḁąⱥɐ',
-      'b':  'bⓑｂḃḅḇƀƃɓ',
-      'c':  'cⓒｃćĉċčçḉƈȼꜿↄ',
-      'd':  'dⓓｄḋďḍḑḓḏđƌɖɗꝺ',
-      'e':  'eⓔｅèéêềếễểẽēḕḗĕėëẻěȅȇẹệȩḝęḙḛɇɛǝ',
-      'f':  'fⓕｆḟƒꝼ',
-      'g':  'gⓖｇǵĝḡğġǧģǥɠꞡᵹꝿ',
-      'h':  'hⓗｈĥḣḧȟḥḩḫẖħⱨⱶɥ',
-      'i':  'iⓘｉìíîĩīĭïḯỉǐȉȋịįḭɨı',
-      'j':  'jⓙｊĵǰɉ',
-      'k':  'kⓚｋḱǩḳķḵƙⱪꝁꝃꝅꞣ',
-      'l':  'lⓛｌŀĺľḷḹļḽḻſłƚɫⱡꝉꞁꝇ',
-      'm':  'mⓜｍḿṁṃɱɯ',
-      'n':  'nⓝｎǹńñṅňṇņṋṉƞɲŉꞑꞥ',
-      'o':  'oⓞｏòóôồốỗổõṍȭṏōṑṓŏȯȱöȫỏőǒȍȏơờớỡởợọộǫǭøǿɔꝋꝍɵ',
-      'p':  'pⓟｐṕṗƥᵽꝑꝓꝕ',
-      'q':  'qⓠｑɋꝗꝙ',
-      'r':  'rⓡｒŕṙřȑȓṛṝŗṟɍɽꝛꞧꞃ',
-      's':  'sⓢｓśṥŝṡšṧṣṩșşȿꞩꞅẛ',
-      't':  'tⓣｔṫẗťṭțţṱṯŧƭʈⱦꞇ',
-      'u':  'uⓤｕùúûũṹūṻŭüǜǘǖǚủůűǔȕȗưừứữửựụṳųṷṵʉ',
-      'v':  'vⓥｖṽṿʋꝟʌ',
-      'w':  'wⓦｗẁẃŵẇẅẘẉⱳ',
-      'x':  'xⓧｘẋẍ',
-      'y':  'yⓨｙỳýŷỹȳẏÿỷẙỵƴɏỿ',
-      'z':  'zⓩｚźẑżžẓẕƶȥɀⱬꝣ',
-      'AA': 'Ꜳ',
-      'AE': 'ÆǼǢ',
-      'AO': 'Ꜵ',
-      'AU': 'Ꜷ',
-      'AV': 'ꜸꜺ',
-      'AY': 'Ꜽ',
-      'DZ': 'ǱǄ',
-      'Dz': 'ǲǅ',
-      'LJ': 'Ǉ',
-      'Lj': 'ǈ',
-      'NJ': 'Ǌ',
-      'Nj': 'ǋ',
-      'OI': 'Ƣ',
-      'OO': 'Ꝏ',
-      'OU': 'Ȣ',
-      'TZ': 'Ꜩ',
-      'VY': 'Ꝡ',
-      'aa': 'ꜳ',
-      'ae': 'æǽǣ',
-      'ao': 'ꜵ',
-      'au': 'ꜷ',
-      'av': 'ꜹꜻ',
-      'ay': 'ꜽ',
-      'dz': 'ǳǆ',
-      'hv': 'ƕ',
-      'lj': 'ǉ',
-      'nj': 'ǌ',
-      'oi': 'ƣ',
-      'ou': 'ȣ',
-      'oo': 'ꝏ',
-      'ss': 'ß',
-      'tz': 'ꜩ',
-      'vy': 'ꝡ'
+  function buildOrdinal(get) {
+    return function(d, localeCode) {
+      var n = get(d, localeCode);
+      return n + localeManager.get(localeCode).getOrdinal(n);
     };
-
-
-
-    extend(String, {
-
-      /***
-       * @method pluralize()
-       * @returns String
-       * @short Returns the plural form of the word in the string.
-       * @example
-       *
-       *   'post'.pluralize()         -> 'posts'
-       *   'octopus'.pluralize()      -> 'octopi'
-       *   'sheep'.pluralize()        -> 'sheep'
-       *   'words'.pluralize()        -> 'words'
-       *   'CamelOctopus'.pluralize() -> 'CamelOctopi'
-       *
-       ***/
-      'pluralize': function() {
-        return inflect(this, true);
-      },
-
-      /***
-       * @method singularize()
-       * @returns String
-       * @short The reverse of String#pluralize. Returns the singular form of a word in a string.
-       * @example
-       *
-       *   'posts'.singularize()       -> 'post'
-       *   'octopi'.singularize()      -> 'octopus'
-       *   'sheep'.singularize()       -> 'sheep'
-       *   'word'.singularize()        -> 'word'
-       *   'CamelOctopi'.singularize() -> 'CamelOctopus'
-       *
-       ***/
-      'singularize': function() {
-        return inflect(this, false);
-      },
-
-      /***
-       * @method humanize()
-       * @returns String
-       * @short Creates a human readable string.
-       * @extra Capitalizes the first word and turns underscores into spaces and strips a trailing '_id', if any. Like String#titleize, this is meant for creating pretty output.
-       * @example
-       *
-       *   'employee_salary'.humanize() -> 'Employee salary'
-       *   'author_id'.humanize()       -> 'Author'
-       *
-       ***/
-      'humanize': function() {
-        return humanize(this);
-      },
-
-      /***
-       * @method titleize()
-       * @returns String
-       * @short Creates a title version of the string.
-       * @extra Capitalizes all the words and replaces some characters in the string to create a nicer looking title. String#titleize is meant for creating pretty output.
-       * @example
-       *
-       *   'man from the boondocks'.titleize() -> 'Man from the Boondocks'
-       *   'x-men: the last stand'.titleize() -> 'X Men: The Last Stand'
-       *   'TheManWithoutAPast'.titleize() -> 'The Man Without a Past'
-       *   'raiders_of_the_lost_ark'.titleize() -> 'Raiders of the Lost Ark'
-       *
-       ***/
-      'titleize': function() {
-        var fullStopPunctuation = /[.:;!]$/, hasPunctuation, lastHadPunctuation, isFirstOrLast;
-        var str = humanize(spacify(this));
-        return eachWord(str, function(word, index, words) {
-          hasPunctuation = fullStopPunctuation.test(word);
-          isFirstOrLast = index == 0 || index == words.length - 1 || hasPunctuation || lastHadPunctuation;
-          lastHadPunctuation = hasPunctuation;
-          if (isFirstOrLast || Downcased.indexOf(word) === -1) {
-            return capitalizeWithoutDowncasing(word, true);
-          } else {
-            return word;
-          }
-        }).join(' ');
-      },
-
-      /***
-       * @method parameterize()
-       * @returns String
-       * @short Replaces special characters in a string so that it may be used as part of a pretty URL.
-       * @example
-       *
-       *   'hell, no!'.parameterize() -> 'hell-no'
-       *
-       ***/
-      'parameterize': function(separator) {
-        var str = toAscii(this);
-        if (separator === undefined) separator = '-';
-        str = str.replace(/[^a-z0-9\-_]+/gi, separator)
-        if (separator) {
-          str = str.replace(new RegExp(stringAssign('^{sep}+|{sep}+$|({sep}){sep}+', [{ 'sep': escapeRegExp(separator) }]), 'g'), '$1');
-        }
-        return encodeURI(str.toLowerCase());
-      },
-
-      /***
-       * @method toAscii()
-       * @returns String
-       * @short Returns the string with accented and non-standard Latin-based characters converted into ASCII approximate equivalents.
-       * @example
-       *
-       *   'á'.toAscii()                  -> 'a'
-       *   'Ménage à trois'.toAscii()     -> 'Menage a trois'
-       *   'Volkswagen'.toAscii()         -> 'Volkswagen'
-       *   'ＦＵＬＬＷＩＤＴＨ'.toAscii() -> 'FULLWIDTH'
-       *
-       ***/
-      'toAscii': function() {
-        return toAscii(this);
-      }
-
-    });
-
-    String.Inflector = Inflector;
-    String.Inflector.acronyms = acronyms;
-
-    buildNormalizeMap();
-
-    /***
-     * @module Language
-     * @dependency string
-     * @description Detecting language by character block. Full-width <-> half-width character conversion. Hiragana and Katakana conversions.
-     *
-     ***/
-
-    /***
-     * @namespace String
-     *
-     ***/
-
-
-    /***
-     * @method has[Script]()
-     * @returns Boolean
-     * @short Returns true if the string contains any characters in that script.
-     *
-     * @set
-     *   hasArabic
-     *   hasCyrillic
-     *   hasGreek
-     *   hasHangul
-     *   hasHan
-     *   hasKanji
-     *   hasHebrew
-     *   hasHiragana
-     *   hasKana
-     *   hasKatakana
-     *   hasLatin
-     *   hasThai
-     *   hasDevanagari
-     *
-     * @example
-     *
-     *   'أتكلم'.hasArabic()          -> true
-     *   'визит'.hasCyrillic()        -> true
-     *   '잘 먹겠습니다!'.hasHangul() -> true
-     *   'ミックスです'.hasKatakana() -> true
-     *   "l'année".hasLatin()         -> true
-     *
-     ***
-     * @method is[Script]()
-     * @returns Boolean
-     * @short Returns true if the string contains only characters in that script. Whitespace is ignored.
-     *
-     * @set
-     *   isArabic
-     *   isCyrillic
-     *   isGreek
-     *   isHangul
-     *   isHan
-     *   isKanji
-     *   isHebrew
-     *   isHiragana
-     *   isKana
-     *   isKatakana
-     *   isThai
-     *   isDevanagari
-     *
-     * @example
-     *
-     *   'أتكلم'.isArabic()          -> true
-     *   'визит'.isCyrillic()        -> true
-     *   '잘 먹겠습니다!'.isHangul() -> true
-     *   'ミックスです'.isKatakana() -> false
-     *   "l'année".isLatin()         -> true
-     *
-     ***/
-    var unicodeScripts = [
-      { names: ['Arabic'],      source: '\u0600-\u06FF' },
-      { names: ['Cyrillic'],    source: '\u0400-\u04FF' },
-      { names: ['Devanagari'],  source: '\u0900-\u097F' },
-      { names: ['Greek'],       source: '\u0370-\u03FF' },
-      { names: ['Hangul'],      source: '\uAC00-\uD7AF\u1100-\u11FF' },
-      { names: ['Han','Kanji'], source: '\u4E00-\u9FFF\uF900-\uFAFF' },
-      { names: ['Hebrew'],      source: '\u0590-\u05FF' },
-      { names: ['Hiragana'],    source: '\u3040-\u309F\u30FB-\u30FC' },
-      { names: ['Kana'],        source: '\u3040-\u30FF\uFF61-\uFF9F' },
-      { names: ['Katakana'],    source: '\u30A0-\u30FF\uFF61-\uFF9F' },
-      { names: ['Latin'],       source: '\u0001-\u007F\u0080-\u00FF\u0100-\u017F\u0180-\u024F' },
-      { names: ['Thai'],        source: '\u0E00-\u0E7F' }
-    ];
-
-    function buildUnicodeScripts() {
-      extendSimilar(String, unicodeScripts, function(methods, script) {
-        var is = RegExp('^['+ script.source +'\\s]+$');
-        var has = RegExp('['+ script.source +']');
-        script.names.forEach(function(name) {
-          methods['is' + name] = function() {
-            return is.test(this.trim());
-          }
-          methods['has' + name] = function() {
-            return has.test(this.trim());
-          }
-        });
-      });
-    }
-
-    // Support for converting character widths and katakana to hiragana.
-
-    var HALF_WIDTH_TO_FULL_WIDTH_TRAVERSAL = 65248;
-
-    var widthConversionRanges = [
-      { type: 'a', start: 65,  end: 90  },
-      { type: 'a', start: 97,  end: 122 },
-      { type: 'n', start: 48,  end: 57  },
-      { type: 'p', start: 33,  end: 47  },
-      { type: 'p', start: 58,  end: 64  },
-      { type: 'p', start: 91,  end: 96  },
-      { type: 'p', start: 123, end: 126 }
-    ];
-
-    var WidthConversionTable;
-    var allHankaku   = /[\u0020-\u00A5]|[\uFF61-\uFF9F][ﾞﾟ]?/g;
-    var allZenkaku   = /[\u2212\u3000-\u301C\u301A-\u30FC\uFF01-\uFF60\uFFE0-\uFFE6]/g;
-    var hankakuPunctuation  = '｡､｢｣¥¢£';
-    var zenkakuPunctuation  = '。、「」￥￠￡';
-    var voicedKatakana      = /[カキクケコサシスセソタチツテトハヒフヘホ]/;
-    var semiVoicedKatakana  = /[ハヒフヘホヲ]/;
-    var hankakuKatakana     = 'ｱｲｳｴｵｧｨｩｪｫｶｷｸｹｺｻｼｽｾｿﾀﾁﾂｯﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔｬﾕｭﾖｮﾗﾘﾙﾚﾛﾜｦﾝｰ･';
-    var zenkakuKatakana     = 'アイウエオァィゥェォカキクケコサシスセソタチツッテトナニヌネノハヒフヘホマミムメモヤャユュヨョラリルレロワヲンー・';
-
-    function convertCharacterWidth(str, args, reg, type) {
-      if (!WidthConversionTable) {
-        buildWidthConversionTables();
-      }
-      var mode = args.join(''), table = WidthConversionTable[type];
-      mode = mode.replace(/all/, '').replace(/(\w)lphabet|umbers?|atakana|paces?|unctuation/g, '$1');
-      return str.replace(reg, function(c) {
-        var entry = table[c], to;
-        if (entry) {
-          if (mode === '' && entry.all) {
-            return entry.all;
-          } else {
-            for (var i = 0, len = mode.length; i < len; i++) {
-              to = entry[mode.charAt(i)];
-              if (to) {
-                return to;
-              }
-            }
-          }
-        }
-        return c;
-      });
-    }
-
-    function buildWidthConversionTables() {
-      var hankaku;
-      WidthConversionTable = {
-        'zenkaku': {},
-        'hankaku': {}
-      };
-      widthConversionRanges.forEach(function(r) {
-        simpleRepeat(r.end - r.start + 1, function(n) {
-          n += r.start;
-          setWidthConversion(r.type, chr(n), chr(n + HALF_WIDTH_TO_FULL_WIDTH_TRAVERSAL));
-        });
-      });
-      stringEach(zenkakuKatakana, function(c, i) {
-        hankaku = hankakuKatakana.charAt(i);
-        setWidthConversion('k', hankaku, c);
-        if (c.match(voicedKatakana)) {
-          setWidthConversion('k', hankaku + 'ﾞ', shiftChar(c, 1));
-        }
-        if (c.match(semiVoicedKatakana)) {
-          setWidthConversion('k', hankaku + 'ﾟ', shiftChar(c, 2));
-        }
-      });
-      stringEach(zenkakuPunctuation, function(c, i) {
-        setWidthConversion('p', hankakuPunctuation.charAt(i), c);
-      });
-      setWidthConversion('s', ' ', '　');
-      setWidthConversion('k', 'ｳﾞ', 'ヴ');
-      setWidthConversion('k', 'ｦﾞ', 'ヺ');
-      setConversionTableEntry('hankaku', 'n', '−', '-');
-      setConversionTableEntry('hankaku', 'n', 'ー', '-', false);
-      setConversionTableEntry('zenkaku', 'n', '-', '－', false);
-    }
-
-    function setWidthConversion(type, half, full) {
-      setConversionTableEntry('zenkaku', type, half, full);
-      setConversionTableEntry('hankaku', type, full, half);
-    }
-
-    function setConversionTableEntry(width, type, from, to, all) {
-      var obj = WidthConversionTable[width][from] || {};
-      if (all !== false) {
-        obj.all = to;
-      }
-      obj[type]  = to;
-      WidthConversionTable[width][from] = obj;
-    }
-
-    function hankaku(str, args) {
-      return convertCharacterWidth(str, args, allZenkaku, 'hankaku');
-    }
-
-    function zenkaku(str, args) {
-      return convertCharacterWidth(str, args, allHankaku, 'zenkaku');
-    }
-
-
-    extend(String, {
-
-      /***
-       * @method hankaku([mode] = 'all')
-       * @returns String
-       * @short Converts full-width characters (zenkaku) to half-width (hankaku).
-       * @extra [mode] accepts any combination of "a" (alphabet), "n" (numbers), "k" (katakana), "s" (spaces), "p" (punctuation), or "all".
-       * @example
-       *
-       *   'タロウ　ＹＡＭＡＤＡです！'.hankaku()                      -> 'ﾀﾛｳ YAMADAです!'
-       *   'タロウ　ＹＡＭＡＤＡです！'.hankaku('a')                   -> 'タロウ　YAMADAです！'
-       *   'タロウ　ＹＡＭＡＤＡです！'.hankaku('alphabet')            -> 'タロウ　YAMADAです！'
-       *   'タロウです！　２５歳です！'.hankaku('katakana', 'numbers') -> 'ﾀﾛｳです！　25歳です！'
-       *   'タロウです！　２５歳です！'.hankaku('k', 'n')              -> 'ﾀﾛｳです！　25歳です！'
-       *   'タロウです！　２５歳です！'.hankaku('kn')                  -> 'ﾀﾛｳです！　25歳です！'
-       *   'タロウです！　２５歳です！'.hankaku('sp')                  -> 'タロウです! ２５歳です!'
-       *
-       ***/
-      'hankaku': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return hankaku(this, args);
-      },
-
-      /***
-       * @method zenkaku([mode] = 'all')
-       * @returns String
-       * @short Converts half-width characters (hankaku) to full-width (zenkaku).
-       * @extra [mode] accepts any combination of "a" (alphabet), "n" (numbers), "k" (katakana), "s" (spaces), "p" (punctuation), or "all".
-       * @example
-       *
-       *   'ﾀﾛｳ YAMADAです!'.zenkaku()                         -> 'タロウ　ＹＡＭＡＤＡです！'
-       *   'ﾀﾛｳ YAMADAです!'.zenkaku('a')                      -> 'ﾀﾛｳ ＹＡＭＡＤＡです!'
-       *   'ﾀﾛｳ YAMADAです!'.zenkaku('alphabet')               -> 'ﾀﾛｳ ＹＡＭＡＤＡです!'
-       *   'ﾀﾛｳです! 25歳です!'.zenkaku('katakana', 'numbers') -> 'タロウです! ２５歳です!'
-       *   'ﾀﾛｳです! 25歳です!'.zenkaku('k', 'n')              -> 'タロウです! ２５歳です!'
-       *   'ﾀﾛｳです! 25歳です!'.zenkaku('kn')                  -> 'タロウです! ２５歳です!'
-       *   'ﾀﾛｳです! 25歳です!'.zenkaku('sp')                  -> 'ﾀﾛｳです！　25歳です！'
-       *
-       ***/
-      'zenkaku': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return zenkaku(this, args);
-      },
-
-      /***
-       * @method hiragana([all] = true)
-       * @returns String
-       * @short Converts katakana into hiragana.
-       * @extra If [all] is false, only full-width katakana will be converted.
-       * @example
-       *
-       *   'カタカナ'.hiragana()   -> 'かたかな'
-       *   'コンニチハ'.hiragana() -> 'こんにちは'
-       *   'ｶﾀｶﾅ'.hiragana()       -> 'かたかな'
-       *   'ｶﾀｶﾅ'.hiragana(false)  -> 'ｶﾀｶﾅ'
-       *
-       ***/
-      'hiragana': function(all) {
-        var str = this;
-        if (all !== false) {
-          str = zenkaku(str, ['k']);
-        }
-        return str.replace(/[\u30A1-\u30F6]/g, function(c) {
-          return shiftChar(c, -96);
-        });
-      },
-
-      /***
-       * @method katakana()
-       * @returns String
-       * @short Converts hiragana into katakana.
-       * @example
-       *
-       *   'かたかな'.katakana()   -> 'カタカナ'
-       *   'こんにちは'.katakana() -> 'コンニチハ'
-       *
-       ***/
-      'katakana': function() {
-        return this.replace(/[\u3041-\u3096]/g, function(c) {
-          return shiftChar(c, 96);
-        });
-      }
-
-
-    });
-
-    buildUnicodeScripts();
-
-    /***
-     * @module Number
-     * @dependency core
-     * @description Number formatting, rounding (with precision), and ranges. Aliases to Math methods.
-     *
-     ***/
-
-    function getThousands() {
-      var str = Number.thousands;
-      return isString(str) ? str : ',';
-    }
-
-    function getDecimal() {
-      var str = Number.decimal;
-      return isString(str) ? str : '.';
-    }
-
-    function abbreviateNumber(num, roundTo, str, mid, limit, bytes) {
-      var fixed        = num.toFixed(20),
-          decimalPlace = fixed.search(/\./),
-          numeralPlace = fixed.search(/[1-9]/),
-          significant  = decimalPlace - numeralPlace,
-          unit, i, divisor;
-      if (significant > 0) {
-        significant -= 1;
-      }
-      i = max(min(floor(significant / 3), limit === false ? str.length : limit), -mid);
-      unit = str.charAt(i + mid - 1);
-      if (significant < -9) {
-        i = -3;
-        roundTo = abs(significant) - 9;
-        unit = str.slice(0,1);
-      }
-      divisor = bytes ? pow(2, 10 * i) : pow(10, i * 3);
-      return formatNumber(withPrecision(num / divisor, roundTo || 0)) + unit.trim();
-    }
-
-    function formatNumber(num, place, thousands, decimal) {
-      var i, str, split, integer, fraction, result = '';
-      thousands = thousands || getThousands();
-      decimal   = decimal || getDecimal();
-      str      = (isNumber(place) ? withPrecision(num, place || 0).toFixed(max(place, 0)) : num.toString()).replace(/^-/, '');
-      split    = str.split('.');
-      integer  = split[0];
-      fraction = split[1];
-      for(i = integer.length; i > 0; i -= 3) {
-        if (i < integer.length) {
-          result = thousands + result;
-        }
-        result = integer.slice(max(0, i - 3), i) + result;
-      }
-      if (fraction) {
-        result += decimal + repeatString('0', (place || 0) - fraction.length) + fraction;
-      }
-      return (num < 0 ? '-' : '') + result;
-    }
-
-    function isInteger(n) {
-      return n % 1 === 0;
-    }
-
-    function isMultiple(n1, n2) {
-      return n1 % n2 === 0;
-    }
-
-
-    extend(Number, {
-
-      /***
-       * @method Number.random([n1], [n2])
-       * @returns Number
-       * @short Returns a random integer between [n1] and [n2].
-       * @extra If only 1 number is passed, the other will be 0. If none are passed, the number will be either 0 or 1.
-       * @example
-       *
-       *   Number.random(50, 100) -> ex. 85
-       *   Number.random(50)      -> ex. 27
-       *   Number.random()        -> ex. 0
-       *
-       ***/
-      'random': function(n1, n2) {
-        var minNum, maxNum;
-        if (arguments.length == 1) n2 = n1, n1 = 0;
-        minNum = min(n1 || 0, isUndefined(n2) ? 1 : n2);
-        maxNum = max(n1 || 0, isUndefined(n2) ? 1 : n2) + 1;
-        return floor((Math.random() * (maxNum - minNum)) + minNum);
-      }
-
-    }, false);
-
-    extend(Number, {
-
-      /***
-       * @method Number.isNaN(<value>)
-       * @returns Boolean
-       * @short Returns true only if the number is %NaN%.
-       * @extra This is differs from the global %isNaN%, which returns true for anything that is not a number.
-       * @example
-       *
-       *   Number.isNaN(NaN) -> true
-       *   Number.isNaN('n') -> false
-       *
-       ***/
-      'isNaN': function(value) {
-        return value !== value;
-      }
-
-    }, false, true);
-
-    extend(Number, {
-
-      /***
-       * @method log(<base> = Math.E)
-       * @returns Number
-       * @short Returns the logarithm of the number with base <base>, or natural logarithm of the number if <base> is undefined.
-       * @example
-       *
-       *   (64).log(2) -> 6
-       *   (9).log(3)  -> 2
-       *   (5).log()   -> 1.6094379124341003
-       *
-       ***/
-
-      'log': function(base) {
-         return Math.log(this) / (base ? Math.log(base) : 1);
-       },
-
-      /***
-       * @method abbr([precision] = 0)
-       * @returns String
-       * @short Returns an abbreviated form of the number.
-       * @extra [precision] will round to the given precision. %Number.thousands% and %Number.decimal% allow custom markers to be used.
-       * @example
-       *
-       *   (1000).abbr()    -> "1k"
-       *   (1000000).abbr() -> "1m"
-       *   (1280).abbr(1)   -> "1.3k"
-       *
-       ***/
-      'abbr': function(precision) {
-        return abbreviateNumber(this, precision, 'kmbt', 0, 4);
-      },
-
-      /***
-       * @method metric([precision] = 0, [limit] = 1)
-       * @returns String
-       * @short Returns the number as a string in metric notation.
-       * @extra [precision] will round to the given precision. Both very large numbers and very small numbers are supported. [limit] is the upper limit for the units. The default is %1%, which is "kilo". If [limit] is %false%, the upper limit will be "exa". The lower limit is "nano", and cannot be changed. %Number.thousands% and %Number.decimal% allow custom markers to be used.
-       * @example
-       *
-       *   (1000).metric()            -> "1k"
-       *   (1000000).metric()         -> "1,000k"
-       *   (1000000).metric(0, false) -> "1M"
-       *   (1249).metric(2) + 'g'     -> "1.25kg"
-       *   (0.025).metric() + 'm'     -> "25mm"
-       *
-       ***/
-      'metric': function(precision, limit) {
-        return abbreviateNumber(this, precision, 'nμm kMGTPE', 4, isUndefined(limit) ? 1 : limit);
-      },
-
-      /***
-       * @method bytes([precision] = 0, [limit] = 4, [si] = false)
-       * @returns String
-       * @short Returns an abbreviated form of the number, considered to be "Bytes".
-       * @extra [precision] will round to the given precision. [limit] is the upper limit for the units. The default is %4%, which is "terabytes" (TB). If [limit] is %false%, the upper limit will be "exa". If [si] is %true%, the standard SI units of 1000 will be used instead of 1024. %Number.thousands% and %Number.decimal% allow custom markers to be used.
-       * @example
-       *
-       *   (1000).bytes()                 -> "1kB"
-       *   (1000).bytes(2)                -> "0.98kB"
-       *   ((10).pow(20)).bytes()         -> "90,949,470TB"
-       *   ((10).pow(20)).bytes(0, false) -> "87EB"
-       *
-       ***/
-      'bytes': function(precision, limit, si) {
-        return abbreviateNumber(this, precision, 'kMGTPE', 0, isUndefined(limit) ? 4 : limit, si !== true) + 'B';
-      },
-
-      /***
-       * @method isInteger()
-       * @returns Boolean
-       * @short Returns true if the number has no trailing decimal.
-       * @example
-       *
-       *   (420).isInteger() -> true
-       *   (4.5).isInteger() -> false
-       *
-       ***/
-      'isInteger': function() {
-        return isInteger(this);
-      },
-
-      /***
-       * @method isOdd()
-       * @returns Boolean
-       * @short Returns true if the number is odd.
-       * @example
-       *
-       *   (3).isOdd()  -> true
-       *   (18).isOdd() -> false
-       *
-       ***/
-      'isOdd': function() {
-        return isInteger(this) && !isMultiple(this, 2);
-      },
-
-      /***
-       * @method isEven()
-       * @returns Boolean
-       * @short Returns true if the number is even.
-       * @example
-       *
-       *   (6).isEven()  -> true
-       *   (17).isEven() -> false
-       *
-       ***/
-      'isEven': function() {
-        return isMultiple(this, 2);
-      },
-
-      /***
-       * @method isMultipleOf(<num>)
-       * @returns Boolean
-       * @short Returns true if the number is a multiple of <num>.
-       * @example
-       *
-       *   (6).isMultipleOf(2)  -> true
-       *   (17).isMultipleOf(2) -> false
-       *   (32).isMultipleOf(4) -> true
-       *   (34).isMultipleOf(4) -> false
-       *
-       ***/
-      'isMultipleOf': function(num) {
-        return isMultiple(this, num);
-      },
-
-
-      /***
-       * @method format([place] = 0, [thousands] = ',', [decimal] = '.')
-       * @extra If [place] is %undefined%, will automatically determine the place. [thousands] is the character used for the thousands separator. [decimal] is the character used for the decimal point.xtra If [place] is %undefined%, the place will automatically be determined. %Number.thousands% and %Number.decimal% allow custom markers to be used.
-       * @returns String
-       * @short Formats the number to a readable string.
-       * @extra If [place] is %undefined%, the place will automatically be determined. %Number.thousands% and %Number.decimal% allow custom markers to be used.
-       * @example
-       *
-       *   (56782).format()              -> '56,782'
-       *   (56782).format(2)             -> '56,782.00'
-       *   (4388.43).format(2, ' ')      -> '4 388.43'
-       *   (4388.43).format(2, '.', ',') -> '4.388,43'
-       *
-       ***/
-      'format': function(place, thousands, decimal) {
-        return formatNumber(this, place, thousands, decimal);
-      },
-
-      /***
-       * @method hex([pad] = 1)
-       * @returns String
-       * @short Converts the number to hexidecimal.
-       * @extra [pad] will pad the resulting string to that many places.
-       * @example
-       *
-       *   (255).hex()   -> 'ff';
-       *   (255).hex(4)  -> '00ff';
-       *   (23654).hex() -> '5c66';
-       *
-       ***/
-      'hex': function(pad) {
-        return padNumber(this, pad || 1, false, 16);
-      },
-
-      /***
-       * @method times(<fn>)
-       * @returns Number
-       * @short Calls <fn> a number of times equivalent to the number.
-       * @example
-       *
-       *   (8).times(function(i) {
-       *     // This function is called 8 times.
-       *   });
-       *
-       ***/
-      'times': function(fn) {
-        if (fn) {
-          for(var i = 0; i < this; i++) {
-            fn.call(this, i);
-          }
-        }
-        return +this;
-      },
-
-      /***
-       * @method chr()
-       * @returns String
-       * @short Returns a string at the code point of the number.
-       * @example
-       *
-       *   (65).chr() -> "A"
-       *   (75).chr() -> "K"
-       *
-       ***/
-      'chr': function() {
-        return String.fromCharCode(this);
-      },
-
-      /***
-       * @method pad(<place> = 0, [sign] = false, [base] = 10)
-       * @returns String
-       * @short Pads a number with "0" to <place>.
-       * @extra [sign] allows you to force the sign as well (+05, etc). [base] can change the base for numeral conversion.
-       * @example
-       *
-       *   (5).pad(2)        -> '05'
-       *   (-5).pad(4)       -> '-0005'
-       *   (82).pad(3, true) -> '+082'
-       *
-       ***/
-      'pad': function(place, sign, base) {
-        return padNumber(this, place, sign, base);
-      },
-
-      /***
-       * @method ordinalize()
-       * @returns String
-       * @short Returns an ordinalized (English) string, i.e. "1st", "2nd", etc.
-       * @example
-       *
-       *   (1).ordinalize() -> '1st';
-       *   (2).ordinalize() -> '2nd';
-       *   (8).ordinalize() -> '8th';
-       *
-       ***/
-      'ordinalize': function() {
-        var suffix, num = abs(this), last = parseInt(num.toString().slice(-2));
-        return this + getOrdinalizedSuffix(last);
-      },
-
-      /***
-       * @method toNumber()
-       * @returns Number
-       * @short Returns a number. This is mostly for compatibility reasons.
-       * @example
-       *
-       *   (420).toNumber() -> 420
-       *
-       ***/
-      'toNumber': function() {
-        return parseFloat(this, 10);
-      }
-
-    });
-
-    /***
-     * @method round(<precision> = 0)
-     * @returns Number
-     * @short Shortcut for %Math.round% that also allows a <precision>.
-     *
-     * @example
-     *
-     *   (3.241).round()  -> 3
-     *   (-3.841).round() -> -4
-     *   (3.241).round(2) -> 3.24
-     *   (3748).round(-2) -> 3800
-     *
-     ***
-     * @method ceil(<precision> = 0)
-     * @returns Number
-     * @short Shortcut for %Math.ceil% that also allows a <precision>.
-     *
-     * @example
-     *
-     *   (3.241).ceil()  -> 4
-     *   (-3.241).ceil() -> -3
-     *   (3.241).ceil(2) -> 3.25
-     *   (3748).ceil(-2) -> 3800
-     *
-     ***
-     * @method floor(<precision> = 0)
-     * @returns Number
-     * @short Shortcut for %Math.floor% that also allows a <precision>.
-     *
-     * @example
-     *
-     *   (3.241).floor()  -> 3
-     *   (-3.841).floor() -> -4
-     *   (3.241).floor(2) -> 3.24
-     *   (3748).floor(-2) -> 3700
-     *
-     ***
-     * @method [math]()
-     * @returns Number
-     * @short Math related functions are mapped as shortcuts to numbers and are identical. Note that %Number#log% provides some special defaults.
-     *
-     * @set
-     *   abs
-     *   sin
-     *   asin
-     *   cos
-     *   acos
-     *   tan
-     *   atan
-     *   sqrt
-     *   exp
-     *   pow
-     *
-     * @example
-     *
-     *   (3).pow(3) -> 27
-     *   (-3).abs() -> 3
-     *   (1024).sqrt() -> 32
-     *
-     ***/
-
-    function buildNumber() {
-      function createRoundingFunction(fn) {
-        return function (precision) {
-          return precision ? withPrecision(this, precision, fn) : fn(this);
-        }
-      }
-      extend(Number, {
-        'ceil':   createRoundingFunction(ceil),
-        'round':  createRoundingFunction(round),
-        'floor':  createRoundingFunction(floor)
-      });
-      extendSimilar(Number, 'abs,pow,sin,asin,cos,acos,tan,atan,exp,pow,sqrt', function(methods, name) {
-        methods[name] = function(a, b) {
-          // Note that .valueOf() here is only required due to a
-          // very strange bug in iOS7 that only occurs occasionally
-          // in which Math.abs() called on non-primitive numbers
-          // returns a completely different number (Issue #400)
-          return Math[name](this.valueOf(), a, b);
-        }
-      });
-    }
-
-    buildNumber();
-
-    /***
-     * @module Object
-     * @dependency core
-     * @description Object manipulation, type checking (isNumber, isString, ...), %extended objects% with hash-like methods available as instance methods.
-     *
-     * Much thanks to kangax for his informative aricle about how problems with instanceof and constructor
-     * http://perfectionkills.com/instanceof-considered-harmful-or-how-to-write-a-robust-isarray/
-     *
-     ***/
-
-    var ObjectTypeMethods = 'isObject,isNaN'.split(',');
-    var ObjectHashMethods = 'equals,keys,values,select,reject,each,map,reduce,size,merge,clone,watch,tap,has,toQueryString'.split(',');
-
-    function setParamsObject(obj, param, value, castBoolean) {
-      var reg = /^(.+?)(\[.*\])$/, paramIsArray, match, allKeys, key;
-      if (match = param.match(reg)) {
-        key = match[1];
-        allKeys = match[2].replace(/^\[|\]$/g, '').split('][');
-        allKeys.forEach(function(k) {
-          paramIsArray = !k || k.match(/^\d+$/);
-          if (!key && isArray(obj)) key = obj.length;
-          if (!hasOwnProperty(obj, key)) {
-            obj[key] = paramIsArray ? [] : {};
-          }
-          obj = obj[key];
-          key = k;
-        });
-        if (!key && paramIsArray) key = obj.length.toString();
-        setParamsObject(obj, key, value, castBoolean);
-      } else if (castBoolean && value === 'true') {
-        obj[param] = true;
-      } else if (castBoolean && value === 'false') {
-        obj[param] = false;
-      } else {
-        obj[param] = value;
-      }
-    }
-
-    function objectToQueryString(base, obj) {
-      var tmp;
-      // If a custom toString exists bail here and use that instead
-      if (isArray(obj) || (isObjectType(obj) && obj.toString === internalToString)) {
-        tmp = [];
-        iterateOverObject(obj, function(key, value) {
-          if (base) {
-            key = base + '[' + key + ']';
-          }
-          tmp.push(objectToQueryString(key, value));
-        });
-        return tmp.join('&');
-      } else {
-        if (!base) return '';
-        return sanitizeURIComponent(base) + '=' + (isDate(obj) ? obj.getTime() : sanitizeURIComponent(obj));
-      }
-    }
-
-    function sanitizeURIComponent(obj) {
-      // undefined, null, and NaN are represented as a blank string,
-      // while false and 0 are stringified. "+" is allowed in query string
-      return !obj && obj !== false && obj !== 0 ? '' : encodeURIComponent(obj).replace(/%20/g, '+');
-    }
-
-    function matchInObject(match, key, value) {
-      if (isRegExp(match)) {
-        return match.test(key);
-      } else if (isObjectType(match)) {
-        return match[key] === value;
-      } else {
-        return key === String(match);
-      }
-    }
-
-    function selectFromObject(obj, args, select) {
-      var match, result = obj instanceof Hash ? new Hash : {};
-      iterateOverObject(obj, function(key, value) {
-        match = false;
-        for (var i = 0; i < args.length; i++) {
-          if (matchInObject(args[i], key, value)) {
-            match = true;
-          }
-        }
-        if (match === select) {
-          result[key] = value;
-        }
-      });
-      return result;
-    }
-
-    // Object merging
-
-    var getOwnPropertyNames      = Object.getOwnPropertyNames;
-    var defineProperty           = propertyDescriptorSupport ? Object.defineProperty : definePropertyShim;
-    var getOwnPropertyDescriptor = propertyDescriptorSupport ? Object.getOwnPropertyDescriptor : getOwnPropertyDescriptorShim;
-
-    function iterateOverProperties(obj, hidden, fn) {
-      if (hidden && propertyDescriptorSupport) {
-        iterateOverPropertyNames(obj, fn);
-      } else {
-        iterateOverObject(obj, fn);
-      }
-    }
-
-    function iterateOverPropertyNames(obj, fn) {
-      getOwnPropertyNames(obj).forEach(fn);
-    }
-
-    function getOwnPropertyDescriptorShim(obj, prop) {
-      return obj.hasOwnProperty(prop) ? { value: obj[prop] } : Undefined;
-    }
-
-    function definePropertyShim(obj, prop, descriptor) {
-      obj[prop] = descriptor.value;
-    }
-
-    function mergeObject(target, source, deep, resolve, isClone) {
-      var key, sourceIsObject, targetIsObject, sourceVal, targetVal, conflict, result;
-      // Strings cannot be reliably merged thanks to
-      // their properties not being enumerable in < IE8.
-      if(target && typeof source !== 'string') {
-        iterateOverProperties(source, isClone, function (key) {
-          sourceVal      = source[key];
-          targetVal      = target[key];
-          conflict       = isDefined(targetVal);
-          sourceIsObject = isObjectType(sourceVal);
-          targetIsObject = isObjectType(targetVal);
-          result         = conflict && resolve === false ? targetVal : sourceVal;
-
-          if(conflict) {
-            if(isFunction(resolve)) {
-              // Use the result of the callback as the result.
-              result = resolve.call(source, key, targetVal, sourceVal)
-            }
-          }
-
-          // Going deep
-          if(deep && (sourceIsObject || targetIsObject)) {
-            if(isDate(sourceVal)) {
-              result = new Date(sourceVal.getTime());
-            } else if(isRegExp(sourceVal)) {
-              result = new RegExp(sourceVal.source, getRegExpFlags(sourceVal));
-            } else {
-              if(!targetIsObject) target[key] = Array.isArray(sourceVal) ? [] : {};
-              mergeObject(target[key], sourceVal, deep, resolve, isClone);
-              return;
-            }
-          }
-
-          if (isClone && propertyDescriptorSupport) {
-            mergeByPropertyDescriptor(target, source, key, result);
-          } else {
-            target[key] = result;
-          }
-        });
-      }
-      return target;
-    }
-
-    function mergeByPropertyDescriptor(target, source, prop, sourceVal) {
-      var descriptor = getOwnPropertyDescriptor(source, prop);
-      if (isDefined(descriptor.value)) {
-        descriptor.value = sourceVal;
-      }
-      defineProperty(target, prop, descriptor);
-    }
-
-
-    // Extending all
-
-    function mapAllObject() {
-      buildObjectInstanceMethods(getObjectInstanceMethods(), Object);
-    }
-
-    function unmapAllObject() {
-      var objProto = Object.prototype, methods = getObjectInstanceMethods();
-      methods.forEach(function(name) {
-        if (objProto[name]) {
-          delete objProto[name];
-        }
-      });
-    }
-
-    function getObjectInstanceMethods() {
-      return ObjectTypeMethods.concat(ObjectHashMethods);
-    }
-
-    /***
-     * @method Object.is[Type](<obj>)
-     * @returns Boolean
-     * @short Returns true if <obj> is an object of that type.
-     * @extra %isObject% will return false on anything that is not an object literal, including instances of inherited classes. Note also that %isNaN% will ONLY return true if the object IS %NaN%. It does not mean the same as browser native %isNaN%, which returns true for anything that is "not a number".
-     *
-     * @set
-     *   isArray
-     *   isArguments
-     *   isObject
-     *   isBoolean
-     *   isDate
-     *   isFunction
-     *   isNaN
-     *   isNumber
-     *   isString
-     *   isRegExp
-     *
-     * @example
-     *
-     *   Object.isArray([1,2,3])            -> true
-     *   Object.isDate(3)                   -> false
-     *   Object.isRegExp(/wasabi/)          -> true
-     *   Object.isObject({ broken:'wear' }) -> true
-     *
-     ***/
-    function buildTypeMethods() {
-      extendSimilar(Object, natives, function(methods, name) {
-        var method = 'is' + name;
-        ObjectTypeMethods.push(method);
-        methods[method] = typeChecks[name];
-      }, false);
-    }
-
-    extend(Object, {
-        /***
-         * @method watch(<obj>, <prop>, <fn>)
-         * @returns Boolean
-         * @short Watches property <prop> of <obj> and runs <fn> when it changes.
-         * @extra <fn> is passed three arguments: the property <prop>, the old value, and the new value. The return value of [fn] will be set as the new value. Properties that are non-configurable or already have getters or setters cannot be watched. Return value is whether or not the watch operation succeeded. This method is useful for things such as validating or cleaning the value when it is set. Warning: this method WILL NOT work in browsers that don't support %Object.defineProperty% (IE 8 and below). This is the only method in Sugar that is not fully compatible with all browsers. %watch% is available as an instance method on %extended objects%.
-         * @example
-         *
-         *   Object.watch({ foo: 'bar' }, 'foo', function(prop, oldVal, newVal) {
-         *     // Will be run when the property 'foo' is set on the object.
-         *   });
-         *   Object.extended().watch({ foo: 'bar' }, 'foo', function(prop, oldVal, newVal) {
-         *     // Will be run when the property 'foo' is set on the object.
-         *   });
-         *
-         ***/
-      'watch': function(obj, prop, fn) {
-        var value, descriptor;
-        if (!propertyDescriptorSupport) return false;
-        descriptor = getOwnPropertyDescriptor(obj, prop);
-        if (descriptor && (!descriptor.configurable || descriptor.get || descriptor.set)) {
-          return false;
-        }
-        value = obj[prop];
-        defineProperty(obj, prop, {
-          configurable: true,
-          enumerable  : !descriptor || descriptor.enumerable,
-          get: function() {
-            return value;
-          },
-          set: function(to) {
-            value = fn.call(obj, prop, value, to);
-          }
-        });
-        return true;
-      },
-
-        /***
-         * @method unwatch(<obj>, <prop>)
-         * @returns Nothing.
-         * @short Removes a watcher previously set.
-         * @extra Return value is whether or not the watch operation succeeded. %unwatch% is available as an instance method on %extended objects%.
-         ***/
-      'unwatch': function(obj, prop) {
-        var descriptor;
-        if (!propertyDescriptorSupport) return false;
-        descriptor = getOwnPropertyDescriptor(obj, prop);
-        if (!descriptor || !descriptor.configurable || !descriptor.get || !descriptor.set) {
-          return false;
-        }
-        defineProperty(obj, prop, {
-          writable: true,
-          configurable: true,
-          enumerable: descriptor.enumerable,
-          value: obj[prop]
-        });
-        return true;
-      }
-    }, false, false);
-
-    extend(Object, {
-
-      /***
-       * @method keys(<obj>, [fn])
-       * @returns Array
-       * @short Returns an array containing the keys in <obj>. Optionally calls [fn] for each key.
-       * @extra This method is provided for browsers that don't support it natively, and additionally is enhanced to accept the callback [fn]. Returned keys are in no particular order. %keys% is available as an instance method on %extended objects%.
-       * @example
-       *
-       *   Object.keys({ broken: 'wear' }) -> ['broken']
-       *   Object.keys({ broken: 'wear' }, function(key, value) {
-       *     // Called once for each key.
-       *   });
-       *   Object.extended({ broken: 'wear' }).keys() -> ['broken']
-       *
-       ***/
-      'keys': function(obj, fn) {
-        var keys = Object.keys(obj);
-        keys.forEach(function(key) {
-          fn.call(obj, key, obj[key]);
-        });
-        return keys;
-      }
-
-    }, false, function() { return isFunction(arguments[1]); });
-
-    extend(Object, {
-
-      'isArguments': function(obj) {
-        return isArgumentsObject(obj);
-      },
-
-      'isObject': function(obj) {
-        return isPlainObject(obj);
-      },
-
-      'isNaN': function(obj) {
-        // This is only true of NaN
-        return isNumber(obj) && obj.valueOf() !== obj.valueOf();
-      },
-
-      /***
-       * @method equal(<a>, <b>)
-       * @returns Boolean
-       * @short Returns true if <a> and <b> are equal.
-       * @extra %equal% in Sugar is "egal", meaning the values are equal if they are "not observably distinguishable". Note that on %extended objects% the name is %equals% for readability.
-       * @example
-       *
-       *   Object.equal({a:2}, {a:2}) -> true
-       *   Object.equal({a:2}, {a:3}) -> false
-       *   Object.extended({a:2}).equals({a:3}) -> false
-       *
-       ***/
-      'equal': function(a, b) {
-        return isEqual(a, b);
-      },
-
-      /***
-       * @method Object.extended(<obj> = {})
-       * @returns Extended object
-       * @short Creates a new object, equivalent to %new Object()% or %{}%, but with extended methods.
-       * @extra See %extended objects% for more.
-       * @example
-       *
-       *   Object.extended()
-       *   Object.extended({ happy:true, pappy:false }).keys() -> ['happy','pappy']
-       *   Object.extended({ happy:true, pappy:false }).values() -> [true, false]
-       *
-       ***/
-      'extended': function(obj) {
-        return new Hash(obj);
-      },
-
-      /***
-       * @method merge(<target>, <source>, [deep] = false, [resolve] = true)
-       * @returns Merged object
-       * @short Merges all the properties of <source> into <target>.
-       * @extra Merges are shallow unless [deep] is %true%. Properties of <target> that are either null or undefined will be treated as if they don't exist. Properties of <source> will win in the case of conflicts, unless [resolve] is %false%. [resolve] can also be a function that resolves the conflict. In this case it will be passed 3 arguments, %key%, %targetVal%, and %sourceVal%. %merge% is available as an instance method on %extended objects%. For more, see %object_merging%.
-       * @example
-       *
-       *   Object.merge({a:1},{b:2}) -> { a:1, b:2 }
-       *   Object.merge({a:1},{a:2}, false, false) -> { a:1 }
-       +   Object.merge({a:1},{a:2}, false, function(key, a, b) {
-       *     return a + b;
-       *   }); -> { a:3 }
-       *   Object.extended({a:1}).merge({b:2}) -> { a:1, b:2 }
-       *
-       ***/
-      'merge': function(target, source, deep, resolve) {
-        return mergeObject(target, source, deep, resolve);
-      },
-
-      /***
-       * @method values(<obj>, [fn])
-       * @returns Array
-       * @short Returns an array containing the values in <obj>. Optionally calls [fn] for each value.
-       * @extra Returned values are in no particular order. %values% is available as an instance method on %extended objects%.
-       * @example
-       *
-       *   Object.values({ broken: 'wear' }) -> ['wear']
-       *   Object.values({ broken: 'wear' }, function(value) {
-       *     // Called once for each value.
-       *   });
-       *   Object.extended({ broken: 'wear' }).values() -> ['wear']
-       *
-       ***/
-      'values': function(obj, fn) {
-        var values = [];
-        iterateOverObject(obj, function(k,v) {
-          values.push(v);
-          if (isFunction(fn)) {
-            fn.call(obj,v);
-          }
-        });
-        return values;
-      },
-
-      /***
-       * @method clone(<obj> = {}, [deep] = false)
-       * @returns Cloned object
-       * @short Creates a clone (copy) of <obj>.
-       * @extra Default is a shallow clone, unless [deep] is true. %clone% is available as an instance method on %extended objects%.
-       * @example
-       *
-       *   Object.clone({foo:'bar'})            -> { foo: 'bar' }
-       *   Object.clone()                       -> {}
-       *   Object.extended({foo:'bar'}).clone() -> { foo: 'bar' }
-       *
-       ***/
-      'clone': function(obj, deep) {
-        var target, klass;
-        if (!isObjectType(obj)) {
-          return obj;
-        }
-        klass = className(obj);
-        if (isDate(obj, klass) && obj.clone) {
-          // Preserve internal UTC flag when possible.
-          return obj.clone(obj);
-        } else if (isDate(obj, klass) || isRegExp(obj, klass)) {
-          return new obj.constructor(obj);
-        } else if (obj instanceof Hash) {
-          target = new Hash;
-        } else if (isArray(obj, klass)) {
-          target = [];
-        } else if (isPlainObject(obj, klass)) {
-          target = {};
-        } else {
-          throw new TypeError('Clone must be a basic data type.');
-        }
-
-        return mergeObject(target, obj, deep, true, true);
-      },
-
-      /***
-       * @method Object.fromQueryString(<str>, [booleans] = false)
-       * @returns Object
-       * @short Converts the query string of a URL into an object.
-       * @extra If [booleans] is true, then %"true"% and %"false"% will be cast into booleans. All other values, including numbers will remain their string values.
-       * @example
-       *
-       *   Object.fromQueryString('foo=bar&broken=wear') -> { foo: 'bar', broken: 'wear' }
-       *   Object.fromQueryString('foo[]=1&foo[]=2')     -> { foo: ['1','2'] }
-       *   Object.fromQueryString('foo=true', true)      -> { foo: true }
-       *
-       ***/
-      'fromQueryString': function(str, castBoolean) {
-        var result = new Hash, split;
-        if (!str) {
-          return result;
-        }
-        str = str && str.toString ? str.toString() : '';
-        str.replace(/^.*?\?/, '').split('&').forEach(function(p) {
-          var split = p.split('=');
-          setParamsObject(result, split[0], decodeURIComponent(split[1] || ''), castBoolean);
-        });
-        return result;
-      },
-
-      /***
-       * @method Object.toQueryString(<obj>, [namespace] = null)
-       * @returns Object
-       * @short Converts the object into a query string.
-       * @extra Accepts deep nested objects and arrays. If [namespace] is passed, it will be prefixed to all param names.
-       * @example
-       *
-       *   Object.toQueryString({foo:'bar'})          -> 'foo=bar'
-       *   Object.toQueryString({foo:['a','b','c']})  -> 'foo[0]=a&foo[1]=b&foo[2]=c'
-       *   Object.toQueryString({name:'Bob'}, 'user') -> 'user[name]=Bob'
-       *
-       ***/
-      'toQueryString': function(obj, namespace) {
-        return objectToQueryString(namespace, obj);
-      },
-
-      /***
-       * @method tap(<obj>, <fn>)
-       * @returns Object
-       * @short Runs <fn> and returns <obj>.
-       * @extra  A string can also be used as a shortcut to a method. This method is used to run an intermediary function in the middle of method chaining. As a standalone method on the Object class it doesn't have too much use. The power of %tap% comes when using %extended objects% or modifying the Object prototype with %Object.extend()%.
-       * @example
-       *
-       *   Object.extend();
-       *   [2,4,6].map(Math.exp).tap(function(arr) {
-       *     arr.pop()
-       *   });
-       *   [2,4,6].map(Math.exp).tap('pop').map(Math.round); ->  [7,55]
-       *
-       ***/
-      'tap': function(obj, arg) {
-        var fn = arg;
-        if (!isFunction(arg)) {
-          fn = function() {
-            if (arg) obj[arg]();
-          }
-        }
-        fn.call(obj, obj);
-        return obj;
-      },
-
-      /***
-       * @method has(<obj>, <key>)
-       * @returns Boolean
-       * @short Checks if <obj> has <key> using hasOwnProperty from Object.prototype.
-       * @extra This method is considered safer than %Object#hasOwnProperty% when using objects as hashes. See http://www.devthought.com/2012/01/18/an-object-is-not-a-hash/ for more.
-       * @example
-       *
-       *   Object.has({ foo: 'bar' }, 'foo') -> true
-       *   Object.has({ foo: 'bar' }, 'baz') -> false
-       *   Object.has({ hasOwnProperty: true }, 'foo') -> false
-       *
-       ***/
-      'has': function (obj, key) {
-        return hasOwnProperty(obj, key);
-      },
-
-      /***
-       * @method select(<obj>, <find>, ...)
-       * @returns Object
-       * @short Builds a new object containing the values specified in <find>.
-       * @extra When <find> is a string, that single key will be selected. It can also be a regex, selecting any key that matches, or an object which will effectively do an "intersect" operation on that object. Multiple selections may also be passed as an array or directly as enumerated arguments. %select% is available as an instance method on %extended objects%.
-       * @example
-       *
-       *   Object.select({a:1,b:2}, 'a')        -> {a:1}
-       *   Object.select({a:1,b:2}, /[a-z]/)    -> {a:1,ba:2}
-       *   Object.select({a:1,b:2}, {a:1})      -> {a:1}
-       *   Object.select({a:1,b:2}, 'a', 'b')   -> {a:1,b:2}
-       *   Object.select({a:1,b:2}, ['a', 'b']) -> {a:1,b:2}
-       *
-       ***/
-      'select': function (obj) {
-        // Optimized: no leaking arguments (flat)
-        var args = [], $i; for($i = 1; $i < arguments.length; $i++) args = args.concat(arguments[$i]);
-        return selectFromObject(obj, args, true);
-      },
-
-      /***
-       * @method reject(<obj>, <find>, ...)
-       * @returns Object
-       * @short Builds a new object containing all values except those specified in <find>.
-       * @extra When <find> is a string, that single key will be rejected. It can also be a regex, rejecting any key that matches, or an object which will match if the key also exists in that object, effectively "subtracting" that object. Multiple selections may also be passed as an array or directly as enumerated arguments. %reject% is available as an instance method on %extended objects%.
-       * @example
-       *
-       *   Object.reject({a:1,b:2}, 'a')        -> {b:2}
-       *   Object.reject({a:1,b:2}, /[a-z]/)    -> {}
-       *   Object.reject({a:1,b:2}, {a:1})      -> {b:2}
-       *   Object.reject({a:1,b:2}, 'a', 'b')   -> {}
-       *   Object.reject({a:1,b:2}, ['a', 'b']) -> {}
-       *
-       ***/
-      'reject': function (obj) {
-        // Optimized: no leaking arguments (flat)
-        var args = [], $i; for($i = 1; $i < arguments.length; $i++) args = args.concat(arguments[$i]);
-        return selectFromObject(obj, args, false);
-      },
-
-      /***
-       * @method map(<obj>, <map>)
-       * @returns Object
-       * @short Maps the object to another object.
-       * @extra When <map> is a function, the first argument will be the object's key and the second will be its value. The third argument will be the object itself. The resulting object values will be those which were returned from <map>.
-       *
-       * @example
-       *
-       *   Object.map({ foo: 'bar' }, function(lhs, rhs) {
-       *     return 'ha';
-       *   }); -> Returns { foo: 'ha' }
-       *
-       ***/
-      'map': function(obj, map) {
-        var result = {}, key, value;
-        for(key in obj) {
-          if (!hasOwnProperty(obj, key)) continue;
-          value = obj[key];
-          result[key] = transformArgument(value, map, obj, [key, value, obj]);
-        }
-        return result;
-      },
-
-      'reduce': function(obj) {
-        var args = [], values;
-        values = keysWithObjectCoercion(obj).map(function(key) {
-          return obj[key];
-        });
-        for(var i = 1, len = arguments.length; i < len; i++) {
-          args.push(arguments[i]);
-        }
-        return values.reduce.apply(values, args);
-      },
-
-      /***
-       * @method each(<obj>, <fn>)
-       * @returns Object
-       * @short Runs <fn> against each property in the object, passing in the key as the first argument, and the value as the second.
-       * @extra If <fn> returns %false% at any time it will break out of the loop. Returns <obj>.
-       * @example
-       *
-       *   Object.each({ foo: 'bar' }, function(k, v) {
-       *     console.log('key is ', k, ' and value is ', v);
-       *   });
-       *
-       ***/
-      'each': function(obj, fn) {
-        checkCallback(fn);
-        iterateOverObject(obj, fn);
-        return obj;
-      },
-
-      /***
-       * @method size(<obj>)
-       * @returns Number
-       * @short Returns the number of properties in <obj>.
-       * @extra %size% is available as an instance method on %extended objects%.
-       * @example
-       *
-       *   Object.size({ foo: 'bar' }) -> 1
-       *
-       ***/
-      'size': function (obj) {
-        return keysWithObjectCoercion(obj).length;
-      }
-
-    }, false);
-
-    extend(Object, {
-
-      'extend': function(on) {
-        if (on !== false) {
-          mapAllObject();
-        } else {
-          unmapAllObject();
-        }
-        return true;
-      }
-
-    }, false, function(arg) { return typeof arg !== 'object'; });
-
-
-    buildTypeMethods();
-    buildObjectInstanceMethods(ObjectHashMethods, Hash);
-
-    /***
-     * @module Range
-     * @dependency core
-     * @description Ranges allow creating spans of numbers, strings, or dates. They can enumerate over specific points within that range, and be manipulated and compared.
-     *
-     ***/
-
-    var DATE_UNITS               = 'year|month|week|day|hour|minute|(?:milli)?second';
-    var FULL_CAPTURED_DURATION   = '((?:\\d+)?\\s*(?:' + DATE_UNITS + '))s?';
-    var RANGE_REG                = /(?:from)?\s*(.+)\s+(?:to|until)\s+(.+)$/i;
-    var DURATION_REG             = RegExp('(\\d+)?\\s*('+ DATE_UNITS +')s?', 'i');
-    var RANGE_REG_FRONT_DURATION = RegExp('(?:for)?\\s*'+ FULL_CAPTURED_DURATION +'\\s*(?:starting)?\\s*at\\s*(.+)', 'i');
-    var RANGE_REG_REAR_DURATION  = RegExp('(.+)\\s*for\\s*' + FULL_CAPTURED_DURATION, 'i');
-
-    var MULTIPLIERS = {
-      'Hours': 60 * 60 * 1000,
-      'Minutes': 60 * 1000,
-      'Seconds': 1000,
-      'Milliseconds': 1
+  }
+
+  function buildPadded(get, padding) {
+    return function(d, localeCode) {
+      return padNumber(get(d, localeCode), padding);
     };
+  }
 
-    function Range(start, end) {
-      this.start = cloneRangeMember(start);
-      this.end   = cloneRangeMember(end);
+  function buildTwoDigits(get) {
+    return function(d, localeCode) {
+      return get(d, localeCode) % 100;
     };
+  }
 
-    function getRangeMemberNumericValue(m) {
-      return isString(m) ? m.charCodeAt(0) : m;
-    }
-
-    function getRangeMemberPrimitiveValue(m) {
-      if (m == null) return m;
-      return isDate(m) ? m.getTime() : m.valueOf();
-    }
-
-    function getPrecision(n) {
-      var split = n.toString().split('.');
-      return split[1] ? split[1].length : 0;
-    }
-
-    function getGreaterPrecision(n1, n2) {
-      return max(getPrecision(n1), getPrecision(n2));
-    }
-
-    function getSimpleDate(str) {
-      // Needed as argument numbers are checked internally here.
-      return str == null ? new Date() : new Date(str);
-    }
-
-    function getSugarExtendedDate(d) {
-      return Date.create(d);
-    }
-
-    function dateConstructorIsExtended() {
-      return !!Date.create;
-    }
-
-    function createDateRangeFromString(str) {
-      var match, datetime, duration, dio, start, end;
-      if (match = str.match(RANGE_REG)) {
-        return DateRangeConstructor(match[1], match[2]);
-      }
-      if (match = str.match(RANGE_REG_FRONT_DURATION)) {
-        duration = match[1];
-        datetime = match[2];
-      }
-      if (match = str.match(RANGE_REG_REAR_DURATION)) {
-        datetime = match[1];
-        duration = match[2];
-      }
-      if (datetime && duration) {
-        start = getSugarExtendedDate(datetime);
-        dio = getDateIncrementObject(duration);
-        end = incrementDate(start, dio[0], dio[1]);
-      }
-      return DateRangeConstructor(start, end);
-    }
-
-    function cloneRangeMember(m) {
-      if (isDate(m)) {
-        return new Date(m.getTime());
-      } else {
-        return getRangeMemberPrimitiveValue(m);
-      }
-    }
-
-    function isValidRangeMember(m) {
-      var val = getRangeMemberPrimitiveValue(m);
-      return (!!val || val === 0) && valueIsNotInfinite(m);
-    }
-
-    function valueIsNotInfinite(m) {
-      return m !== -Infinity && m !== Infinity;
-    }
-
-    function getDateIncrementObject(amt) {
-      var match, val, unit;
-      if (isNumber(amt)) {
-        return [amt, 'Milliseconds'];
-      }
-      match = amt.match(DURATION_REG);
-      val = parseInt(match[1]) || 1;
-      unit = match[2].slice(0,1).toUpperCase() + match[2].slice(1).toLowerCase();
-      if (unit.match(/hour|minute|second/i)) {
-        unit += 's';
-      } else if (unit === 'Year') {
-        unit = 'FullYear';
-      } else if (unit === 'Day') {
-        unit = 'Date';
-      }
-      return [val, unit];
-    }
-
-    function incrementDate(src, amount, unit) {
-      var mult = MULTIPLIERS[unit], d;
-      if (mult) {
-        d = new Date(src.getTime() + (amount * mult));
-      } else {
-        d = new Date(src);
-        callDateSet(d, unit, callDateGet(src, unit) + amount);
-      }
-      return d;
-    }
-
-
-    function incrementString(current, amount) {
-      return String.fromCharCode(current.charCodeAt(0) + amount);
-    }
-
-    function incrementNumber(current, amount, precision) {
-      return withPrecision(current + amount, precision);
-    }
-
-    /***
-     * @method toString()
-     * @returns String
-     * @short Returns a string representation of the range.
-     * @example
-     *
-     *   Number.range(1, 5).toString()                               -> 1..5
-     *   Date.range(new Date(2003, 0), new Date(2005, 0)).toString() -> January 1, 2003..January 1, 2005
-     *
-     ***/
-
-    // Note: 'toString' doesn't appear in a for..in loop in IE even though
-    // hasOwnProperty reports true, so extend() can't be used here.
-    // Also tried simply setting the prototype = {} up front for all
-    // methods but GCC very oddly started dropping properties in the
-    // object randomly (maybe because of the global scope?) hence
-    // the need for the split logic here.
-    Range.prototype.toString = function() {
-      return this.isValid() ? this.start + ".." + this.end : 'Invalid Range';
+  function buildAlias(alias) {
+    return function(d, localeCode) {
+      return dateFormatMatcher(alias, d, localeCode);
     };
+  }
 
-    extend(Range, {
+  function buildAlternates(f) {
+    for (var n = 1; n <= 5; n++) {
+      buildAlternate(f, n);
+    }
+  }
 
-      /***
-       * @method isValid()
-       * @returns Boolean
-       * @short Returns true if the range is valid, false otherwise.
-       * @example
-       *
-       *   Date.range(new Date(2003, 0), new Date(2005, 0)).isValid() -> true
-       *   Number.range(NaN, NaN).isValid()                           -> false
-       *
-       ***/
-      'isValid': function() {
-        return isValidRangeMember(this.start) && isValidRangeMember(this.end) && typeof this.start === typeof this.end;
-      },
+  function buildAlternate(f, n) {
+    var alternate = function(d, localeCode) {
+      return f.get(d, localeCode, n);
+    };
+    addFormats(ldmlTokens, f.ldml + n, alternate);
+    if (f.lowerToken) {
+      ldmlTokens[f.lowerToken + n] = buildLowercase(alternate);
+    }
+  }
 
-      /***
-       * @method span()
-       * @returns Number
-       * @short Returns the span of the range. If the range is a date range, the value is in milliseconds.
-       * @extra The span includes both the start and the end.
-       * @example
-       *
-       *   Number.range(5, 10).span()                              -> 6
-       *   Date.range(new Date(2003, 0), new Date(2005, 0)).span() -> 94694400000
-       *
-       ***/
-      'span': function() {
-        return this.isValid() ? abs(
-          getRangeMemberNumericValue(this.end) - getRangeMemberNumericValue(this.start)
-        ) + 1 : NaN;
-      },
+  function getIdentityFormat(name) {
+    return function(d, localeCode) {
+      var loc = localeManager.get(localeCode);
+      return dateFormatMatcher(loc[name], d, localeCode);
+    };
+  }
 
-      /***
-       * @method contains(<obj>)
-       * @returns Boolean
-       * @short Returns true if <obj> is contained inside the range. <obj> may be a value or another range.
-       * @example
-       *
-       *   Number.range(5, 10).contains(7)                                              -> true
-       *   Date.range(new Date(2003, 0), new Date(2005, 0)).contains(new Date(2004, 0)) -> true
-       *
-       ***/
-      'contains': function(obj) {
-        var self = this, arr;
-        if (obj == null) return false;
-        if (obj.start && obj.end) {
-          return obj.start >= this.start && obj.start <= this.end &&
-                 obj.end   >= this.start && obj.end   <= this.end;
-        } else {
-          return obj >= this.start && obj <= this.end;
-        }
-      },
+  ldmlTokens = {};
+  strfTokens = {};
 
-      /***
-       * @method every(<amount>, [fn])
-       * @returns Array
-       * @short Iterates through the range for every <amount>, calling [fn] if it is passed. Returns an array of each increment visited.
-       * @extra In the case of date ranges, <amount> can also be a string, in which case it will increment a number of  units. Note that %(2).months()% first resolves to a number, which will be interpreted as milliseconds and is an approximation, so stepping through the actual months by passing %"2 months"% is usually preferable.
-       * @example
-       *
-       *   Number.range(2, 8).every(2)                                       -> [2,4,6,8]
-       *   Date.range(new Date(2003, 1), new Date(2003,3)).every("2 months") -> [...]
-       *
-       ***/
-      'every': function(amount, fn) {
-        var increment,
-            precision,
-            dio,
-            unit,
-            start   = this.start,
-            end     = this.end,
-            inverse = end < start,
-            current = start,
-            index   = 0,
-            result  = [];
+  forEach(FormatTokensBase, function(f) {
+    var get = f.get, getPadded;
+    if (f.lowerToken) {
+      ldmlTokens[f.lowerToken] = buildLowercase(get);
+    }
+    if (f.ordinalToken) {
+      ldmlTokens[f.ordinalToken] = buildOrdinal(get, f);
+    }
+    if (f.ldmlPaddedToken) {
+      ldmlTokens[f.ldmlPaddedToken] = buildPadded(get, f.ldmlPaddedToken.length);
+    }
+    if (f.ldmlTwoDigitToken) {
+      ldmlTokens[f.ldmlTwoDigitToken] = buildPadded(buildTwoDigits(get), 2);
+    }
+    if (f.strfTwoDigitToken) {
+      strfTokens[f.strfTwoDigitToken] = buildPadded(buildTwoDigits(get), 2);
+    }
+    if (f.strfPadding) {
+      getPadded = buildPadded(get, f.strfPadding);
+    }
+    if (f.alias) {
+      get = buildAlias(f.alias);
+    }
+    if (f.allowAlternates) {
+      buildAlternates(f);
+    }
+    addFormats(ldmlTokens, f.ldml, get);
+    addFormats(strfTokens, f.strf, getPadded || get);
+  });
 
-        if (!this.isValid()) {
-          return [];
-        }
-        if (isFunction(amount)) {
-          fn = amount;
-          amount = null;
-        }
-        amount = amount || 1;
-        if (isNumber(start)) {
-          precision = getGreaterPrecision(start, amount);
-          increment = function() {
-            return incrementNumber(current, amount, precision);
-          };
-        } else if (isString(start)) {
-          increment = function() {
-            return incrementString(current, amount);
-          };
-        } else if (isDate(start)) {
-          dio = getDateIncrementObject(amount);
-          amount = dio[0];
-          unit = dio[1];
-          increment = function() {
-            return incrementDate(current, amount, unit);
-          };
-        }
-        // Avoiding infinite loops
-        if (inverse && amount > 0) {
-          amount *= -1;
-        }
-        while(inverse ? current >= end : current <= end) {
-          result.push(current);
-          if (fn) {
-            fn(current, index);
-          }
-          current = increment();
-          index++;
-        }
-        return result;
-      },
+  forEachProperty(CoreOutputFormats, function(src, name) {
+    addFormats(ldmlTokens, name, buildAlias(src));
+  });
 
-      /***
-       * @method union(<range>)
-       * @returns Range
-       * @short Returns a new range with the earliest starting point as its start, and the latest ending point as its end. If the two ranges do not intersect this will effectively remove the "gap" between them.
-       * @example
-       *
-       *   Number.range(1, 3).union(Number.range(2, 5)) -> 1..5
-       *   Date.range(new Date(2003, 1), new Date(2005, 1)).union(Date.range(new Date(2004, 1), new Date(2006, 1))) -> Jan 1, 2003..Jan 1, 2006
-       *
-       ***/
-      'union': function(range) {
-        return new Range(
-          this.start < range.start ? this.start : range.start,
-          this.end   > range.end   ? this.end   : range.end
-        );
-      },
+  defineInstanceSimilar(sugarDate, 'short medium long full', function(methods, name) {
+    var fn = getIdentityFormat(name);
+    addFormats(ldmlTokens, name, fn);
+    methods[name] = fn;
+  });
 
-      /***
-       * @method intersect(<range>)
-       * @returns Range
-       * @short Returns a new range with the latest starting point as its start, and the earliest ending point as its end. If the two ranges do not intersect this will effectively produce an invalid range.
-       * @example
-       *
-       *   Number.range(1, 5).intersect(Number.range(4, 8)) -> 4..5
-       *   Date.range(new Date(2003, 1), new Date(2005, 1)).intersect(Date.range(new Date(2004, 1), new Date(2006, 1))) -> Jan 1, 2004..Jan 1, 2005
-       *
-       ***/
-      'intersect': function(range) {
-        if (range.start > this.end || range.end < this.start) {
-          return new Range(NaN, NaN);
-        }
-        return new Range(
-          this.start > range.start ? this.start : range.start,
-          this.end   < range.end   ? this.end   : range.end
-        );
-      },
+  addFormats(ldmlTokens, 'time', getIdentityFormat('time'));
+  addFormats(ldmlTokens, 'stamp', getIdentityFormat('stamp'));
+}
 
-      /***
-       * @method clone()
-       * @returns Range
-       * @short Clones the range.
-       * @extra Members of the range will also be cloned.
-       * @example
-       *
-       *   Number.range(1, 5).clone() -> Returns a copy of the range.
-       *
-       ***/
-      'clone': function(range) {
-        return new Range(this.start, this.end);
-      },
+var dateFormatMatcher;
 
-      /***
-       * @method clamp(<obj>)
-       * @returns Mixed
-       * @short Clamps <obj> to be within the range if it falls outside.
-       * @example
-       *
-       *   Number.range(1, 5).clamp(8) -> 5
-       *   Date.range(new Date(2010, 0), new Date(2012, 0)).clamp(new Date(2013, 0)) -> 2012-01
-       *
-       ***/
-      'clamp': function(obj) {
-        var clamped,
-            start = this.start,
-            end = this.end,
-            min = end < start ? end : start,
-            max = start > end ? start : end;
-        if (obj < min) {
-          clamped = min;
-        } else if (obj > max) {
-          clamped = max;
-        } else {
-          clamped = obj;
-        }
-        return cloneRangeMember(clamped);
-      }
+function buildDateFormatMatcher() {
 
+  function getLdml(d, token, localeCode) {
+    return getOwn(ldmlTokens, token)(d, localeCode);
+  }
+
+  function getStrf(d, token, localeCode) {
+    return getOwn(strfTokens, token)(d, localeCode);
+  }
+
+  function checkDateToken(ldml, strf) {
+    return hasOwn(ldmlTokens, ldml) || hasOwn(strfTokens, strf);
+  }
+
+  // Format matcher for LDML or STRF tokens.
+  dateFormatMatcher = createFormatMatcher(getLdml, getStrf, checkDateToken);
+}
+
+buildDateFormatTokens();
+
+buildDateFormatMatcher();
+
+module.exports = {
+  ldmlTokens: ldmlTokens,
+  strfTokens: strfTokens,
+  dateFormatMatcher: dateFormatMatcher
+};
+},{"../../common/internal/createFormatMatcher":114,"../../common/internal/defineInstanceSimilar":122,"../../common/internal/forEach":129,"../../common/internal/padNumber":162,"../../common/internal/spaceSplit":175,"../../common/var/coreUtilityAliases":193,"../../common/var/namespaceAliases":197,"./CoreOutputFormats":379,"./FormatTokensBase":385,"./LocaleHelpers":389}],396:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.weeksAgo;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],397:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.weeksFromNow;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],398:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.weeksSince;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],399:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.weeksUntil;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],400:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.yearsAgo;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],401:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.yearsFromNow;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],402:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.yearsSince;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],403:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildDateUnitMethodsCall');
+
+module.exports = Sugar.Date.yearsUntil;
+},{"./build/buildDateUnitMethodsCall":214,"sugar-core":18}],404:[function(require,module,exports){
+'use strict';
+
+var buildFromIndexMethods = require('../internal/buildFromIndexMethods');
+
+buildFromIndexMethods();
+},{"../internal/buildFromIndexMethods":411}],405:[function(require,module,exports){
+'use strict';
+
+// Static Methods
+require('../object/average');
+require('../object/count');
+require('../object/every');
+require('../object/filter');
+require('../object/find');
+require('../object/forEach');
+require('../object/least');
+require('../object/map');
+require('../object/max');
+require('../object/median');
+require('../object/min');
+require('../object/most');
+require('../object/none');
+require('../object/reduce');
+require('../object/some');
+require('../object/sum');
+
+// Instance Methods
+require('../array/average');
+require('../array/count');
+require('../array/every');
+require('../array/everyFromIndex');
+require('../array/filter');
+require('../array/filterFromIndex');
+require('../array/find');
+require('../array/findFromIndex');
+require('../array/findIndex');
+require('../array/findIndexFromIndex');
+require('../array/forEachFromIndex');
+require('../array/least');
+require('../array/map');
+require('../array/mapFromIndex');
+require('../array/max');
+require('../array/median');
+require('../array/min');
+require('../array/most');
+require('../array/none');
+require('../array/reduceFromIndex');
+require('../array/reduceRightFromIndex');
+require('../array/some');
+require('../array/someFromIndex');
+require('../array/sum');
+
+module.exports = require('sugar-core');
+},{"../array/average":22,"../array/count":27,"../array/every":29,"../array/everyFromIndex":30,"../array/filter":32,"../array/filterFromIndex":33,"../array/find":34,"../array/findFromIndex":35,"../array/findIndex":36,"../array/findIndexFromIndex":37,"../array/forEachFromIndex":40,"../array/least":75,"../array/map":76,"../array/mapFromIndex":77,"../array/max":78,"../array/median":79,"../array/min":80,"../array/most":81,"../array/none":82,"../array/reduceFromIndex":83,"../array/reduceRightFromIndex":84,"../array/some":90,"../array/someFromIndex":91,"../array/sum":94,"../object/average":585,"../object/count":588,"../object/every":590,"../object/filter":592,"../object/find":593,"../object/forEach":594,"../object/least":649,"../object/map":650,"../object/max":651,"../object/median":652,"../object/min":655,"../object/most":656,"../object/none":657,"../object/reduce":658,"../object/some":664,"../object/sum":666,"sugar-core":18}],406:[function(require,module,exports){
+'use strict';
+
+var isUndefined = require('../../common/internal/isUndefined'),
+    enhancedMatcherMethods = require('../var/enhancedMatcherMethods');
+
+var enhancedFilter = enhancedMatcherMethods.enhancedFilter;
+
+function arrayCount(arr, f) {
+  if (isUndefined(f)) {
+    return arr.length;
+  }
+  return enhancedFilter.apply(this, arguments).length;
+}
+
+module.exports = arrayCount;
+},{"../../common/internal/isUndefined":155,"../var/enhancedMatcherMethods":430}],407:[function(require,module,exports){
+'use strict';
+
+var enhancedMatcherMethods = require('../var/enhancedMatcherMethods');
+
+var enhancedSome = enhancedMatcherMethods.enhancedSome;
+
+function arrayNone() {
+  return !enhancedSome.apply(this, arguments);
+}
+
+module.exports = arrayNone;
+},{"../var/enhancedMatcherMethods":430}],408:[function(require,module,exports){
+'use strict';
+
+var enumerateWithMapping = require('./enumerateWithMapping');
+
+function average(obj, map) {
+  var sum = 0, count = 0;
+  enumerateWithMapping(obj, map, function(val) {
+    sum += val;
+    count++;
+  });
+  // Prevent divide by 0
+  return sum / (count || 1);
+}
+
+module.exports = average;
+},{"./enumerateWithMapping":414}],409:[function(require,module,exports){
+'use strict';
+
+var enhancedMapping = require('./enhancedMapping'),
+    wrapNativeArrayMethod = require('./wrapNativeArrayMethod');
+
+function buildEnhancedMapping(name) {
+  return wrapNativeArrayMethod(name, enhancedMapping);
+}
+
+module.exports = buildEnhancedMapping;
+},{"./enhancedMapping":412,"./wrapNativeArrayMethod":426}],410:[function(require,module,exports){
+'use strict';
+
+var enhancedMatching = require('./enhancedMatching'),
+    wrapNativeArrayMethod = require('./wrapNativeArrayMethod');
+
+function buildEnhancedMatching(name) {
+  return wrapNativeArrayMethod(name, enhancedMatching);
+}
+
+module.exports = buildEnhancedMatching;
+},{"./enhancedMatching":413,"./wrapNativeArrayMethod":426}],411:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    spaceSplit = require('../../common/internal/spaceSplit'),
+    classChecks = require('../../common/var/classChecks'),
+    mathAliases = require('../../common/var/mathAliases'),
+    assertArgument = require('../../common/internal/assertArgument'),
+    enhancedMapping = require('./enhancedMapping'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    enhancedMatching = require('./enhancedMatching'),
+    getNormalizedIndex = require('../../common/internal/getNormalizedIndex'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases'),
+    methodDefineAliases = require('../../common/var/methodDefineAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty,
+    defineInstanceWithArguments = methodDefineAliases.defineInstanceWithArguments,
+    sugarArray = namespaceAliases.sugarArray,
+    min = mathAliases.min,
+    max = mathAliases.max,
+    isBoolean = classChecks.isBoolean;
+
+function buildFromIndexMethods() {
+
+  var methods = {
+    'forEach': {
+      base: forEachAsNative
+    },
+    'map': {
+      wrapper: enhancedMapping
+    },
+    'some every': {
+      wrapper: enhancedMatching
+    },
+    'findIndex': {
+      wrapper: enhancedMatching,
+      result: indexResult
+    },
+    'reduce': {
+      apply: applyReduce
+    },
+    'filter find': {
+      wrapper: enhancedMatching
+    },
+    'reduceRight': {
+      apply: applyReduce,
+      slice: sliceArrayFromRight,
+      clamp: clampStartIndexFromRight
+    }
+  };
+
+  forEachProperty(methods, function(opts, key) {
+    forEach(spaceSplit(key), function(baseName) {
+      var methodName = baseName + 'FromIndex';
+      var fn = createFromIndexWithOptions(baseName, opts);
+      defineInstanceWithArguments(sugarArray, methodName, fn);
     });
+  });
 
+  function forEachAsNative(fn) {
+    forEach(this, fn);
+  }
 
-    /***
-     * @namespace Number
-     * @method Number.range([start], [end])
-     * @returns Range
-     * @short Creates a new range between [start] and [end]. See %ranges% for more.
-     * @example
-     *
-     *   Number.range(5, 10)
-     *
-     ***
-     * @namespace String
-     * @method String.range([start], [end])
-     * @returns Range
-     * @short Creates a new range between [start] and [end]. See %ranges% for more.
-     * @example
-     *
-     *   String.range('a', 'z')
-     *
-     ***
-     * @namespace Date
-     * @method Date.range([start], [end])
-     * @returns Range
-     * @short Creates a new range between [start] and [end].
-     * @extra If either [start] or [end] are null, they will default to the current date. See %ranges% for more.
-     * @example
-     *
-     *   Date.range('today', 'tomorrow')
-     *
-     ***/
-
-     function extendRangeConstructor(klass, constructor) {
-       extend(klass, { 'range': constructor }, false);
-     }
-
-     var PrimitiveRangeConstructor = function(start, end) {
-       return new Range(start, end);
-     };
-
-     var DateRangeConstructor = function(start, end) {
-       if (dateConstructorIsExtended()) {
-         if (arguments.length === 1 && isString(start)) {
-           return createDateRangeFromString(start);
-         }
-         start = getSugarExtendedDate(start);
-         end   = getSugarExtendedDate(end);
-       } else {
-         start = getSimpleDate(start);
-         end   = getSimpleDate(end);
-       }
-       return new Range(start, end);
-     };
-
-     extendRangeConstructor(Number, PrimitiveRangeConstructor);
-     extendRangeConstructor(String, PrimitiveRangeConstructor);
-     extendRangeConstructor(Date, DateRangeConstructor);
-
-    /***
-     * @namespace Number
-     *
-     ***/
-
-    extend(Number, {
-
-      /***
-       * @method upto(<num>, [fn], [step] = 1)
-       * @returns Array
-       * @short Returns an array containing numbers from the number up to <num>.
-       * @extra Optionally calls [fn] callback for each number in that array. [step] allows multiples greater than 1.
-       * @example
-       *
-       *   (2).upto(6) -> [2, 3, 4, 5, 6]
-       *   (2).upto(6, function(n) {
-       *     // This function is called 5 times receiving n as the value.
-       *   });
-       *   (2).upto(8, null, 2) -> [2, 4, 6, 8]
-       *
-       ***/
-      'upto': function(num, fn, step) {
-        return new Range(this, num).every(step, fn);
-      },
-
-       /***
-       * @method clamp([start] = Infinity, [end] = Infinity)
-       * @returns Number
-       * @short Constrains the number so that it is between [start] and [end].
-       * @extra This will build a range object that has an equivalent %clamp% method.
-       * @example
-       *
-       *   (3).clamp(50, 100)  -> 50
-       *   (85).clamp(50, 100) -> 85
-       *
-       ***/
-      'clamp': function(start, end) {
-        return new Range(start, end).clamp(this);
-      },
-
-       /***
-       * @method cap([max] = Infinity)
-       * @returns Number
-       * @short Constrains the number so that it is no greater than [max].
-       * @extra This will build a range object that has an equivalent %cap% method.
-       * @example
-       *
-       *   (100).cap(80) -> 80
-       *
-       ***/
-      'cap': function(max) {
-        return new Range(Undefined, max).clamp(this);
-      }
-
-    });
-
-    /***
-     * @method downto(<num>, [fn], [step] = 1)
-     * @returns Array
-     * @short Returns an array containing numbers from the number down to <num>.
-     * @extra Optionally calls [fn] callback for each number in that array. [step] allows multiples greater than 1.
-     * @example
-     *
-     *   (8).downto(3) -> [8, 7, 6, 5, 4, 3]
-     *   (8).downto(3, function(n) {
-     *     // This function is called 6 times receiving n as the value.
-     *   });
-     *   (8).downto(2, null, 2) -> [8, 6, 4, 2]
-     *
-     ***/
-    alias(Number, 'downto', 'upto');
-
-
-    /***
-     * @namespace Array
-     *
-     ***/
-
-    extend(Array, {
-
-      'create': function(range) {
-        return range.every();
-      }
-
-    }, false, function(a) { return a instanceof Range; });
-
-    /***
-     * @module RegExp
-     * @dependency core
-     * @description Escaping regexes and manipulating their flags.
-     *
-     * Note here that methods on the RegExp class like .exec and .test will fail in the current version of SpiderMonkey being
-     * used by CouchDB when using shorthand regex notation like /foo/. This is the reason for the intermixed use of shorthand
-     * and compiled regexes here. If you're using JS in CouchDB, it is safer to ALWAYS compile your regexes from a string.
-     *
-     ***/
-
-    extend(RegExp, {
-
-     /***
-      * @method RegExp.escape(<str> = '')
-      * @returns String
-      * @short Escapes all RegExp tokens in a string.
-      * @example
-      *
-      *   RegExp.escape('really?')      -> 'really\?'
-      *   RegExp.escape('yes.')         -> 'yes\.'
-      *   RegExp.escape('(not really)') -> '\(not really\)'
-      *
-      ***/
-      'escape': function(str) {
-        return escapeRegExp(str);
-      }
-
-    }, false);
-
-    extend(RegExp, {
-
-     /***
-      * @method getFlags()
-      * @returns String
-      * @short Returns the flags of the regex as a string.
-      * @example
-      *
-      *   /texty/gim.getFlags('testy') -> 'gim'
-      *
-      ***/
-      'getFlags': function() {
-        return getRegExpFlags(this);
-      },
-
-     /***
-      * @method setFlags(<flags>)
-      * @returns RegExp
-      * @short Sets the flags on a regex and retuns a copy.
-      * @example
-      *
-      *   /texty/.setFlags('gim') -> now has global, ignoreCase, and multiline set
-      *
-      ***/
-      'setFlags': function(flags) {
-        return RegExp(this.source, flags);
-      },
-
-     /***
-      * @method addFlag(<flag>)
-      * @returns RegExp
-      * @short Adds <flag> to the regex.
-      * @example
-      *
-      *   /texty/.addFlag('g') -> now has global flag set
-      *
-      ***/
-      'addFlag': function(flag) {
-        return RegExp(this.source, getRegExpFlags(this, flag));
-      },
-
-     /***
-      * @method removeFlag(<flag>)
-      * @returns RegExp
-      * @short Removes <flag> from the regex.
-      * @example
-      *
-      *   /texty/g.removeFlag('g') -> now has global flag removed
-      *
-      ***/
-      'removeFlag': function(flag) {
-        return RegExp(this.source, getRegExpFlags(this).replace(flag, ''));
-      }
-
-    });
-
-    /***
-     * @module String
-     * @dependency core
-     * @description String manupulation, escaping, encoding, truncation, and:conversion.
-     *
-     ***/
-
-    var HTML_CODE_MATCH = /&#(x)?([\w\d]{0,5});/i;
-
-    var HTML_VOID_ELEMENTS = [
-      'area','base','br','col','command','embed','hr','img',
-      'input','keygen','link','meta','param','source','track','wbr'
-    ];
-
-    function getInflector() {
-      return String.Inflector;
-    }
-
-    function getAcronym(word) {
-      var inflector = getInflector();
-      var word = inflector && inflector.acronyms[word];
-      if (isString(word)) {
-        return word;
+  // Methods like filter and find have a direct association between the value
+  // returned by the callback and the element of the current iteration. This
+  // means that when looping, array elements must match the actual index for
+  // which they are being called, so the array must be sliced. This is not the
+  // case for methods like forEach and map, which either do not use return
+  // values or use them in a way that simply getting the element at a shifted
+  // index will not affect the final return value. However, these methods will
+  // still fail on sparse arrays, so always slicing them here. For example, if
+  // "forEachFromIndex" were to be called on [1,,2] from index 1, although the
+  // actual index 1 would itself would be skipped, when the array loops back to
+  // index 0, shifting it by adding 1 would result in the element for that
+  // iteration being undefined. For shifting to work, all gaps in the array
+  // between the actual index and the shifted index would have to be accounted
+  // for. This is infeasible and is easily solved by simply slicing the actual
+  // array instead so that gaps align. Note also that in the case of forEach,
+  // we are using the internal function which handles sparse arrays in a way
+  // that does not increment the index, and so is highly optimized compared to
+  // the others here, which are simply going through the native implementation.
+  function sliceArrayFromLeft(arr, startIndex, loop) {
+    var result = arr;
+    if (startIndex) {
+      result = arr.slice(startIndex);
+      if (loop) {
+        result = result.concat(arr.slice(0, startIndex));
       }
     }
+    return result;
+  }
 
-    function checkRepeatRange(num) {
-      num = +num;
-      if (num < 0 || num === Infinity) {
-        throw new RangeError('Invalid number');
-      }
-      return num;
+  // When iterating from the right, indexes are effectively shifted by 1.
+  // For example, iterating from the right from index 2 in an array of 3
+  // should also include the last element in the array. This matches the
+  // "lastIndexOf" method which also iterates from the right.
+  function sliceArrayFromRight(arr, startIndex, loop) {
+    if (!loop) {
+      startIndex += 1;
+      arr = arr.slice(0, max(0, startIndex));
     }
+    return arr;
+  }
 
-    function padString(num, padding) {
-      return repeatString(isDefined(padding) ? padding : ' ', num);
+  function clampStartIndex(startIndex, len) {
+    return min(len, max(0, startIndex));
+  }
+
+  // As indexes are shifted by 1 when starting from the right, clamping has to
+  // go down to -1 to accommodate the full range of the sliced array.
+  function clampStartIndexFromRight(startIndex, len) {
+    return min(len, max(-1, startIndex));
+  }
+
+  function applyReduce(arr, startIndex, fn, context, len, loop) {
+    return function(acc, val, i) {
+      i = getNormalizedIndex(i + startIndex, len, loop);
+      return fn.call(arr, acc, val, i, arr);
+    };
+  }
+
+  function applyEach(arr, startIndex, fn, context, len, loop) {
+    return function(el, i) {
+      i = getNormalizedIndex(i + startIndex, len, loop);
+      return fn.call(context, arr[i], i, arr);
+    };
+  }
+
+  function indexResult(result, startIndex, len) {
+    if (result !== -1) {
+      result = (result + startIndex) % len;
     }
+    return result;
+  }
 
-    function truncateString(str, length, from, ellipsis, split) {
-      var str1, str2, len1, len2;
-      if (str.length <= length) {
-        return str.toString();
-      }
-      ellipsis = isUndefined(ellipsis) ? '...' : ellipsis;
-      switch(from) {
-        case 'left':
-          str2 = split ? truncateOnWord(str, length, true) : str.slice(str.length - length);
-          return ellipsis + str2;
-        case 'middle':
-          len1 = ceil(length / 2);
-          len2 = floor(length / 2);
-          str1 = split ? truncateOnWord(str, len1) : str.slice(0, len1);
-          str2 = split ? truncateOnWord(str, len2, true) : str.slice(str.length - len2);
-          return str1 + ellipsis + str2;
-        default:
-          str1 = split ? truncateOnWord(str, length) : str.slice(0, length);
-          return str1 + ellipsis;
-      }
-    }
+  function createFromIndexWithOptions(methodName, opts) {
 
-    function stringEach(str, search, fn) {
-      var chunks, chunk, reg, result = [];
-      if (isFunction(search)) {
-        fn = search;
-        reg = /[\s\S]/g;
-      } else if (!search) {
-        reg = /[\s\S]/g;
-      } else if (isString(search)) {
-        reg = RegExp(escapeRegExp(search), 'gi');
-      } else if (isRegExp(search)) {
-        reg = RegExp(search.source, getRegExpFlags(search, 'g'));
-      }
-      // Getting the entire array of chunks up front as we need to
-      // pass this into the callback function as an argument.
-      chunks = runGlobalMatch(str, reg);
+    var baseFn = opts.base || Array.prototype[methodName],
+        applyCallback = opts.apply || applyEach,
+        sliceArray = opts.slice || sliceArrayFromLeft,
+        clampIndex = opts.clamp || clampStartIndex,
+        getResult = opts.result,
+        wrapper = opts.wrapper;
 
-      if (chunks) {
-        for(var i = 0, len = chunks.length, r; i < len; i++) {
-          chunk = chunks[i];
-          result[i] = chunk;
-          if (fn) {
-            r = fn.call(str, chunk, i, chunks);
-            if (r === false) {
-              break;
-            } else if (isDefined(r)) {
-              result[i] = r;
-            }
-          }
-        }
+    return function(arr, startIndex, args) {
+      var callArgs = [], argIndex = 0, lastArg, result, len, loop, fn;
+      len = arr.length;
+      if (isBoolean(args[0])) {
+        loop = args[argIndex++];
+      }
+      fn = args[argIndex++];
+      lastArg = args[argIndex];
+      if (startIndex < 0) {
+        startIndex += len;
+      }
+      startIndex = clampIndex(startIndex, len);
+      assertArgument(args.length);
+      fn = wrapper ? wrapper(fn, lastArg) : fn;
+      callArgs.push(applyCallback(arr, startIndex, fn, lastArg, len, loop));
+      if (lastArg) {
+        callArgs.push(lastArg);
+      }
+      result = baseFn.apply(sliceArray(arr, startIndex, loop), callArgs);
+      if (getResult) {
+        result = getResult(result, startIndex, len);
       }
       return result;
-    }
+    };
+  }
+}
 
-    // "match" in < IE9 has enumable properties that will confuse for..in
-    // loops, so ensure that the match is a normal array by manually running
-    // "exec". Note that this method is also slightly more performant.
-    function runGlobalMatch(str, reg) {
-      var result = [], match, lastLastIndex;
-      while ((match = reg.exec(str)) != null) {
-        if (reg.lastIndex === lastLastIndex) {
-          reg.lastIndex += 1;
-        } else {
-          result.push(match[0]);
-        }
-        lastLastIndex = reg.lastIndex;
-      }
-      return result;
-    }
+module.exports = buildFromIndexMethods;
+},{"../../common/internal/assertArgument":104,"../../common/internal/forEach":129,"../../common/internal/getNormalizedIndex":137,"../../common/internal/spaceSplit":175,"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193,"../../common/var/mathAliases":195,"../../common/var/methodDefineAliases":196,"../../common/var/namespaceAliases":197,"./enhancedMapping":412,"./enhancedMatching":413}],412:[function(require,module,exports){
+'use strict';
 
-    function eachWord(str, fn) {
-      return stringEach(str.trim(), /\S+/g, fn);
-    }
+var classChecks = require('../../common/var/classChecks'),
+    mapWithShortcuts = require('../../common/internal/mapWithShortcuts');
 
-    function stringCodes(str, fn) {
-      var codes = [], i, len;
-      for(i = 0, len = str.length; i < len; i++) {
-        var code = str.charCodeAt(i);
-        codes.push(code);
-        if (fn) fn.call(str, code, i);
-      }
-      return codes;
-    }
+var isFunction = classChecks.isFunction;
 
-    function shiftChar(str, n) {
-      var result = '';
-      n = n || 0;
-      stringCodes(str, function(c) {
-        result += chr(c + n);
-      });
-      return result;
-    }
+function enhancedMapping(map, context) {
+  if (isFunction(map)) {
+    return map;
+  } else if (map) {
+    return function(el, i, arr) {
+      return mapWithShortcuts(el, map, context, [el, i, arr]);
+    };
+  }
+}
 
-    function underscore(str) {
-      var inflector = getInflector();
-      return str
-        .replace(/[-\s]+/g, '_')
-        .replace(inflector && inflector.acronymRegExp, function(acronym, index) {
-          return (index > 0 ? '_' : '') + acronym.toLowerCase();
-        })
-        .replace(/([A-Z\d]+)([A-Z][a-z])/g,'$1_$2')
-        .replace(/([a-z\d])([A-Z])/g,'$1_$2')
-        .toLowerCase();
-    }
+module.exports = enhancedMapping;
+},{"../../common/internal/mapWithShortcuts":160,"../../common/var/classChecks":192}],413:[function(require,module,exports){
+'use strict';
 
-    function spacify(str) {
-      return underscore(str).replace(/_/g, ' ');
-    }
+var getMatcher = require('../../common/internal/getMatcher'),
+    classChecks = require('../../common/var/classChecks');
 
-    function capitalize(str, all) {
-      var lastResponded;
-      return str.toLowerCase().replace(all ? /[^']/g : /^\S/, function(lower) {
-        var upper = lower.toUpperCase(), result;
-        result = lastResponded ? lower : upper;
-        lastResponded = upper !== lower;
-        return result;
-      });
-    }
+var isFunction = classChecks.isFunction;
 
-    function reverseString(str) {
-      return str.split('').reverse().join('');
-    }
+function enhancedMatching(f) {
+  var matcher;
+  if (isFunction(f)) {
+    return f;
+  }
+  matcher = getMatcher(f);
+  return function(el, i, arr) {
+    return matcher(el, i, arr);
+  };
+}
 
-    function stringFirst(str, num) {
-      if (isUndefined(num)) num = 1;
-      return str.substr(0, num);
-    }
+module.exports = enhancedMatching;
+},{"../../common/internal/getMatcher":136,"../../common/var/classChecks":192}],414:[function(require,module,exports){
+'use strict';
 
-    function stringLast(str, num) {
-      if (isUndefined(num)) num = 1;
-      var start = str.length - num < 0 ? 0 : str.length - num;
-      return str.substr(start);
-    }
+var classChecks = require('../../common/var/classChecks'),
+    isArrayIndex = require('../../common/internal/isArrayIndex'),
+    mapWithShortcuts = require('../../common/internal/mapWithShortcuts'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
 
-    function stringFrom(str, from) {
-      return str.slice(numberOrIndex(str, from, true));
-    }
+var isArray = classChecks.isArray,
+    forEachProperty = coreUtilityAliases.forEachProperty;
 
-    function stringTo(str, to) {
-      if (isUndefined(to)) to = str.length;
-      return str.slice(0, numberOrIndex(str, to));
-    }
-
-    function stringAssign(str, args) {
-      var obj = {};
-      for (var i = 0; i < args.length; i++) {
-        var a = args[i];
-        if (isObjectType(a)) {
-          simpleMerge(obj, a);
-        } else {
-          obj[i + 1] = a;
-        }
-      }
-      return str.replace(/\{([^{]+?)\}/g, function(m, key) {
-        return hasOwnProperty(obj, key) ? obj[key] : m;
-      });
-    }
-
-    function isBlank(str) {
-      return str.trim().length === 0;
-    }
-
-    function truncateOnWord(str, limit, fromLeft) {
-      if (fromLeft) {
-        return reverseString(truncateOnWord(reverseString(str), limit));
-      }
-      var reg = RegExp('(?=[' + getTrimmableCharacters() + '])');
-      var words = str.split(reg);
-      var count = 0;
-      return words.filter(function(word) {
-        count += word.length;
-        return count <= limit;
-      }).join('');
-    }
-
-    function convertHTMLCodes(str) {
-      return str.replace(HTML_CODE_MATCH, function(full, hex, code) {
-        return String.fromCharCode(parseInt(code, hex ? 16 : 10));
-      });
-    }
-
-    function tagIsVoid(tag) {
-      return HTML_VOID_ELEMENTS.indexOf(tag.toLowerCase()) !== -1;
-    }
-
-    function replaceTags(str, args, strip) {
-      var lastIndex = args.length - 1, lastArg = args[lastIndex], replacementFn, tags, src, reg;
-      if (isFunction(lastArg)) {
-        replacementFn = lastArg;
-        args.length = lastIndex;
-      }
-      tags = args.map(function(tag) {
-        return escapeRegExp(tag);
-      }).join('|');
-      src = tags.replace('all', '') || '[^\\s>]+';
-      src = '<(\\/)?(' + src + ')(\\s+[^<>]*?)?\\s*(\\/)?>';
-      reg = RegExp(src, 'gi');
-      return runTagReplacements(str.toString(), reg, strip, replacementFn);
-    }
-
-    function runTagReplacements(str, reg, strip, replacementFn, fullString) {
-
-      var match;
-      var result = '';
-      var currentIndex = 0;
-      var currentlyOpenTagName;
-      var currentlyOpenTagAttributes;
-      var currentlyOpenTagCount = 0;
-
-      function processTag(index, tagName, attributes, tagLength) {
-        var content = str.slice(currentIndex, index), replacement;
-        if (replacementFn) {
-          replacement = replacementFn.call(fullString, tagName, content, attributes, fullString);
-          if (isDefined(replacement)) {
-            content = replacement;
-          } else if (!strip) {
-            content = '';
-          }
-        } else if (!strip) {
-          content = '';
-        }
-        result += runTagReplacements(content, reg, strip, replacementFn, fullString);
-        currentIndex = index + (tagLength || 0);
-      }
-
-      fullString = fullString || str;
-      reg = RegExp(reg.source, 'gi');
-
-      while(match = reg.exec(str)) {
-
-        var tagName         = match[2];
-        var attributes      = (match[3]|| '').slice(1);
-        var isClosingTag    = !!match[1];
-        var isSelfClosing   = !!match[4];
-        var tagLength       = match[0].length;
-        var isOpeningTag    = !isClosingTag && !isSelfClosing && !tagIsVoid(tagName);
-        var isSameAsCurrent = tagName === currentlyOpenTagName;
-
-        if (!currentlyOpenTagName) {
-          result += str.slice(currentIndex, match.index);
-          currentIndex = match.index;
-        }
-
-        if (isOpeningTag) {
-          if (!currentlyOpenTagName) {
-            currentlyOpenTagName = tagName;
-            currentlyOpenTagAttributes = attributes;
-            currentlyOpenTagCount++;
-            currentIndex += tagLength;
-          } else if (isSameAsCurrent) {
-            currentlyOpenTagCount++;
-          }
-        } else if (isClosingTag && isSameAsCurrent) {
-          currentlyOpenTagCount--;
-          if (currentlyOpenTagCount === 0) {
-            processTag(match.index, currentlyOpenTagName, currentlyOpenTagAttributes, tagLength);
-            currentlyOpenTagName       = null;
-            currentlyOpenTagAttributes = null;
-          }
-        } else if (!currentlyOpenTagName) {
-          processTag(match.index, tagName, attributes, tagLength);
-        }
-      }
-      if (currentlyOpenTagName) {
-        processTag(str.length, currentlyOpenTagName, currentlyOpenTagAttributes);
-      }
-      result += str.slice(currentIndex);
-      return result;
-    }
-
-    function numberOrIndex(str, n, from) {
-      if (isString(n)) {
-        n = str.indexOf(n);
-        if (n === -1) {
-          n = from ? str.length : 0;
-        }
-      }
-      return n;
-    }
-
-    var encodeBase64, decodeBase64;
-
-    function buildBase64(key) {
-      var encodeAscii, decodeAscii;
-
-      function catchEncodingError(fn) {
-        return function(str) {
-          try {
-            return fn(str);
-          } catch(e) {
-            return '';
-          }
-        }
-      }
-
-      if (typeof Buffer !== 'undefined') {
-        encodeBase64 = function(str) {
-          return new Buffer(str).toString('base64');
-        }
-        decodeBase64 = function(str) {
-          return new Buffer(str, 'base64').toString('utf8');
-        }
+function enumerateWithMapping(obj, map, fn) {
+  var arrayIndexes = isArray(obj);
+  forEachProperty(obj, function(val, key) {
+    if (arrayIndexes) {
+      if (!isArrayIndex(key)) {
         return;
       }
-      if (typeof btoa !== 'undefined') {
-        encodeAscii = catchEncodingError(btoa);
-        decodeAscii = catchEncodingError(atob);
-      } else {
-        var base64reg = /[^A-Za-z0-9\+\/\=]/g;
-        encodeAscii = function(str) {
-          var output = '';
-          var chr1, chr2, chr3;
-          var enc1, enc2, enc3, enc4;
-          var i = 0;
-          do {
-            chr1 = str.charCodeAt(i++);
-            chr2 = str.charCodeAt(i++);
-            chr3 = str.charCodeAt(i++);
-            enc1 = chr1 >> 2;
-            enc2 = ((chr1 & 3) << 4) | (chr2 >> 4);
-            enc3 = ((chr2 & 15) << 2) | (chr3 >> 6);
-            enc4 = chr3 & 63;
-            if (isNaN(chr2)) {
-              enc3 = enc4 = 64;
-            } else if (isNaN(chr3)) {
-              enc4 = 64;
-            }
-            output = output + key.charAt(enc1) + key.charAt(enc2) + key.charAt(enc3) + key.charAt(enc4);
-            chr1 = chr2 = chr3 = '';
-            enc1 = enc2 = enc3 = enc4 = '';
-          } while (i < str.length);
-          return output;
-        }
-        decodeAscii = function(input) {
-          var output = '';
-          var chr1, chr2, chr3;
-          var enc1, enc2, enc3, enc4;
-          var i = 0;
-          if (input.match(base64reg)) {
-            return '';
-          }
-          input = input.replace(/[^A-Za-z0-9\+\/\=]/g, '');
-          do {
-            enc1 = key.indexOf(input.charAt(i++));
-            enc2 = key.indexOf(input.charAt(i++));
-            enc3 = key.indexOf(input.charAt(i++));
-            enc4 = key.indexOf(input.charAt(i++));
-            chr1 = (enc1 << 2) | (enc2 >> 4);
-            chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
-            chr3 = ((enc3 & 3) << 6) | enc4;
-            output = output + chr(chr1);
-            if (enc3 != 64) {
-              output = output + chr(chr2);
-            }
-            if (enc4 != 64) {
-              output = output + chr(chr3);
-            }
-            chr1 = chr2 = chr3 = '';
-            enc1 = enc2 = enc3 = enc4 = '';
-          } while (i < input.length);
-          return output;
-        }
-      }
-      encodeBase64 = function(str) {
-        return encodeAscii(unescape(encodeURIComponent(str)));
-      }
-      decodeBase64 = function(str) {
-        return decodeURIComponent(escape(decodeAscii(str)));
-      }
+      key = +key;
     }
+    var mapped = mapWithShortcuts(val, map, obj, [val, key, obj]);
+    fn(mapped, key);
+  });
+}
 
-    function buildStartEndsWith() {
-      var override = true;
-      try {
-        // If String#startsWith does not exist or alternately if it exists but
-        // correctly throws an error here, then there is no need to flag the
-        // method to override the existing implementation.
-        ''.startsWith(/./);
-      } catch(e) {
-        override = false;
-      }
-      extend(String, {
+module.exports = enumerateWithMapping;
+},{"../../common/internal/isArrayIndex":147,"../../common/internal/mapWithShortcuts":160,"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193}],415:[function(require,module,exports){
+'use strict';
 
+var classChecks = require('../../common/var/classChecks'),
+    getMinOrMax = require('./getMinOrMax'),
+    serializeInternal = require('../../common/internal/serializeInternal'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases'),
+    enumerateWithMapping = require('./enumerateWithMapping'),
+    getReducedMinMaxResult = require('./getReducedMinMaxResult');
 
-        /***
-         * @method startsWith(<find>, [pos] = 0, [case] = true)
-         * @returns Boolean
-         * @short Returns true if the string starts with <find>.
-         * @extra <find> may be either a string or regex. Search begins at [pos], which defaults to the entire string. Case sensitive if [case] is true.
-         * @example
-         *
-         *   'hello'.startsWith('hell')           -> true
-         *   'hello'.startsWith(/[a-h]/)          -> true
-         *   'hello'.startsWith('HELL')           -> false
-         *   'hello'.startsWith('ell', 1)         -> true
-         *   'hello'.startsWith('HELL', 0, false) -> true
-         *
-         ***/
-        'startsWith': function(reg) {
-          var args = arguments, pos = args[1], c = args[2], str = this, source;
-          if(pos) str = str.slice(pos);
-          if(isUndefined(c)) c = true;
-          source = isRegExp(reg) ? reg.source.replace('^', '') : escapeRegExp(reg);
-          return RegExp('^' + source, c ? '' : 'i').test(str);
-        },
+var isBoolean = classChecks.isBoolean,
+    getOwn = coreUtilityAliases.getOwn,
+    forEachProperty = coreUtilityAliases.forEachProperty;
 
-        /***
-         * @method endsWith(<find>, [pos] = length, [case] = true)
-         * @returns Boolean
-         * @short Returns true if the string ends with <find>.
-         * @extra <find> may be either a string or regex. Search ends at [pos], which defaults to the entire string. Case sensitive if [case] is true.
-         * @example
-         *
-         *   'jumpy'.endsWith('py')            -> true
-         *   'jumpy'.endsWith(/[q-z]/)         -> true
-         *   'jumpy'.endsWith('MPY')           -> false
-         *   'jumpy'.endsWith('mp', 4)         -> false
-         *   'jumpy'.endsWith('MPY', 5, false) -> true
-         *
-         ***/
-        'endsWith': function(reg) {
-          var args = arguments, pos = args[1], c = args[2], str = this, source;
-          if(isDefined(pos)) str = str.slice(0, pos);
-          if(isUndefined(c)) c = true;
-          source = isRegExp(reg) ? reg.source.replace('$', '') : escapeRegExp(reg);
-          return RegExp(source + '$', c ? '' : 'i').test(str);
-        }
-      }, true, function(reg) { return isRegExp(reg) || arguments.length > 2; });
-    }
-
-    extend(String, {
-
-      /***
-       * @method has(<find>)
-       * @returns Boolean
-       * @short Returns true if the string matches <find>.
-       * @extra <find> may be a string or regex.
-       * @example
-       *
-       *   'jumpy'.has('py')     -> true
-       *   'broken'.has(/[a-n]/) -> true
-       *   'broken'.has(/[s-z]/) -> false
-       *
-       ***/
-      'has': function(find) {
-        return this.search(isRegExp(find) ? find : escapeRegExp(find)) !== -1;
-      },
-
-      /***
-       * @method repeat([num] = 0)
-       * @returns String
-       * @short Returns the string repeated [num] times.
-       * @example
-       *
-       *   'jumpy'.repeat(2) -> 'jumpyjumpy'
-       *   'a'.repeat(5)     -> 'aaaaa'
-       *   'a'.repeat(0)     -> ''
-       *
-       ***/
-      'repeat': function(num) {
-        num = checkRepeatRange(num);
-        return repeatString(this, num);
-      }
-
-    }, true, true);
-
-    extend(String, {
-
-      /***
-         * @method escapeRegExp()
-         * @returns String
-         * @short Escapes all RegExp tokens in the string.
-         * @example
-         *
-         *   'really?'.escapeRegExp()       -> 'really\?'
-         *   'yes.'.escapeRegExp()         -> 'yes\.'
-         *   '(not really)'.escapeRegExp() -> '\(not really\)'
-         *
-         ***/
-       'escapeRegExp': function() {
-         return escapeRegExp(this);
-       },
-
-       /***
-        * @method escapeURL([param] = false)
-        * @returns String
-        * @short Escapes characters in a string to make a valid URL.
-        * @extra If [param] is true, it will also escape valid URL characters for use as a URL parameter.
-        * @example
-        *
-        *   'http://foo.com/"bar"'.escapeURL()     -> 'http://foo.com/%22bar%22'
-        *   'http://foo.com/"bar"'.escapeURL(true) -> 'http%3A%2F%2Ffoo.com%2F%22bar%22'
-        *
-        ***/
-      'escapeURL': function(param) {
-        return param ? encodeURIComponent(this) : encodeURI(this);
-      },
-
-       /***
-        * @method unescapeURL([partial] = false)
-        * @returns String
-        * @short Restores escaped characters in a URL escaped string.
-        * @extra If [partial] is true, it will only unescape non-valid URL characters. [partial] is included here for completeness, but should very rarely be needed.
-        * @example
-        *
-        *   'http%3A%2F%2Ffoo.com%2Fthe%20bar'.unescapeURL()     -> 'http://foo.com/the bar'
-        *   'http%3A%2F%2Ffoo.com%2Fthe%20bar'.unescapeURL(true) -> 'http%3A%2F%2Ffoo.com%2Fthe bar'
-        *
-        ***/
-      'unescapeURL': function(param) {
-        return param ? decodeURI(this) : decodeURIComponent(this);
-      },
-
-       /***
-        * @method escapeHTML()
-        * @returns String
-        * @short Converts HTML characters to their entity equivalents.
-        * @example
-        *
-        *   '<p>some text</p>'.escapeHTML() -> '&lt;p&gt;some text&lt;/p&gt;'
-        *   'one & two'.escapeHTML()        -> 'one &amp; two'
-        *
-        ***/
-      'escapeHTML': function() {
-        return this.replace(/&/g,  '&amp;' )
-                   .replace(/</g,  '&lt;'  )
-                   .replace(/>/g,  '&gt;'  )
-                   .replace(/"/g,  '&quot;')
-                   .replace(/'/g,  '&apos;')
-                   .replace(/\//g, '&#x2f;');
-      },
-
-       /***
-        * @method unescapeHTML([partial] = false)
-        * @returns String
-        * @short Restores escaped HTML characters.
-        * @example
-        *
-        *   '&lt;p&gt;some text&lt;/p&gt;'.unescapeHTML() -> '<p>some text</p>'
-        *   'one &amp; two'.unescapeHTML()                -> 'one & two'
-        *
-        ***/
-      'unescapeHTML': function() {
-        return convertHTMLCodes(this)
-                   .replace(/&lt;/g,   '<')
-                   .replace(/&gt;/g,   '>')
-                   .replace(/&nbsp;/g, ' ')
-                   .replace(/&quot;/g, '"')
-                   .replace(/&apos;/g, "'")
-                   .replace(/&amp;/g,  '&');
-      },
-
-       /***
-        * @method encodeBase64()
-        * @returns String
-        * @short Encodes the string into base64 encoding.
-        * @extra This method wraps native methods when available, and uses a custom implementation when not available. It can also handle Unicode string encodings.
-        * @example
-        *
-        *   'gonna get encoded!'.encodeBase64()  -> 'Z29ubmEgZ2V0IGVuY29kZWQh'
-        *   'http://twitter.com/'.encodeBase64() -> 'aHR0cDovL3R3aXR0ZXIuY29tLw=='
-        *
-        ***/
-      'encodeBase64': function() {
-        return encodeBase64(this);
-      },
-
-       /***
-        * @method decodeBase64()
-        * @returns String
-        * @short Decodes the string from base64 encoding.
-        * @extra This method wraps native methods when available, and uses a custom implementation when not available. It can also handle Unicode string encodings.
-        * @example
-        *
-        *   'aHR0cDovL3R3aXR0ZXIuY29tLw=='.decodeBase64() -> 'http://twitter.com/'
-        *   'anVzdCBnb3QgZGVjb2RlZA=='.decodeBase64()     -> 'just got decoded!'
-        *
-        ***/
-      'decodeBase64': function() {
-        return decodeBase64(this);
-      },
-
-      /***
-       * @method each([search], [fn])
-       * @returns Array
-       * @short Runs callback [fn] against each occurence of [search] or each character if [search] is not provided.
-       * @extra Returns an array of matches. [search] may be either a string or regex, and defaults to every character in the string. If [fn] returns false at any time it will break out of the loop.
-       * @example
-       *
-       *   'jumpy'.each() -> ['j','u','m','p','y']
-       *   'jumpy'.each(/[r-z]/) -> ['u','y']
-       *   'jumpy'.each(/[r-z]/, function(m) {
-       *     // Called twice: "u", "y"
-       *   });
-       *
-       ***/
-      'each': function(search, fn) {
-        return stringEach(this, search, fn);
-      },
-
-      /***
-       * @method map(<fn>, [scope])
-       * @returns String
-       * @short Maps the string to another string containing the values that are the result of calling <fn> on each element.
-       * @extra [scope] is the %this% object. <fn> is a function, it receives three arguments: the current character, the current index, and a reference to the string.
-       * @example
-       *
-       *   'jumpy'.map(function(l) {
-       *     return String.fromCharCode(l.charCodeAt(0) + 1);
-       *
-       *   }); -> Returns the string with each character shifted one code point down.
-       *
-       ***/
-      'map': function(map, scope) {
-        var str = this.toString();
-        if (isFunction(map)) {
-          var fn = map;
-          map = function(letter, i, arr) {
-            return fn.call(scope, letter, i, str);
-          }
-        }
-        return str.split('').map(map, scope).join('');
-      },
-
-      /***
-       * @method shift(<n>)
-       * @returns Array
-       * @short Shifts each character in the string <n> places in the character map.
-       * @example
-       *
-       *   'a'.shift(1)  -> 'b'
-       *   'ク'.shift(1) -> 'グ'
-       *
-       ***/
-      'shift': function(n) {
-        return shiftChar(this, n);
-      },
-
-      /***
-       * @method codes([fn])
-       * @returns Array
-       * @short Runs callback [fn] against each character code in the string. Returns an array of character codes.
-       * @example
-       *
-       *   'jumpy'.codes() -> [106,117,109,112,121]
-       *   'jumpy'.codes(function(c) {
-       *     // Called 5 times: 106, 117, 109, 112, 121
-       *   });
-       *
-       ***/
-      'codes': function(fn) {
-        return stringCodes(this, fn);
-      },
-
-      /***
-       * @method chars([fn])
-       * @returns Array
-       * @short Runs callback [fn] against each character in the string. Returns an array of characters.
-       * @example
-       *
-       *   'jumpy'.chars() -> ['j','u','m','p','y']
-       *   'jumpy'.chars(function(c) {
-       *     // Called 5 times: "j","u","m","p","y"
-       *   });
-       *
-       ***/
-      'chars': function(fn) {
-        return stringEach(this, fn);
-      },
-
-      /***
-       * @method words([fn])
-       * @returns Array
-       * @short Runs callback [fn] against each word in the string. Returns an array of words.
-       * @extra A "word" here is defined as any sequence of non-whitespace characters.
-       * @example
-       *
-       *   'broken wear'.words() -> ['broken','wear']
-       *   'broken wear'.words(function(w) {
-       *     // Called twice: "broken", "wear"
-       *   });
-       *
-       ***/
-      'words': function(fn) {
-        return eachWord(this, fn);
-      },
-
-      /***
-       * @method lines([fn])
-       * @returns Array
-       * @short Runs callback [fn] against each line in the string. Returns an array of lines.
-       * @example
-       *
-       *   'broken wear\nand\njumpy jump'.lines() -> ['broken wear','and','jumpy jump']
-       *   'broken wear\nand\njumpy jump'.lines(function(l) {
-       *     // Called three times: "broken wear", "and", "jumpy jump"
-       *   });
-       *
-       ***/
-      'lines': function(fn) {
-        return stringEach(this.trim(), /^.*$/gm, fn);
-      },
-
-      /***
-       * @method paragraphs([fn])
-       * @returns Array
-       * @short Runs callback [fn] against each paragraph in the string. Returns an array of paragraphs.
-       * @extra A paragraph here is defined as a block of text bounded by two or more line breaks.
-       * @example
-       *
-       *   'Once upon a time.\n\nIn the land of oz...'.paragraphs() -> ['Once upon a time.','In the land of oz...']
-       *   'Once upon a time.\n\nIn the land of oz...'.paragraphs(function(p) {
-       *     // Called twice: "Once upon a time.", "In teh land of oz..."
-       *   });
-       *
-       ***/
-      'paragraphs': function(fn) {
-        var paragraphs = this.trim().split(/[\r\n]{2,}/);
-        paragraphs = paragraphs.map(function(p) {
-          if (fn) var s = fn.call(p);
-          return s ? s : p;
-        });
-        return paragraphs;
-      },
-
-      /***
-       * @method isBlank()
-       * @returns Boolean
-       * @short Returns true if the string has a length of 0 or contains only whitespace.
-       * @example
-       *
-       *   ''.isBlank()      -> true
-       *   '   '.isBlank()   -> true
-       *   'noway'.isBlank() -> false
-       *
-       ***/
-      'isBlank': function() {
-        return isBlank(this);
-      },
-
-      /***
-       * @method add(<str>, [index] = length)
-       * @returns String
-       * @short Adds <str> at [index]. Negative values are also allowed.
-       * @extra %insert% is provided as an alias, and is generally more readable when using an index.
-       * @example
-       *
-       *   'schfifty'.add(' five')      -> schfifty five
-       *   'dopamine'.insert('e', 3)       -> dopeamine
-       *   'spelling eror'.insert('r', -3) -> spelling error
-       *
-       ***/
-      'add': function(str, index) {
-        index = isUndefined(index) ? this.length : index;
-        return this.slice(0, index) + str + this.slice(index);
-      },
-
-      /***
-       * @method remove(<f>)
-       * @returns String
-       * @short Removes any part of the string that matches <f>.
-       * @extra <f> can be a stringuor a regex. When it is a string only the first match will be removed.
-       * @example
-       *
-       *   'schfifty five'.remove('f')      -> 'schifty five'
-       *   'schfifty five'.remove(/f/g)     -> 'schity ive'
-       *   'schfifty five'.remove(/[a-f]/g) -> 'shity iv'
-       *
-       ***/
-      'remove': function(f) {
-        return this.replace(f, '');
-      },
-
-      /***
-       * @method reverse()
-       * @returns String
-       * @short Reverses the string.
-       * @example
-       *
-       *   'jumpy'.reverse()        -> 'ypmuj'
-       *   'lucky charms'.reverse() -> 'smrahc ykcul'
-       *
-       ***/
-      'reverse': function() {
-        return reverseString(this);
-      },
-
-      /***
-       * @method compact()
-       * @returns String
-       * @short Compacts all white space in the string to a single space and trims the ends.
-       * @example
-       *
-       *   'too \n much \n space'.compact() -> 'too much space'
-       *   'enough \n '.compact()           -> 'enought'
-       *
-       ***/
-      'compact': function() {
-        return this.trim().replace(/([\r\n\s　])+/g, function(match, whitespace){
-          return whitespace === '　' ? whitespace : ' ';
-        });
-      },
-
-      /***
-       * @method at(<index>, [loop] = true)
-       * @returns String or Array
-       * @short Gets the character(s) at a given index.
-       * @extra When [loop] is true, overshooting the end of the string (or the beginning) will begin counting from the other end. As an alternate syntax, passing multiple indexes will get the characters at those indexes.
-       * @example
-       *
-       *   'jumpy'.at(0)               -> 'j'
-       *   'jumpy'.at(2)               -> 'm'
-       *   'jumpy'.at(5)               -> 'j'
-       *   'jumpy'.at(5, false)        -> ''
-       *   'jumpy'.at(-1)              -> 'y'
-       *   'lucky charms'.at(2,4,6,8) -> ['u','k','y',c']
-       *
-       ***/
-      'at': function() {
-        // Optimized: no leaking arguments
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args.push(arguments[$i]);
-        return getEntriesForIndexes(this, args, true);
-      },
-
-      /***
-       * @method from([index] = 0)
-       * @returns String
-       * @short Returns a section of the string starting from [index].
-       * @example
-       *
-       *   'lucky charms'.from()   -> 'lucky charms'
-       *   'lucky charms'.from(7)  -> 'harms'
-       *
-       ***/
-      'from': function(from) {
-        return stringFrom(this, from);
-      },
-
-      /***
-       * @method to([index] = end)
-       * @returns String
-       * @short Returns a section of the string ending at [index].
-       * @example
-       *
-       *   'lucky charms'.to()   -> 'lucky charms'
-       *   'lucky charms'.to(7)  -> 'lucky ch'
-       *
-       ***/
-      'to': function(to) {
-        return stringTo(this, to);
-      },
-
-      /***
-       * @method dasherize()
-       * @returns String
-       * @short Converts underscores and camel casing to hypens.
-       * @example
-       *
-       *   'a_farewell_to_arms'.dasherize() -> 'a-farewell-to-arms'
-       *   'capsLock'.dasherize()           -> 'caps-lock'
-       *
-       ***/
-      'dasherize': function() {
-        return underscore(this).replace(/_/g, '-');
-      },
-
-      /***
-       * @method underscore()
-       * @returns String
-       * @short Converts hyphens and camel casing to underscores.
-       * @example
-       *
-       *   'a-farewell-to-arms'.underscore() -> 'a_farewell_to_arms'
-       *   'capsLock'.underscore()           -> 'caps_lock'
-       *
-       ***/
-      'underscore': function() {
-        return underscore(this);
-      },
-
-      /***
-       * @method camelize([first] = true)
-       * @returns String
-       * @short Converts underscores and hyphens to camel case. If [first] is true the first letter will also be capitalized.
-       * @extra If the Inflections package is included acryonyms can also be defined that will be used when camelizing.
-       * @example
-       *
-       *   'caps_lock'.camelize()              -> 'CapsLock'
-       *   'moz-border-radius'.camelize()      -> 'MozBorderRadius'
-       *   'moz-border-radius'.camelize(false) -> 'mozBorderRadius'
-       *
-       ***/
-      'camelize': function(first) {
-        return underscore(this).replace(/(^|_)([^_]+)/g, function(match, pre, word, index) {
-          var acronym = getAcronym(word), cap = first !== false || index > 0;
-          if (acronym) return cap ? acronym : acronym.toLowerCase();
-          return cap ? capitalize(word) : word;
-        });
-      },
-
-      /***
-       * @method spacify()
-       * @returns String
-       * @short Converts camel case, underscores, and hyphens to a properly spaced string.
-       * @example
-       *
-       *   'camelCase'.spacify()                         -> 'camel case'
-       *   'an-ugly-string'.spacify()                    -> 'an ugly string'
-       *   'oh-no_youDid-not'.spacify().capitalize(true) -> 'something else'
-       *
-       ***/
-      'spacify': function() {
-        return spacify(this);
-      },
-
-      /***
-       * @method stripTags([tag1], [tag2], ...)
-       * @returns String
-       * @short Strips HTML tags from the string.
-       * @extra Tags to strip may be enumerated in the parameters, otherwise will strip all. A single function may be passed to this method as the final argument which will allow case by case replacements. This function arguments are the tag name, tag content, tag attributes, and the string itself. If this function returns a string, then it will be used for the replacement. If it returns %undefined%, the tags will be stripped normally.
-       * @example
-       *
-       *   '<p>just <b>some</b> text</p>'.stripTags()    -> 'just some text'
-       *   '<p>just <b>some</b> text</p>'.stripTags('p') -> 'just <b>some</b> text'
-       *   '<p>hi!</p>'.stripTags('p', function(tag, content) {
-       *     return '|' + content + '|';
-       *   }); -> '|hi!|'
-       *
-       ***/
-      'stripTags': function() {
-        // Optimized: no leaking arguments (flat)
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args = args.concat(arguments[$i]);
-        return replaceTags(this, args, true);
-      },
-
-      /***
-       * @method removeTags([tag1], [tag2], ...)
-       * @returns String
-       * @short Removes HTML tags and their contents from the string.
-       * @extra Tags to remove may be enumerated in the parameters, otherwise will remove all. A single function may be passed to this method as the final argument which will allow case by case replacements. This function arguments are the tag name, tag content, tag attributes, and the string itself. If this function returns a string, then it will be used for the replacement. If it returns %undefined%, the tags will be removed normally.
-       * @example
-       *
-       *   '<p>just <b>some</b> text</p>'.removeTags()    -> ''
-       *   '<p>just <b>some</b> text</p>'.removeTags('b') -> '<p>just text</p>'
-       *   '<p>hi!</p>'.removeTags('p', function(tag, content) {
-       *     return 'bye!';
-       *   }); -> 'bye!'
-       *
-       ***/
-      'removeTags': function() {
-        // Optimized: no leaking arguments (flat)
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args = args.concat(arguments[$i]);
-        return replaceTags(this, args, false);
-      },
-
-      /***
-       * @method truncate(<length>, [from] = 'right', [ellipsis] = '...')
-       * @returns String
-       * @short Truncates a string.
-       * @extra [from] can be %'right'%, %'left'%, or %'middle'%. If the string is shorter than <length>, [ellipsis] will not be added.
-       * @example
-       *
-       *   'sittin on the dock of the bay'.truncate(18)           -> 'just sittin on the do...'
-       *   'sittin on the dock of the bay'.truncate(18, 'left')   -> '...the dock of the bay'
-       *   'sittin on the dock of the bay'.truncate(18, 'middle') -> 'just sitt...of the bay'
-       *
-       ***/
-      'truncate': function(length, from, ellipsis) {
-        return truncateString(this, length, from, ellipsis);
-      },
-
-      /***
-       * @method truncateOnWord(<length>, [from] = 'right', [ellipsis] = '...')
-       * @returns String
-       * @short Truncates a string without splitting up words.
-       * @extra [from] can be %'right'%, %'left'%, or %'middle'%. If the string is shorter than <length>, [ellipsis] will not be added.
-       * @example
-       *
-       *   'here we go'.truncateOnWord(5)               -> 'here...'
-       *   'here we go'.truncateOnWord(5, 'left')       -> '...we go'
-       *
-       ***/
-      'truncateOnWord': function(length, from, ellipsis) {
-        return truncateString(this, length, from, ellipsis, true);
-      },
-
-      /***
-       * @method pad[Side](<num> = null, [padding] = ' ')
-       * @returns String
-       * @short Pads the string out with [padding] to be exactly <num> characters.
-       *
-       * @set
-       *   pad
-       *   padLeft
-       *   padRight
-       *
-       * @example
-       *
-       *   'wasabi'.pad(8)           -> ' wasabi '
-       *   'wasabi'.padLeft(8)       -> '  wasabi'
-       *   'wasabi'.padRight(8)      -> 'wasabi  '
-       *   'wasabi'.padRight(8, '-') -> 'wasabi--'
-       *
-       ***/
-      'pad': function(num, padding) {
-        var str = this, half, front, back;
-        num   = coercePositiveInteger(num);
-        half  = max(0, num - str.length) / 2;
-        front = floor(half);
-        back  = ceil(half);
-        return padString(front, padding) + str + padString(back, padding);
-      },
-
-      'padLeft': function(num, padding) {
-        var str = this, num = coercePositiveInteger(num);
-        return padString(max(0, num - str.length), padding) + str;
-      },
-
-      'padRight': function(num, padding) {
-        var str = this, num = coercePositiveInteger(num);
-        return str + padString(max(0, num - str.length), padding);
-      },
-
-      /***
-       * @method first([n] = 1)
-       * @returns String
-       * @short Returns the first [n] characters of the string.
-       * @example
-       *
-       *   'lucky charms'.first()   -> 'l'
-       *   'lucky charms'.first(3)  -> 'luc'
-       *
-       ***/
-      'first': function(num) {
-        return stringFirst(this, num);
-      },
-
-      /***
-       * @method last([n] = 1)
-       * @returns String
-       * @short Returns the last [n] characters of the string.
-       * @example
-       *
-       *   'lucky charms'.last()   -> 's'
-       *   'lucky charms'.last(3)  -> 'rms'
-       *
-       ***/
-      'last': function(num) {
-        return stringLast(this, num);
-      },
-
-      /***
-       * @method toNumber([base] = 10)
-       * @returns Number
-       * @short Converts the string into a number.
-       * @extra Any value with a "." fill be converted to a floating point value, otherwise an integer.
-       * @example
-       *
-       *   '153'.toNumber()    -> 153
-       *   '12,000'.toNumber() -> 12000
-       *   '10px'.toNumber()   -> 10
-       *   'ff'.toNumber(16)   -> 255
-       *
-       ***/
-      'toNumber': function(base) {
-        return stringToNumber(this, base);
-      },
-
-      /***
-       * @method capitalize([all] = false)
-       * @returns String
-       * @short Capitalizes the first character in the string and downcases all other letters.
-       * @extra If [all] is true, all words in the string will be capitalized.
-       * @example
-       *
-       *   'hello'.capitalize()           -> 'Hello'
-       *   'hello kitty'.capitalize()     -> 'Hello kitty'
-       *   'hello kitty'.capitalize(true) -> 'Hello Kitty'
-       *
-       *
-       ***/
-      'capitalize': function(all) {
-        return capitalize(this, all);
-      },
-
-      /***
-       * @method assign(<obj1>, <obj2>, ...)
-       * @returns String
-       * @short Assigns variables to tokens in a string, demarcated with `{}`.
-       * @extra If an object is passed, it's properties can be assigned using the object's keys (i.e. {name}). If a non-object (string, number, etc.) is passed it can be accessed by the argument number beginning with {1} (as with regex tokens). Multiple objects can be passed and will be merged together (original objects are unaffected).
-       * @example
-       *
-       *   'Welcome, Mr. {name}.'.assign({ name: 'Franklin' })   -> 'Welcome, Mr. Franklin.'
-       *   'You are {1} years old today.'.assign(14)             -> 'You are 14 years old today.'
-       *   '{n} and {r}'.assign({ n: 'Cheech' }, { r: 'Chong' }) -> 'Cheech and Chong'
-       *
-       ***/
-      'assign': function() {
-        // Optimized: no leaking arguments (flat)
-        var args = [], $i; for($i = 0; $i < arguments.length; $i++) args = args.concat(arguments[$i]);
-        return stringAssign(this, args);
-      },
-
-      /***
-       * @method trim[Side]()
-       * @returns String
-       * @short Removes leading or trailing whitespace from the string.
-       * @extra Whitespace is defined as line breaks, tabs, and any character in the "Space, Separator" Unicode category, conforming to the the ES5 spec.
-       *
-       * @set
-       *   trimLeft
-       *   trimRight
-       *
-       * @example
-       *
-       *   '   wasabi   '.trimLeft()  -> 'wasabi   '
-       *   '   wasabi   '.trimRight() -> '   wasabi'
-       *
-       ***/
-
-      'trimLeft': function() {
-        return this.replace(RegExp('^['+getTrimmableCharacters()+']+'), '');
-      },
-
-      'trimRight': function() {
-        return this.replace(RegExp('['+getTrimmableCharacters()+']+$'), '');
-      }
-
+function getLeastOrMost(obj, arg1, arg2, most, asObject) {
+  var group = {}, refs = [], minMaxResult, result, all, map;
+  if (isBoolean(arg1)) {
+    all = arg1;
+    map = arg2;
+  } else {
+    map = arg1;
+  }
+  enumerateWithMapping(obj, map, function(val, key) {
+    var groupKey = serializeInternal(val, refs);
+    var arr = getOwn(group, groupKey) || [];
+    arr.push(asObject ? key : obj[key]);
+    group[groupKey] = arr;
+  });
+  minMaxResult = getMinOrMax(group, !!all, 'length', most, true);
+  if (all) {
+    result = [];
+    // Flatten result
+    forEachProperty(minMaxResult, function(val) {
+      result = result.concat(val);
     });
+  } else {
+    result = getOwn(group, minMaxResult);
+  }
+  return getReducedMinMaxResult(result, obj, all, asObject);
+}
 
-    /***
-     * @method insert()
-     * @alias add
-     *
-     ***/
-    alias(String, 'insert', 'add');
+module.exports = getLeastOrMost;
+},{"../../common/internal/serializeInternal":168,"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193,"./enumerateWithMapping":414,"./getMinOrMax":416,"./getReducedMinMaxResult":417}],416:[function(require,module,exports){
+'use strict';
 
-    buildStartEndsWith();
-    buildBase64('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=');
+var classChecks = require('../../common/var/classChecks'),
+    isUndefined = require('../../common/internal/isUndefined'),
+    enumerateWithMapping = require('./enumerateWithMapping'),
+    getReducedMinMaxResult = require('./getReducedMinMaxResult');
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('da');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+var isBoolean = classChecks.isBoolean;
 
-  Date.addLocale('da', {
-    'plural': true,
-    'months': 'januar,februar,marts,april,maj,juni,juli,august,september,oktober,november,december',
-    'weekdays': 'søndag|sondag,mandag,tirsdag,onsdag,torsdag,fredag,lørdag|lordag',
-    'units': 'millisekund:|er,sekund:|er,minut:|ter,tim:e|er,dag:|e,ug:e|er|en,måned:|er|en+maaned:|er|en,år:||et+aar:||et',
-    'numbers': 'en|et,to,tre,fire,fem,seks,syv,otte,ni,ti',
-    'tokens': 'den,for',
-    'articles': 'den',
-    'short':'d. {d}. {month} {yyyy}',
-    'long': 'den {d}. {month} {yyyy} {H}:{mm}',
-    'full': '{Weekday} den {d}. {month} {yyyy} {H}:{mm}:{ss}',
-    'past': '{num} {unit} {sign}',
-    'future': '{sign} {num} {unit}',
-    'duration': '{num} {unit}',
-    'ampm': 'am,pm',
-    'modifiers': [
-      { 'name': 'day', 'src': 'forgårs|i forgårs|forgaars|i forgaars', 'value': -2 },
-      { 'name': 'day', 'src': 'i går|igår|i gaar|igaar', 'value': -1 },
-      { 'name': 'day', 'src': 'i dag|idag', 'value': 0 },
-      { 'name': 'day', 'src': 'i morgen|imorgen', 'value': 1 },
-      { 'name': 'day', 'src': 'over morgon|overmorgen|i over morgen|i overmorgen|iovermorgen', 'value': 2 },
-      { 'name': 'sign', 'src': 'siden', 'value': -1 },
-      { 'name': 'sign', 'src': 'om', 'value':  1 },
-      { 'name': 'shift', 'src': 'i sidste|sidste', 'value': -1 },
-      { 'name': 'shift', 'src': 'denne', 'value': 0 },
-      { 'name': 'shift', 'src': 'næste|naeste', 'value': 1 }
-    ],
-    'dateParse': [
-      '{num} {unit} {sign}',
-      '{sign} {num} {unit}',
-      '{1?} {num} {unit} {sign}',
-      '{shift} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{0?} {weekday?} {date?} {month} {year}',
-      '{date} {month}',
-      '{shift} {weekday}'
-    ]
+function getMinOrMax(obj, arg1, arg2, max, asObject) {
+  var result = [], pushVal, edge, all, map;
+  if (isBoolean(arg1)) {
+    all = arg1;
+    map = arg2;
+  } else {
+    map = arg1;
+  }
+  enumerateWithMapping(obj, map, function(val, key) {
+    if (isUndefined(val)) {
+      throw new TypeError('Cannot compare with undefined');
+    }
+    pushVal = asObject ? key : obj[key];
+    if (val === edge) {
+      result.push(pushVal);
+    } else if (isUndefined(edge) || (max && val > edge) || (!max && val < edge)) {
+      result = [pushVal];
+      edge = val;
+    }
   });
+  return getReducedMinMaxResult(result, obj, all, asObject);
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('de');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = getMinOrMax;
+},{"../../common/internal/isUndefined":155,"../../common/var/classChecks":192,"./enumerateWithMapping":414,"./getReducedMinMaxResult":417}],417:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('de', {
-    'plural': true,
-    'capitalizeUnit': true,
-    'weekdayAbbreviate': 2,
-    'months': 'Januar,Februar,März|Marz,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember',
-    'weekdays': 'Sonntag,Montag,Dienstag,Mittwoch,Donnerstag,Freitag,Samstag',
-    'units': 'Millisekunde:|n,Sekunde:|n,Minute:|n,Stunde:|n,Tag:|en,Woche:|n,Monat:|en,Jahr:|en',
-    'numbers': 'ein:|e|er|en|em,zwei,drei,vier,fuenf,sechs,sieben,acht,neun,zehn',
-    'tokens': 'der',
-    'short':'{d}. {Month} {yyyy}',
-    'long': '{d}. {Month} {yyyy} {H}:{mm}',
-    'full': '{Weekday} {d}. {Month} {yyyy} {H}:{mm}:{ss}',
-    'past': '{sign} {num} {unit}',
-    'future': '{sign} {num} {unit}',
-    'duration': '{num} {unit}',
-    'timeMarker': 'um',
-    'ampm': 'am,pm',
-    'modifiers': [
-      { 'name': 'day', 'src': 'vorgestern', 'value': -2 },
-      { 'name': 'day', 'src': 'gestern', 'value': -1 },
-      { 'name': 'day', 'src': 'heute', 'value': 0 },
-      { 'name': 'day', 'src': 'morgen', 'value': 1 },
-      { 'name': 'day', 'src': 'übermorgen|ubermorgen|uebermorgen', 'value': 2 },
-      { 'name': 'sign', 'src': 'vor:|her', 'value': -1 },
-      { 'name': 'sign', 'src': 'in', 'value': 1 },
-      { 'name': 'shift', 'src': 'letzte:|r|n|s', 'value': -1 },
-      { 'name': 'shift', 'src': 'nächste:|r|n|s+nachste:|r|n|s+naechste:|r|n|s+kommende:n|r', 'value': 1 }
-    ],
-    'dateParse': [
-      '{sign} {num} {unit}',
-      '{num} {unit} {sign}',
-      '{shift} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{weekday?} {date?} {month} {year?}',
-      '{shift} {weekday}'
-    ]
+function getReducedMinMaxResult(result, obj, all, asObject) {
+  if (asObject && all) {
+    // The method has returned an array of keys so use this array
+    // to build up the resulting object in the form we want it in.
+    return result.reduce(function(o, key) {
+      o[key] = obj[key];
+      return o;
+    }, {});
+  } else if (result && !all) {
+    result = result[0];
+  }
+  return result;
+}
+
+module.exports = getReducedMinMaxResult;
+},{}],418:[function(require,module,exports){
+'use strict';
+
+var trunc = require('../../common/var/trunc'),
+    enumerateWithMapping = require('./enumerateWithMapping');
+
+function median(obj, map) {
+  var result = [], middle, len;
+  enumerateWithMapping(obj, map, function(val) {
+    result.push(val);
   });
-
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('es');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
-
-  Date.addLocale('es', {
-    'plural': true,
-    'months': 'enero,febrero,marzo,abril,mayo,junio,julio,agosto,septiembre,octubre,noviembre,diciembre',
-    'weekdays': 'domingo,lunes,martes,miércoles|miercoles,jueves,viernes,sábado|sabado',
-    'units': 'milisegundo:|s,segundo:|s,minuto:|s,hora:|s,día|días|dia|dias,semana:|s,mes:|es,año|años|ano|anos',
-    'numbers': 'uno,dos,tres,cuatro,cinco,seis,siete,ocho,nueve,diez',
-    'tokens': 'el,la,de',
-    'short':'{d} {month} {yyyy}',
-    'long': '{d} {month} {yyyy} {H}:{mm}',
-    'full': '{Weekday} {d} {month} {yyyy} {H}:{mm}:{ss}',
-    'past': '{sign} {num} {unit}',
-    'future': '{sign} {num} {unit}',
-    'duration': '{num} {unit}',
-    'timeMarker': 'a las',
-    'ampm': 'am,pm',
-    'modifiers': [
-      { 'name': 'day', 'src': 'anteayer', 'value': -2 },
-      { 'name': 'day', 'src': 'ayer', 'value': -1 },
-      { 'name': 'day', 'src': 'hoy', 'value': 0 },
-      { 'name': 'day', 'src': 'mañana|manana', 'value': 1 },
-      { 'name': 'sign', 'src': 'hace', 'value': -1 },
-      { 'name': 'sign', 'src': 'dentro de', 'value': 1 },
-      { 'name': 'shift', 'src': 'pasad:o|a', 'value': -1 },
-      { 'name': 'shift', 'src': 'próximo|próxima|proximo|proxima', 'value': 1 }
-    ],
-    'dateParse': [
-      '{sign} {num} {unit}',
-      '{num} {unit} {sign}',
-      '{0?}{1?} {unit=5-7} {shift}',
-      '{0?}{1?} {shift} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{shift} {weekday}',
-      '{weekday} {shift}',
-      '{date?} {2?} {month} {2?} {year?}'
-    ]
+  len = result.length;
+  if (!len) return 0;
+  result.sort(function(a, b) {
+    // IE7 will throw errors on non-numbers!
+    return (a || 0) - (b || 0);
   });
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('ja');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+  middle = trunc(len / 2);
+  return len % 2 ? result[middle] : (result[middle - 1] + result[middle]) / 2;
+}
 
-  Date.addLocale('fi', {
-      'plural':     true,
-      'timeMarker': 'kello',
-      'ampm':       ',',
-      'months':     'tammikuu,helmikuu,maaliskuu,huhtikuu,toukokuu,kesäkuu,heinäkuu,elokuu,syyskuu,lokakuu,marraskuu,joulukuu',
-      'weekdays':   'sunnuntai,maanantai,tiistai,keskiviikko,torstai,perjantai,lauantai',
-      'units':         'millisekun:ti|tia|nin|teja|tina,sekun:ti|tia|nin|teja|tina,minuut:ti|tia|in|teja|tina,tun:ti|tia|nin|teja|tina,päiv:ä|ää|än|iä|änä,viik:ko|koa|on|olla|koja|kona,kuukau:si|tta|den+kuussa,vuo:si|tta|den|sia|tena|nna',
-      'numbers':    'yksi|ensimmäinen,kaksi|toinen,kolm:e|as,neljä:s,vii:si|des,kuu:si|des,seitsemä:n|s,kahdeksa:n|s,yhdeksä:n|s,kymmene:n|s',
-      'articles':   '',
-      'optionals':  '',
-      'short':      '{d}. {month}ta {yyyy}',
-      'long':       '{d}. {month}ta {yyyy} kello {H}.{mm}',
-      'full':       '{Weekday}na {d}. {month}ta {yyyy} kello {H}.{mm}',
-      'relative':       function(num, unit, ms, format) {
-        var units = this['units'];
-        function numberWithUnit(mult) {
-          return num + ' ' + units[(8 * mult) + unit];
-        }
-        function baseUnit() {
-          return numberWithUnit(num === 1 ? 0 : 1);
-        }
-        switch(format) {
-          case 'duration':  return baseUnit();
-          case 'past':      return baseUnit() + ' sitten';
-          case 'future':    return numberWithUnit(2) + ' kuluttua';
-        }
-      },
-      'modifiers': [
-          { 'name': 'day',   'src': 'toissa päivänä|toissa päiväistä', 'value': -2 },
-          { 'name': 'day',   'src': 'eilen|eilistä', 'value': -1 },
-          { 'name': 'day',   'src': 'tänään', 'value': 0 },
-          { 'name': 'day',   'src': 'huomenna|huomista', 'value': 1 },
-          { 'name': 'day',   'src': 'ylihuomenna|ylihuomista', 'value': 2 },
-          { 'name': 'sign',  'src': 'sitten|aiemmin', 'value': -1 },
-          { 'name': 'sign',  'src': 'päästä|kuluttua|myöhemmin', 'value': 1 },
-          { 'name': 'edge',  'src': 'viimeinen|viimeisenä', 'value': -2 },
-          { 'name': 'edge',  'src': 'lopussa', 'value': -1 },
-          { 'name': 'edge',  'src': 'ensimmäinen|ensimmäisenä', 'value': 1 },
-          { 'name': 'shift', 'src': 'edellinen|edellisenä|edeltävä|edeltävänä|viime|toissa', 'value': -1 },
-          { 'name': 'shift', 'src': 'tänä|tämän', 'value': 0 },
-          { 'name': 'shift', 'src': 'seuraava|seuraavana|tuleva|tulevana|ensi', 'value': 1 }
-      ],
-      'dateParse': [
-          '{num} {unit} {sign}',
-          '{sign} {num} {unit}',
-          '{num} {unit=4-5} {sign} {day}',
-          '{month} {year}',
-          '{shift} {unit=5-7}'
-      ],
-      'timeParse': [
-          '{0} {num}{1} {day} of {month} {year?}',
-          '{weekday?} {month} {date}{1} {year?}',
-          '{date} {month} {year}',
-          '{shift} {weekday}',
-          '{shift} week {weekday}',
-          '{weekday} {2} {shift} week',
-          '{0} {date}{1} of {month}',
-          '{0}{month?} {date?}{1} of {shift} {unit=6-7}'
-      ]
+module.exports = median;
+},{"../../common/var/trunc":198,"./enumerateWithMapping":414}],419:[function(require,module,exports){
+'use strict';
+
+var getMatcher = require('../../common/internal/getMatcher'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function objectCount(obj, f) {
+  var matcher = getMatcher(f), count = 0;
+  forEachProperty(obj, function(val, key) {
+    if (matcher(val, key, obj)) {
+      count++;
+    }
   });
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('fr');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+  return count;
+}
 
-  Date.addLocale('fr', {
-    'plural': true,
-    'months': 'janvier,février|fevrier,mars,avril,mai,juin,juillet,août,septembre,octobre,novembre,décembre|decembre',
-    'weekdays': 'dimanche,lundi,mardi,mercredi,jeudi,vendredi,samedi',
-    'units': 'milliseconde:|s,seconde:|s,minute:|s,heure:|s,jour:|s,semaine:|s,mois,an:|s|née|nee',
-    'numbers': 'un:|e,deux,trois,quatre,cinq,six,sept,huit,neuf,dix',
-    'tokens': "l'|la|le",
-    'short':'{d} {month} {yyyy}',
-    'long': '{d} {month} {yyyy} {H}:{mm}',
-    'full': '{Weekday} {d} {month} {yyyy} {H}:{mm}:{ss}',
-    'past': '{sign} {num} {unit}',
-    'future': '{sign} {num} {unit}',
-    'duration': '{num} {unit}',
-    'timeMarker': 'à',
-    'ampm': 'am,pm',
-    'modifiers': [
-      { 'name': 'day', 'src': 'hier', 'value': -1 },
-      { 'name': 'day', 'src': "aujourd'hui", 'value': 0 },
-      { 'name': 'day', 'src': 'demain', 'value': 1 },
-      { 'name': 'sign', 'src': 'il y a', 'value': -1 },
-      { 'name': 'sign', 'src': "dans|d'ici", 'value': 1 },
-      { 'name': 'shift', 'src': 'derni:èr|er|ère|ere', 'value': -1 },
-      { 'name': 'shift', 'src': 'prochain:|e', 'value': 1 }
-    ],
-    'dateParse': [
-      '{sign} {num} {unit}',
-      '{sign} {num} {unit}',
-      '{0?} {unit=5-7} {shift}'
-    ],
-    'timeParse': [
-      '{weekday?} {0?} {date?} {month} {year?}',
-      '{0?} {weekday} {shift}'
-    ]
+module.exports = objectCount;
+},{"../../common/internal/getMatcher":136,"../../common/var/coreUtilityAliases":193}],420:[function(require,module,exports){
+'use strict';
+
+var getMatcher = require('../../common/internal/getMatcher'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function objectFilter(obj, f) {
+  var matcher = getMatcher(f), result = {};
+  forEachProperty(obj, function(val, key) {
+    if (matcher(val, key, obj)) {
+      result[key] = val;
+    }
   });
+  return result;
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('it');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = objectFilter;
+},{"../../common/internal/getMatcher":136,"../../common/var/coreUtilityAliases":193}],421:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('it', {
-    'plural': true,
-    'months': 'Gennaio,Febbraio,Marzo,Aprile,Maggio,Giugno,Luglio,Agosto,Settembre,Ottobre,Novembre,Dicembre',
-    'weekdays': 'Domenica,Luned:ì|i,Marted:ì|i,Mercoled:ì|i,Gioved:ì|i,Venerd:ì|i,Sabato',
-    'units': 'millisecond:o|i,second:o|i,minut:o|i,or:a|e,giorn:o|i,settiman:a|e,mes:e|i,ann:o|i',
-    'numbers': "un:|a|o|',due,tre,quattro,cinque,sei,sette,otto,nove,dieci",
-    'tokens': "l'|la|il",
-    'short':'{d} {Month} {yyyy}',
-    'long': '{d} {Month} {yyyy} {H}:{mm}',
-    'full': '{Weekday} {d} {Month} {yyyy} {H}:{mm}:{ss}',
-    'past': '{num} {unit} {sign}',
-    'future': '{num} {unit} {sign}',
-    'duration': '{num} {unit}',
-    'timeMarker': 'alle',
-    'ampm': 'am,pm',
-    'modifiers': [
-      { 'name': 'day', 'src': 'ieri', 'value': -1 },
-      { 'name': 'day', 'src': 'oggi', 'value': 0 },
-      { 'name': 'day', 'src': 'domani', 'value': 1 },
-      { 'name': 'day', 'src': 'dopodomani', 'value': 2 },
-      { 'name': 'sign', 'src': 'fa', 'value': -1 },
-      { 'name': 'sign', 'src': 'da adesso', 'value': 1 },
-      { 'name': 'shift', 'src': 'scors:o|a', 'value': -1 },
-      { 'name': 'shift', 'src': 'prossim:o|a', 'value': 1 }
-    ],
-    'dateParse': [
-      '{num} {unit} {sign}',
-      '{0?} {unit=5-7} {shift}',
-      '{0?} {shift} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{weekday?} {date?} {month} {year?}',
-      '{shift} {weekday}'
-    ]
+var assertCallable = require('../../common/internal/assertCallable'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function objectForEach(obj, fn) {
+  assertCallable(fn);
+  forEachProperty(obj, function(val, key) {
+    fn(val, key, obj);
   });
+  return obj;
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('ja');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = objectForEach;
+},{"../../common/internal/assertCallable":106,"../../common/var/coreUtilityAliases":193}],422:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('ja', { 'monthSuffix': '月',
-    'weekdays': '日曜日,月曜日,火曜日,水曜日,木曜日,金曜日,土曜日',
-    'units': 'ミリ秒,秒,分,時間,日,週間|週,ヶ月|ヵ月|月,年',
-    'short': '{yyyy}年{M}月{d}日',
-    'long': '{yyyy}年{M}月{d}日 {H}時{mm}分',
-    'full': '{yyyy}年{M}月{d}日 {Weekday} {H}時{mm}分{ss}秒',
-    'past': '{num}{unit}{sign}',
-    'future': '{num}{unit}{sign}',
-    'duration': '{num}{unit}',
-    'timeSuffixes': '時,分,秒',
-    'ampm': '午前,午後',
-    'modifiers': [
-      { 'name': 'day', 'src': '一昨日', 'value': -2 },
-      { 'name': 'day', 'src': '昨日', 'value': -1 },
-      { 'name': 'day', 'src': '今日', 'value': 0 },
-      { 'name': 'day', 'src': '明日', 'value': 1 },
-      { 'name': 'day', 'src': '明後日', 'value': 2 },
-      { 'name': 'sign', 'src': '前', 'value': -1 },
-      { 'name': 'sign', 'src': '後', 'value':  1 },
-      { 'name': 'shift', 'src': '去|先', 'value': -1 },
-      { 'name': 'shift', 'src': '来', 'value':  1 }
-    ],
-    'dateParse': [
-      '{num}{unit}{sign}'
-    ],
-    'timeParse': [
-      '{shift}{unit=5-7}{weekday?}',
-      '{year}年{month?}月?{date?}日?',
-      '{month}月{date?}日?',
-      '{date}日'
-    ]
+var mapWithShortcuts = require('../../common/internal/mapWithShortcuts'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function objectMap(obj, map) {
+  var result = {};
+  forEachProperty(obj, function(val, key) {
+    result[key] = mapWithShortcuts(val, map, obj, [val, key, obj]);
   });
+  return result;
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('ko');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = objectMap;
+},{"../../common/internal/mapWithShortcuts":160,"../../common/var/coreUtilityAliases":193}],423:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('ko', {
-    'digitDate': true,
-    'monthSuffix': '월',
-    'weekdays': '일요일,월요일,화요일,수요일,목요일,금요일,토요일',
-    'units': '밀리초,초,분,시간,일,주,개월|달,년|해',
-    'numbers': '일|한,이,삼,사,오,육,칠,팔,구,십',
-    'short': '{yyyy}년{M}월{d}일',
-    'long': '{yyyy}년{M}월{d}일 {H}시{mm}분',
-    'full': '{yyyy}년{M}월{d}일 {Weekday} {H}시{mm}분{ss}초',
-    'past': '{num}{unit} {sign}',
-    'future': '{num}{unit} {sign}',
-    'duration': '{num}{unit}',
-    'timeSuffixes': '시,분,초',
-    'ampm': '오전,오후',
-    'modifiers': [
-      { 'name': 'day', 'src': '그저께', 'value': -2 },
-      { 'name': 'day', 'src': '어제', 'value': -1 },
-      { 'name': 'day', 'src': '오늘', 'value': 0 },
-      { 'name': 'day', 'src': '내일', 'value': 1 },
-      { 'name': 'day', 'src': '모레', 'value': 2 },
-      { 'name': 'sign', 'src': '전', 'value': -1 },
-      { 'name': 'sign', 'src': '후', 'value':  1 },
-      { 'name': 'shift', 'src': '지난|작', 'value': -1 },
-      { 'name': 'shift', 'src': '이번|올', 'value': 0 },
-      { 'name': 'shift', 'src': '다음|내', 'value': 1 }
-    ],
-    'dateParse': [
-      '{num}{unit} {sign}',
-      '{shift?} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{shift} {unit=5?} {weekday}',
-      '{year}년 {month?}월? {date?}일? {weekday?}',
-      '{month}월 {date?}일?',
-      '{date}일'
-    ]
+var objectMatchers = require('../var/objectMatchers');
+
+var objectSome = objectMatchers.objectSome;
+
+function objectNone(obj, f) {
+  return !objectSome(obj, f);
+}
+
+module.exports = objectNone;
+},{"../var/objectMatchers":431}],424:[function(require,module,exports){
+'use strict';
+
+var isDefined = require('../../common/internal/isDefined'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function objectReduce(obj, fn, acc) {
+  var init = isDefined(acc);
+  forEachProperty(obj, function(val, key) {
+    if (!init) {
+      acc = val;
+      init = true;
+      return;
+    }
+    acc = fn(acc, val, key, obj);
   });
+  return acc;
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('nl');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = objectReduce;
+},{"../../common/internal/isDefined":149,"../../common/var/coreUtilityAliases":193}],425:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('nl', {
-    'plural': true,
-    'months': 'januari,februari,maart,april,mei,juni,juli,augustus,september,oktober,november,december',
-    'weekdays': 'zondag|zo,maandag|ma,dinsdag|di,woensdag|woe|wo,donderdag|do,vrijdag|vrij|vr,zaterdag|za',
-    'units': 'milliseconde:|n,seconde:|n,minu:ut|ten,uur,dag:|en,we:ek|ken,maand:|en,jaar',
-    'numbers': 'een,twee,drie,vier,vijf,zes,zeven,acht,negen',
-    'tokens': '',
-    'short':'{d} {Month} {yyyy}',
-    'long': '{d} {Month} {yyyy} {H}:{mm}',
-    'full': '{Weekday} {d} {Month} {yyyy} {H}:{mm}:{ss}',
-    'past': '{num} {unit} {sign}',
-    'future': '{num} {unit} {sign}',
-    'duration': '{num} {unit}',
-    'timeMarker': "'s|om",
-    'modifiers': [
-      { 'name': 'day', 'src': 'gisteren', 'value': -1 },
-      { 'name': 'day', 'src': 'vandaag', 'value': 0 },
-      { 'name': 'day', 'src': 'morgen', 'value': 1 },
-      { 'name': 'day', 'src': 'overmorgen', 'value': 2 },
-      { 'name': 'sign', 'src': 'geleden', 'value': -1 },
-      { 'name': 'sign', 'src': 'vanaf nu', 'value': 1 },
-      { 'name': 'shift', 'src': 'laatste|vorige|afgelopen', 'value': -1 },
-      { 'name': 'shift', 'src': 'volgend:|e', 'value': 1 }
-    ],
-    'dateParse': [
-      '{num} {unit} {sign}',
-      '{0?} {unit=5-7} {shift}',
-      '{0?} {shift} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{weekday?} {date?} {month} {year?}',
-      '{shift} {weekday}'
-    ]
+var enumerateWithMapping = require('./enumerateWithMapping');
+
+function sum(obj, map) {
+  var sum = 0;
+  enumerateWithMapping(obj, map, function(val) {
+    sum += val;
   });
+  return sum;
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('no');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = sum;
+},{"./enumerateWithMapping":414}],426:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('no', {
-    'plural': true,
-    'months': 'januar,februar,mars,april,mai,juni,juli,august,september,oktober,november,desember',
-    'weekdays': 'søndag|sondag,mandag,tirsdag,onsdag,torsdag,fredag,lørdag|lordag',
-    'units': 'millisekund:|er,sekund:|er,minutt:|er,tim:e|er,dag:|er,uk:e|er|en,måned:|er|en+maaned:|er|en,år:||et+aar:||et',
-    'numbers': 'en|et,to,tre,fire,fem,seks,sju|syv,åtte,ni,ti',
-    'tokens': 'den,for',
-    'articles': 'den',
-    'short':'d. {d}. {month} {yyyy}',
-    'long': 'den {d}. {month} {yyyy} {H}:{mm}',
-    'full': '{Weekday} den {d}. {month} {yyyy} {H}:{mm}:{ss}',
-    'past': '{num} {unit} {sign}',
-    'future': '{sign} {num} {unit}',
-    'duration': '{num} {unit}',
-    'ampm': 'am,pm',
-    'modifiers': [
-      { 'name': 'day', 'src': 'forgårs|i forgårs|forgaars|i forgaars', 'value': -2 },
-      { 'name': 'day', 'src': 'i går|igår|i gaar|igaar', 'value': -1 },
-      { 'name': 'day', 'src': 'i dag|idag', 'value': 0 },
-      { 'name': 'day', 'src': 'i morgen|imorgen', 'value': 1 },
-      { 'name': 'day', 'src': 'overimorgen|overmorgen|over i morgen', 'value': 2 },
-      { 'name': 'sign', 'src': 'siden', 'value': -1 },
-      { 'name': 'sign', 'src': 'om', 'value':  1 },
-      { 'name': 'shift', 'src': 'i siste|siste', 'value': -1 },
-      { 'name': 'shift', 'src': 'denne', 'value': 0 },
-      { 'name': 'shift', 'src': 'neste', 'value': 1 }
-    ],
-    'dateParse': [
-      '{num} {unit} {sign}',
-      '{sign} {num} {unit}',
-      '{1?} {num} {unit} {sign}',
-      '{shift} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{0?} {weekday?} {date?} {month} {year}',
-      '{date} {month}',
-      '{shift} {weekday}'
-    ]
-  });
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('pl');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.optionals. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+var assertArgument = require('../../common/internal/assertArgument');
 
-  Date.addLocale('pl', {
-    'plural':    true,
-    'months':    'Styczeń|Stycznia,Luty|Lutego,Marzec|Marca,Kwiecień|Kwietnia,Maj|Maja,Czerwiec|Czerwca,Lipiec|Lipca,Sierpień|Sierpnia,Wrzesień|Września,Październik|Października,Listopad|Listopada,Grudzień|Grudnia',
-    'weekdays':  'Niedziela|Niedzielę,Poniedziałek,Wtorek,Środ:a|ę,Czwartek,Piątek,Sobota|Sobotę',
-    'units':     'milisekund:a|y|,sekund:a|y|,minut:a|y|,godzin:a|y|,dzień|dni,tydzień|tygodnie|tygodni,miesiące|miesiące|miesięcy,rok|lata|lat',
-    'numbers':   'jeden|jedną,dwa|dwie,trzy,cztery,pięć,sześć,siedem,osiem,dziewięć,dziesięć',
-    'optionals': 'w|we,roku',
-    'short':     '{d} {Month} {yyyy}',
-    'long':      '{d} {Month} {yyyy} {H}:{mm}',
-    'full' :     '{Weekday}, {d} {Month} {yyyy} {H}:{mm}:{ss}',
-    'past':      '{num} {unit} {sign}',
-    'future':    '{sign} {num} {unit}',
-    'duration':  '{num} {unit}',
-    'timeMarker':'o',
-    'ampm':      'am,pm',
-    'modifiers': [
-      { 'name': 'day', 'src': 'przedwczoraj', 'value': -2 },
-      { 'name': 'day', 'src': 'wczoraj', 'value': -1 },
-      { 'name': 'day', 'src': 'dzisiaj|dziś', 'value': 0 },
-      { 'name': 'day', 'src': 'jutro', 'value': 1 },
-      { 'name': 'day', 'src': 'pojutrze', 'value': 2 },
-      { 'name': 'sign', 'src': 'temu|przed', 'value': -1 },
-      { 'name': 'sign', 'src': 'za', 'value': 1 },
-      { 'name': 'shift', 'src': 'zeszły|zeszła|ostatni|ostatnia', 'value': -1 },
-      { 'name': 'shift', 'src': 'następny|następna|następnego|przyszły|przyszła|przyszłego', 'value': 1 }
-    ],
-    'dateParse': [
-      '{num} {unit} {sign}',
-      '{sign} {num} {unit}',
-      '{month} {year}',
-      '{shift} {unit=5-7}',
-      '{0} {shift?} {weekday}'
-    ],
-    'timeParse': [
-      '{date} {month} {year?} {1}',
-      '{0} {shift?} {weekday}'
-    ]
-  });
+function wrapNativeArrayMethod(methodName, wrapper) {
+  var nativeFn = Array.prototype[methodName];
+  return function(arr, f, context, argsLen) {
+    var args = new Array(2);
+    assertArgument(argsLen > 0);
+    args[0] = wrapper(f, context);
+    args[1] = context;
+    return nativeFn.apply(arr, args);
+  };
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('pt');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = wrapNativeArrayMethod;
+},{"../../common/internal/assertArgument":104}],427:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('pt', {
-    'plural': true,
-    'months': 'janeiro,fevereiro,março,abril,maio,junho,julho,agosto,setembro,outubro,novembro,dezembro',
-    'weekdays': 'domingo,segunda-feira,terça-feira,quarta-feira,quinta-feira,sexta-feira,sábado|sabado',
-    'units': 'milisegundo:|s,segundo:|s,minuto:|s,hora:|s,dia:|s,semana:|s,mês|mêses|mes|meses,ano:|s',
-    'numbers': 'um:|a,dois|duas,três|tres,quatro,cinco,seis,sete,oito,nove,dez',
-    'tokens': 'a,de',
-    'short':'{d} de {month} de {yyyy}',
-    'long': '{d} de {month} de {yyyy} {H}:{mm}',
-    'full': '{Weekday}, {d} de {month} de {yyyy} {H}:{mm}:{ss}',
-    'past': '{num} {unit} {sign}',
-    'future': '{sign} {num} {unit}',
-    'duration': '{num} {unit}',
-    'timeMarker': 'às',
-    'ampm': 'am,pm',
-    'modifiers': [
-      { 'name': 'day', 'src': 'anteontem', 'value': -2 },
-      { 'name': 'day', 'src': 'ontem', 'value': -1 },
-      { 'name': 'day', 'src': 'hoje', 'value': 0 },
-      { 'name': 'day', 'src': 'amanh:ã|a', 'value': 1 },
-      { 'name': 'sign', 'src': 'atrás|atras|há|ha', 'value': -1 },
-      { 'name': 'sign', 'src': 'daqui a', 'value': 1 },
-      { 'name': 'shift', 'src': 'passad:o|a', 'value': -1 },
-      { 'name': 'shift', 'src': 'próximo|próxima|proximo|proxima', 'value': 1 }
-    ],
-    'dateParse': [
-      '{num} {unit} {sign}',
-      '{sign} {num} {unit}',
-      '{0?} {unit=5-7} {shift}',
-      '{0?} {shift} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{date?} {1?} {month} {1?} {year?}',
-      '{0?} {shift} {weekday}'
-    ]
-  });
+var getKeys = require('../../common/internal/getKeys'),
+    getMatcher = require('../../common/internal/getMatcher');
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('ru');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+function wrapObjectMatcher(name) {
+  var nativeFn = Array.prototype[name];
+  return function(obj, f) {
+    var matcher = getMatcher(f);
+    return nativeFn.call(getKeys(obj), function(key) {
+      return matcher(obj[key], key, obj);
+    });
+  };
+}
 
-  Date.addLocale('ru', {
-    'months': 'Январ:я|ь,Феврал:я|ь,Март:а|,Апрел:я|ь,Ма:я|й,Июн:я|ь,Июл:я|ь,Август:а|,Сентябр:я|ь,Октябр:я|ь,Ноябр:я|ь,Декабр:я|ь',
-    'weekdays': 'Воскресенье,Понедельник,Вторник,Среда,Четверг,Пятница,Суббота',
-    'units': 'миллисекунд:а|у|ы|,секунд:а|у|ы|,минут:а|у|ы|,час:||а|ов,день|день|дня|дней,недел:я|ю|и|ь|е,месяц:||а|ев|е,год|год|года|лет|году',
-    'numbers': 'од:ин|ну,дв:а|е,три,четыре,пять,шесть,семь,восемь,девять,десять',
-    'tokens': 'в|на,г\\.?(?:ода)?',
-    'short':'{d} {month} {yyyy} года',
-    'long': '{d} {month} {yyyy} года {H}:{mm}',
-    'full': '{Weekday} {d} {month} {yyyy} года {H}:{mm}:{ss}',
-    'relative': function(num, unit, ms, format) {
-      var numberWithUnit, last = num.toString().slice(-1), mult;
-      switch(true) {
-        case num >= 11 && num <= 15: mult = 3; break;
-        case last == 1: mult = 1; break;
-        case last >= 2 && last <= 4: mult = 2; break;
-        default: mult = 3;
+module.exports = wrapObjectMatcher;
+},{"../../common/internal/getKeys":135,"../../common/internal/getMatcher":136}],428:[function(require,module,exports){
+'use strict';
+
+module.exports = 'enhanceArray';
+},{}],429:[function(require,module,exports){
+'use strict';
+
+var buildEnhancedMapping = require('../internal/buildEnhancedMapping');
+
+module.exports = buildEnhancedMapping('map');
+},{"../internal/buildEnhancedMapping":409}],430:[function(require,module,exports){
+'use strict';
+
+var buildEnhancedMatching = require('../internal/buildEnhancedMatching');
+
+module.exports = {
+  enhancedFind: buildEnhancedMatching('find'),
+  enhancedSome: buildEnhancedMatching('some'),
+  enhancedEvery: buildEnhancedMatching('every'),
+  enhancedFilter: buildEnhancedMatching('filter'),
+  enhancedFindIndex: buildEnhancedMatching('findIndex')
+};
+},{"../internal/buildEnhancedMatching":410}],431:[function(require,module,exports){
+'use strict';
+
+var wrapObjectMatcher = require('../internal/wrapObjectMatcher');
+
+module.exports = {
+  objectSome: wrapObjectMatcher('some'),
+  objectFind: wrapObjectMatcher('find'),
+  objectEvery: wrapObjectMatcher('every')
+};
+},{"../internal/wrapObjectMatcher":427}],432:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    coercePositiveInteger = require('../common/internal/coercePositiveInteger');
+
+Sugar.Function.defineInstance({
+
+  'after': function(fn, num) {
+    var count = 0, collectedArgs = [];
+    num = coercePositiveInteger(num);
+    return function() {
+      // Optimized: no leaking arguments
+      var args = []; for(var $i = 0, $len = arguments.length; $i < $len; $i++) args.push(arguments[$i]);
+      collectedArgs.push(args);
+      count++;
+      if (count >= num) {
+        return fn.call(this, collectedArgs);
       }
-      numberWithUnit = num + ' ' + this['units'][(mult * 8) + unit];
-      switch(format) {
-        case 'duration':  return numberWithUnit;
-        case 'past':      return numberWithUnit + ' назад';
-        case 'future':    return 'через ' + numberWithUnit;
+    };
+  }
+
+});
+
+module.exports = Sugar.Function.after;
+},{"../common/internal/coercePositiveInteger":110,"sugar-core":18}],433:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    cancelFunction = require('./internal/cancelFunction');
+
+Sugar.Function.defineInstance({
+
+  'cancel': function(fn) {
+    return cancelFunction(fn);
+  }
+
+});
+
+module.exports = Sugar.Function.cancel;
+},{"./internal/cancelFunction":438,"sugar-core":18}],434:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    setDelay = require('./internal/setDelay'),
+    cancelFunction = require('./internal/cancelFunction');
+
+Sugar.Function.defineInstance({
+
+  'debounce': function(fn, ms) {
+    function debounced() {
+      // Optimized: no leaking arguments
+      var args = []; for(var $i = 0, $len = arguments.length; $i < $len; $i++) args.push(arguments[$i]);
+      cancelFunction(debounced);
+      setDelay(debounced, ms, fn, this, args);
+    }
+    return debounced;
+  }
+
+});
+
+module.exports = Sugar.Function.debounce;
+},{"./internal/cancelFunction":438,"./internal/setDelay":442,"sugar-core":18}],435:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    setDelay = require('./internal/setDelay');
+
+Sugar.Function.defineInstanceWithArguments({
+
+  'delay': function(fn, ms, args) {
+    setDelay(fn, ms, fn, fn, args);
+    return fn;
+  }
+
+});
+
+module.exports = Sugar.Function.delay;
+},{"./internal/setDelay":442,"sugar-core":18}],436:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    setDelay = require('./internal/setDelay');
+
+Sugar.Function.defineInstanceWithArguments({
+
+  'every': function(fn, ms, args) {
+    function execute () {
+      // Set the delay first here, so that cancel
+      // can be called within the executing function.
+      setDelay(fn, ms, execute);
+      fn.apply(fn, args);
+    }
+    setDelay(fn, ms, execute);
+    return fn;
+  }
+
+});
+
+module.exports = Sugar.Function.every;
+},{"./internal/setDelay":442,"sugar-core":18}],437:[function(require,module,exports){
+'use strict';
+
+// Instance Methods
+require('./after');
+require('./cancel');
+require('./debounce');
+require('./delay');
+require('./every');
+require('./lazy');
+require('./lock');
+require('./memoize');
+require('./once');
+require('./partial');
+require('./throttle');
+
+module.exports = require('sugar-core');
+},{"./after":432,"./cancel":433,"./debounce":434,"./delay":435,"./every":436,"./lazy":443,"./lock":444,"./memoize":445,"./once":446,"./partial":447,"./throttle":448,"sugar-core":18}],438:[function(require,module,exports){
+'use strict';
+
+var _timers = require('../var/_timers'),
+    _canceled = require('../var/_canceled'),
+    classChecks = require('../../common/var/classChecks');
+
+var isArray = classChecks.isArray;
+
+function cancelFunction(fn) {
+  var timers = _timers(fn), timer;
+  if (isArray(timers)) {
+    while(timer = timers.shift()) {
+      clearTimeout(timer);
+    }
+  }
+  _canceled(fn, true);
+  return fn;
+}
+
+module.exports = cancelFunction;
+},{"../../common/var/classChecks":192,"../var/_canceled":449,"../var/_timers":452}],439:[function(require,module,exports){
+'use strict';
+
+function collectArguments() {
+  var args = arguments, i = args.length, arr = new Array(i);
+  while (i--) {
+    arr[i] = args[i];
+  }
+  return arr;
+}
+
+module.exports = collectArguments;
+},{}],440:[function(require,module,exports){
+'use strict';
+
+var serializeInternal = require('../../common/internal/serializeInternal'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var hasOwn = coreUtilityAliases.hasOwn,
+    getOwn = coreUtilityAliases.getOwn;
+
+function createHashedMemoizeFunction(fn, hashFn, limit) {
+  var map = {}, refs = [], counter = 0;
+  return function() {
+    var hashObj = hashFn.apply(this, arguments);
+    var key = serializeInternal(hashObj, refs);
+    if (hasOwn(map, key)) {
+      return getOwn(map, key);
+    }
+    if (counter === limit) {
+      map = {};
+      refs = [];
+      counter = 0;
+    }
+    counter++;
+    return map[key] = fn.apply(this, arguments);
+  };
+}
+
+module.exports = createHashedMemoizeFunction;
+},{"../../common/internal/serializeInternal":168,"../../common/var/coreUtilityAliases":193}],441:[function(require,module,exports){
+'use strict';
+
+var setDelay = require('./setDelay'),
+    mathAliases = require('../../common/var/mathAliases');
+
+var max = mathAliases.max,
+    ceil = mathAliases.ceil,
+    round = mathAliases.round;
+
+function createLazyFunction(fn, ms, immediate, limit) {
+  var queue = [], locked = false, execute, rounded, perExecution, result;
+  ms = ms || 1;
+  limit = limit || Infinity;
+  rounded = ceil(ms);
+  perExecution = round(rounded / ms) || 1;
+  execute = function() {
+    var queueLength = queue.length, maxPerRound;
+    if (queueLength == 0) return;
+    // Allow fractions of a millisecond by calling
+    // multiple times per actual timeout execution
+    maxPerRound = max(queueLength - perExecution, 0);
+    while(queueLength > maxPerRound) {
+      // Getting uber-meta here...
+      result = Function.prototype.apply.apply(fn, queue.shift());
+      queueLength--;
+    }
+    setDelay(lazy, rounded, function() {
+      locked = false;
+      execute();
+    });
+  };
+  function lazy() {
+    // If the execution has locked and it's immediate, then
+    // allow 1 less in the queue as 1 call has already taken place.
+    if (queue.length < limit - (locked && immediate ? 1 : 0)) {
+      // Optimized: no leaking arguments
+      var args = []; for(var $i = 0, $len = arguments.length; $i < $len; $i++) args.push(arguments[$i]);
+      queue.push([this, args]);
+    }
+    if (!locked) {
+      locked = true;
+      if (immediate) {
+        execute();
+      } else {
+        setDelay(lazy, rounded, execute);
       }
-    },
-    'timeMarker': 'в',
-    'ampm': ' утра, вечера',
-    'modifiers': [
-      { 'name': 'day', 'src': 'позавчера', 'value': -2 },
-      { 'name': 'day', 'src': 'вчера', 'value': -1 },
-      { 'name': 'day', 'src': 'сегодня', 'value': 0 },
-      { 'name': 'day', 'src': 'завтра', 'value': 1 },
-      { 'name': 'day', 'src': 'послезавтра', 'value': 2 },
-      { 'name': 'sign', 'src': 'назад', 'value': -1 },
-      { 'name': 'sign', 'src': 'через', 'value': 1 },
-      { 'name': 'shift', 'src': 'прошл:ый|ой|ом', 'value': -1 },
-      { 'name': 'shift', 'src': 'следующ:ий|ей|ем', 'value': 1 }
-    ],
-    'dateParse': [
-      '{num} {unit} {sign}',
-      '{sign} {num} {unit}',
-      '{month} {year}',
-      '{0?} {shift} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{date} {month} {year?} {1?}',
-      '{0?} {shift} {weekday}'
-    ]
+    }
+    // Return the memoized result
+    return result;
+  }
+  return lazy;
+}
+
+module.exports = createLazyFunction;
+},{"../../common/var/mathAliases":195,"./setDelay":442}],442:[function(require,module,exports){
+'use strict';
+
+var _timers = require('../var/_timers'),
+    _canceled = require('../var/_canceled'),
+    coercePositiveInteger = require('../../common/internal/coercePositiveInteger');
+
+function setDelay(fn, ms, after, scope, args) {
+  // Delay of infinity is never called of course...
+  ms = coercePositiveInteger(ms || 0);
+  if (!_timers(fn)) {
+    _timers(fn, []);
+  }
+  // This is a workaround for <= IE8, which apparently has the
+  // ability to call timeouts in the queue on the same tick (ms?)
+  // even if functionally they have already been cleared.
+  _canceled(fn, false);
+  _timers(fn).push(setTimeout(function() {
+    if (!_canceled(fn)) {
+      after.apply(scope, args || []);
+    }
+  }, ms));
+}
+
+module.exports = setDelay;
+},{"../../common/internal/coercePositiveInteger":110,"../var/_canceled":449,"../var/_timers":452}],443:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    createLazyFunction = require('./internal/createLazyFunction');
+
+Sugar.Function.defineInstance({
+
+  'lazy': function(fn, ms, immediate, limit) {
+    return createLazyFunction(fn, ms, immediate, limit);
+  }
+
+});
+
+module.exports = Sugar.Function.lazy;
+},{"./internal/createLazyFunction":441,"sugar-core":18}],444:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    _lock = require('./var/_lock'),
+    _partial = require('./var/_partial'),
+    classChecks = require('../common/var/classChecks'),
+    mathAliases = require('../common/var/mathAliases');
+
+var isNumber = classChecks.isNumber,
+    min = mathAliases.min;
+
+Sugar.Function.defineInstance({
+
+  'lock': function(fn, n) {
+    var lockedFn;
+    if (_partial(fn)) {
+      _lock(fn, isNumber(n) ? n : null);
+      return fn;
+    }
+    lockedFn = function() {
+      arguments.length = min(_lock(lockedFn), arguments.length);
+      return fn.apply(this, arguments);
+    };
+    _lock(lockedFn, isNumber(n) ? n : fn.length);
+    return lockedFn;
+  }
+
+});
+
+module.exports = Sugar.Function.lock;
+},{"../common/var/classChecks":192,"../common/var/mathAliases":195,"./var/_lock":450,"./var/_partial":451,"sugar-core":18}],445:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    classChecks = require('../common/var/classChecks'),
+    deepGetProperty = require('../common/internal/deepGetProperty'),
+    collectArguments = require('./internal/collectArguments'),
+    createHashedMemoizeFunction = require('./internal/createHashedMemoizeFunction');
+
+var isNumber = classChecks.isNumber,
+    isString = classChecks.isString;
+
+Sugar.Function.defineInstance({
+
+  'memoize': function(fn, arg1, arg2) {
+    var hashFn, limit, prop;
+    if (isNumber(arg1)) {
+      limit = arg1;
+    } else {
+      hashFn = arg1;
+      limit  = arg2;
+    }
+    if (isString(hashFn)) {
+      prop = hashFn;
+      hashFn = function(obj) {
+        return deepGetProperty(obj, prop);
+      };
+    } else if (!hashFn) {
+      hashFn = collectArguments;
+    }
+    return createHashedMemoizeFunction(fn, hashFn, limit);
+  }
+
+});
+
+module.exports = Sugar.Function.memoize;
+},{"../common/internal/deepGetProperty":116,"../common/var/classChecks":192,"./internal/collectArguments":439,"./internal/createHashedMemoizeFunction":440,"sugar-core":18}],446:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.Function.defineInstance({
+
+  'once': function(fn) {
+    var called = false, val;
+    return function() {
+      if (called) {
+        return val;
+      }
+      called = true;
+      return val = fn.apply(this, arguments);
+    };
+  }
+
+});
+
+module.exports = Sugar.Function.once;
+},{"sugar-core":18}],447:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    _lock = require('./var/_lock'),
+    _partial = require('./var/_partial'),
+    isDefined = require('../common/internal/isDefined'),
+    classChecks = require('../common/var/classChecks'),
+    mathAliases = require('../common/var/mathAliases'),
+    isObjectType = require('../common/internal/isObjectType'),
+    createInstanceFromPrototype = require('./var/createInstanceFromPrototype');
+
+var isNumber = classChecks.isNumber,
+    min = mathAliases.min;
+
+Sugar.Function.defineInstanceWithArguments({
+
+  'partial': function(fn, curriedArgs) {
+    var curriedLen = curriedArgs.length;
+    var partialFn = function() {
+      var argIndex = 0, applyArgs = [], self = this, lock = _lock(partialFn), result, i;
+      for (i = 0; i < curriedLen; i++) {
+        var arg = curriedArgs[i];
+        if (isDefined(arg)) {
+          applyArgs[i] = arg;
+        } else {
+          applyArgs[i] = arguments[argIndex++];
+        }
+      }
+      for (i = argIndex; i < arguments.length; i++) {
+        applyArgs.push(arguments[i]);
+      }
+      if (lock === null) {
+        lock = curriedLen;
+      }
+      if (isNumber(lock)) {
+        applyArgs.length = min(applyArgs.length, lock);
+      }
+      // If the bound "this" object is an instance of the partialed
+      // function, then "new" was used, so preserve the prototype
+      // so that constructor functions can also be partialed.
+      if (self instanceof partialFn) {
+        self = createInstanceFromPrototype(fn.prototype);
+        result = fn.apply(self, applyArgs);
+        // An explicit return value is allowed from constructors
+        // as long as they are of "object" type, so return the
+        // correct result here accordingly.
+        return isObjectType(result) ? result : self;
+      }
+      return fn.apply(self, applyArgs);
+    };
+    _partial(partialFn, true);
+    return partialFn;
+  }
+
+});
+
+module.exports = Sugar.Function.partial;
+},{"../common/internal/isDefined":149,"../common/internal/isObjectType":151,"../common/var/classChecks":192,"../common/var/mathAliases":195,"./var/_lock":450,"./var/_partial":451,"./var/createInstanceFromPrototype":453,"sugar-core":18}],448:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    createLazyFunction = require('./internal/createLazyFunction');
+
+Sugar.Function.defineInstance({
+
+  'throttle': function(fn, ms) {
+    return createLazyFunction(fn, ms, true, 1);
+  }
+
+});
+
+module.exports = Sugar.Function.throttle;
+},{"./internal/createLazyFunction":441,"sugar-core":18}],449:[function(require,module,exports){
+'use strict';
+
+var privatePropertyAccessor = require('../../common/internal/privatePropertyAccessor');
+
+module.exports = privatePropertyAccessor('canceled');
+},{"../../common/internal/privatePropertyAccessor":164}],450:[function(require,module,exports){
+'use strict';
+
+var privatePropertyAccessor = require('../../common/internal/privatePropertyAccessor');
+
+module.exports = privatePropertyAccessor('lock');
+},{"../../common/internal/privatePropertyAccessor":164}],451:[function(require,module,exports){
+'use strict';
+
+var privatePropertyAccessor = require('../../common/internal/privatePropertyAccessor');
+
+module.exports = privatePropertyAccessor('partial');
+},{"../../common/internal/privatePropertyAccessor":164}],452:[function(require,module,exports){
+'use strict';
+
+var privatePropertyAccessor = require('../../common/internal/privatePropertyAccessor');
+
+module.exports = privatePropertyAccessor('timers');
+},{"../../common/internal/privatePropertyAccessor":164}],453:[function(require,module,exports){
+'use strict';
+
+var createInstanceFromPrototype = Object.create || function(prototype) {
+  var ctor = function() {};
+  ctor.prototype = prototype;
+  return new ctor;
+};
+
+module.exports = createInstanceFromPrototype;
+},{}],454:[function(require,module,exports){
+'use strict';
+
+require('./string');
+require('./number');
+require('./array');
+require('./enumerable');
+require('./object');
+require('./date');
+require('./range');
+require('./function');
+require('./regexp');
+
+module.exports = require('sugar-core');
+},{"./array":46,"./date":244,"./enumerable":405,"./function":437,"./number":494,"./object":598,"./range":683,"./regexp":724,"./string":743,"sugar-core":18}],455:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    AbbreviationUnits = require('./var/AbbreviationUnits'),
+    abbreviateNumber = require('./internal/abbreviateNumber');
+
+var BASIC_UNITS = AbbreviationUnits.BASIC_UNITS;
+
+Sugar.Number.defineInstance({
+
+  'abbr': function(n, precision) {
+    return abbreviateNumber(n, precision, BASIC_UNITS);
+  }
+
+});
+
+module.exports = Sugar.Number.abbr;
+},{"./internal/abbreviateNumber":495,"./var/AbbreviationUnits":560,"sugar-core":18}],456:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.abs;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],457:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.acos;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],458:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.asin;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],459:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.atan;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],460:[function(require,module,exports){
+'use strict';
+
+var buildMathAliases = require('../internal/buildMathAliases');
+
+buildMathAliases();
+},{"../internal/buildMathAliases":496}],461:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    AbbreviationUnits = require('./var/AbbreviationUnits'),
+    abbreviateNumber = require('./internal/abbreviateNumber');
+
+var MEMORY_UNITS = AbbreviationUnits.MEMORY_UNITS,
+    MEMORY_BINARY_UNITS = AbbreviationUnits.MEMORY_BINARY_UNITS;
+
+Sugar.Number.defineInstance({
+
+  'bytes': function(n, precision, binary, units) {
+    if (units === 'binary' || (!units && binary)) {
+      units = MEMORY_BINARY_UNITS;
+    } else if(units === 'si' || !units) {
+      units = MEMORY_UNITS;
+    }
+    return abbreviateNumber(n, precision, units, binary) + 'B';
+  }
+
+});
+
+module.exports = Sugar.Number.bytes;
+},{"./internal/abbreviateNumber":495,"./var/AbbreviationUnits":560,"sugar-core":18}],462:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    Range = require('../range/internal/Range'),
+    rangeClamp = require('../range/internal/rangeClamp');
+
+Sugar.Number.defineInstance({
+
+  'cap': function(n, max) {
+    return rangeClamp(new Range(undefined, max), n);
+  }
+
+});
+
+module.exports = Sugar.Number.cap;
+},{"../range/internal/Range":684,"../range/internal/rangeClamp":698,"sugar-core":18}],463:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    mathAliases = require('../common/var/mathAliases'),
+    createRoundingFunction = require('./internal/createRoundingFunction');
+
+var ceil = mathAliases.ceil;
+
+Sugar.Number.defineInstance({
+
+  'ceil': createRoundingFunction(ceil)
+
+});
+
+module.exports = Sugar.Number.ceil;
+},{"../common/var/mathAliases":195,"./internal/createRoundingFunction":497,"sugar-core":18}],464:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    chr = require('../common/var/chr');
+
+Sugar.Number.defineInstance({
+
+  'chr': function(n) {
+    return chr(n);
+  }
+
+});
+
+module.exports = Sugar.Number.chr;
+},{"../common/var/chr":191,"sugar-core":18}],465:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    Range = require('../range/internal/Range'),
+    rangeClamp = require('../range/internal/rangeClamp');
+
+Sugar.Number.defineInstance({
+
+  'clamp': function(n, start, end) {
+    return rangeClamp(new Range(start, end), n);
+  }
+
+});
+
+module.exports = Sugar.Number.clamp;
+},{"../range/internal/Range":684,"../range/internal/rangeClamp":698,"sugar-core":18}],466:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.cos;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],467:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.day;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],468:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.dayAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],469:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.dayAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],470:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.dayBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],471:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.dayFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],472:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.days;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],473:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.daysAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],474:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.daysAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],475:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.daysBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],476:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.daysFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],477:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    upto = require('./upto');
+
+Sugar.Number.alias('downto', 'upto');
+
+module.exports = Sugar.Number.downto;
+},{"./upto":559,"sugar-core":18}],478:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    LocaleHelpers = require('../date/var/LocaleHelpers');
+
+var localeManager = LocaleHelpers.localeManager;
+
+Sugar.Number.defineInstance({
+
+  'duration': function(n, localeCode) {
+    return localeManager.get(localeCode).getDuration(n);
+  }
+
+});
+
+module.exports = Sugar.Number.duration;
+},{"../date/var/LocaleHelpers":389,"sugar-core":18}],479:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.exp;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],480:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    mathAliases = require('../common/var/mathAliases'),
+    createRoundingFunction = require('./internal/createRoundingFunction');
+
+var floor = mathAliases.floor;
+
+Sugar.Number.defineInstance({
+
+  'floor': createRoundingFunction(floor)
+
+});
+
+module.exports = Sugar.Number.floor;
+},{"../common/var/mathAliases":195,"./internal/createRoundingFunction":497,"sugar-core":18}],481:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    numberFormat = require('./internal/numberFormat');
+
+Sugar.Number.defineInstance({
+
+  'format': function(n, place) {
+    return numberFormat(n, place);
+  }
+
+});
+
+module.exports = Sugar.Number.format;
+},{"./internal/numberFormat":500,"sugar-core":18}],482:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    _numberOptions = require('./var/_numberOptions');
+
+module.exports = Sugar.Number.getOption;
+},{"./var/_numberOptions":562,"sugar-core":18}],483:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    padNumber = require('../common/internal/padNumber');
+
+Sugar.Number.defineInstance({
+
+  'hex': function(n, pad) {
+    return padNumber(n, pad || 1, false, 16);
+  }
+
+});
+
+module.exports = Sugar.Number.hex;
+},{"../common/internal/padNumber":162,"sugar-core":18}],484:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hour;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],485:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hourAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],486:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hourAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],487:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hourBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],488:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hourFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],489:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hours;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],490:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hoursAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],491:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hoursAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],492:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hoursBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],493:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.hoursFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],494:[function(require,module,exports){
+'use strict';
+
+// Static Methods
+require('./random');
+
+// Instance Methods
+require('./abbr');
+require('./abs');
+require('./acos');
+require('./asin');
+require('./atan');
+require('./bytes');
+require('./ceil');
+require('./chr');
+require('./cos');
+require('./exp');
+require('./floor');
+require('./format');
+require('./hex');
+require('./isEven');
+require('./isInteger');
+require('./isMultipleOf');
+require('./isOdd');
+require('./log');
+require('./metric');
+require('./ordinalize');
+require('./pad');
+require('./pow');
+require('./round');
+require('./sin');
+require('./sqrt');
+require('./tan');
+require('./times');
+require('./toNumber');
+
+// Accessors
+require('./getOption');
+require('./setOption');
+
+module.exports = require('sugar-core');
+},{"./abbr":455,"./abs":456,"./acos":457,"./asin":458,"./atan":459,"./bytes":461,"./ceil":463,"./chr":464,"./cos":466,"./exp":479,"./floor":480,"./format":481,"./getOption":482,"./hex":483,"./isEven":501,"./isInteger":502,"./isMultipleOf":503,"./isOdd":504,"./log":505,"./metric":506,"./ordinalize":537,"./pad":538,"./pow":539,"./random":540,"./round":542,"./setOption":553,"./sin":554,"./sqrt":555,"./tan":556,"./times":557,"./toNumber":558,"sugar-core":18}],495:[function(require,module,exports){
+'use strict';
+
+var commaSplit = require('../../common/internal/commaSplit'),
+    mathAliases = require('../../common/var/mathAliases'),
+    numberFormat = require('./numberFormat'),
+    withPrecision = require('../../common/internal/withPrecision');
+
+var abs = mathAliases.abs,
+    pow = mathAliases.pow,
+    min = mathAliases.min,
+    max = mathAliases.max,
+    floor = mathAliases.floor;
+
+function abbreviateNumber(num, precision, ustr, bytes) {
+  var fixed        = num.toFixed(20),
+      decimalPlace = fixed.search(/\./),
+      numeralPlace = fixed.search(/[1-9]/),
+      significant  = decimalPlace - numeralPlace,
+      units, unit, mid, i, divisor;
+  if (significant > 0) {
+    significant -= 1;
+  }
+  units = commaSplit(ustr);
+  if (units.length === 1) {
+    units = ustr.split('');
+  }
+  mid = units.indexOf('|');
+  if (mid === -1) {
+    // Skipping the placeholder means the units should start from zero,
+    // otherwise assume they end at zero.
+    mid = units[0] === '_' ? 0 : units.length;
+  }
+  i = max(min(floor(significant / 3), units.length - mid - 1), -mid);
+  unit = units[i + mid];
+  while (unit === '_') {
+    i += i < 0 ? -1 : 1;
+    unit = units[i + mid];
+  }
+  if (unit === '|') {
+    unit = '';
+  }
+  if (significant < -9) {
+    precision = abs(significant) - 9;
+  }
+  divisor = bytes ? pow(2, 10 * i) : pow(10, i * 3);
+  return numberFormat(withPrecision(num / divisor, precision || 0)) + unit;
+}
+
+module.exports = abbreviateNumber;
+},{"../../common/internal/commaSplit":113,"../../common/internal/withPrecision":178,"../../common/var/mathAliases":195,"./numberFormat":500}],496:[function(require,module,exports){
+'use strict';
+
+var namespaceAliases = require('../../common/var/namespaceAliases'),
+    defineInstanceSimilar = require('../../common/internal/defineInstanceSimilar');
+
+var sugarNumber = namespaceAliases.sugarNumber;
+
+function buildMathAliases() {
+  defineInstanceSimilar(sugarNumber, 'abs pow sin asin cos acos tan atan exp pow sqrt', function(methods, name) {
+    methods[name] = function(n, arg) {
+      // Note that .valueOf() here is only required due to a
+      // very strange bug in iOS7 that only occurs occasionally
+      // in which Math.abs() called on non-primitive numbers
+      // returns a completely different number (Issue #400)
+      return Math[name](n.valueOf(), arg);
+    };
   });
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('sv');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = buildMathAliases;
+},{"../../common/internal/defineInstanceSimilar":122,"../../common/var/namespaceAliases":197}],497:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('sv', {
-    'plural': true,
-    'months': 'januari,februari,mars,april,maj,juni,juli,augusti,september,oktober,november,december',
-    'weekdays': 'söndag|sondag,måndag:|en+mandag:|en,tisdag,onsdag,torsdag,fredag,lördag|lordag',
-    'units': 'millisekund:|er,sekund:|er,minut:|er,timm:e|ar,dag:|ar,veck:a|or|an,månad:|er|en+manad:|er|en,år:||et+ar:||et',
-    'numbers': 'en|ett,två|tva,tre,fyra,fem,sex,sju,åtta|atta,nio,tio',
-    'tokens': 'den,för|for',
-    'articles': 'den',
-    'short':'den {d} {month} {yyyy}',
-    'long': 'den {d} {month} {yyyy} {H}:{mm}',
-    'full': '{Weekday} den {d} {month} {yyyy} {H}:{mm}:{ss}',
-    'past': '{num} {unit} {sign}',
-    'future': '{sign} {num} {unit}',
-    'duration': '{num} {unit}',
-    'ampm': 'am,pm',
-    'modifiers': [
-      { 'name': 'day', 'src': 'förrgår|i förrgår|iförrgår|forrgar|i forrgar|iforrgar', 'value': -2 },
-      { 'name': 'day', 'src': 'går|i går|igår|gar|i gar|igar', 'value': -1 },
-      { 'name': 'day', 'src': 'dag|i dag|idag', 'value': 0 },
-      { 'name': 'day', 'src': 'morgon|i morgon|imorgon', 'value': 1 },
-      { 'name': 'day', 'src': 'över morgon|övermorgon|i över morgon|i övermorgon|iövermorgon|over morgon|overmorgon|i over morgon|i overmorgon|iovermorgon', 'value': 2 },
-      { 'name': 'sign', 'src': 'sedan|sen', 'value': -1 },
-      { 'name': 'sign', 'src': 'om', 'value':  1 },
-      { 'name': 'shift', 'src': 'i förra|förra|i forra|forra', 'value': -1 },
-      { 'name': 'shift', 'src': 'denna', 'value': 0 },
-      { 'name': 'shift', 'src': 'nästa|nasta', 'value': 1 }
-    ],
-    'dateParse': [
-      '{num} {unit} {sign}',
-      '{sign} {num} {unit}',
-      '{1?} {num} {unit} {sign}',
-      '{shift} {unit=5-7}'
-    ],
-    'timeParse': [
-      '{0?} {weekday?} {date?} {month} {year}',
-      '{date} {month}',
-      '{shift} {weekday}'
-    ]
+var withPrecision = require('../../common/internal/withPrecision');
+
+function createRoundingFunction(fn) {
+  return function(n, precision) {
+    return precision ? withPrecision(n, precision, fn) : fn(n);
+  };
+}
+
+module.exports = createRoundingFunction;
+},{"../../common/internal/withPrecision":178}],498:[function(require,module,exports){
+'use strict';
+
+function isInteger(n) {
+  return n % 1 === 0;
+}
+
+module.exports = isInteger;
+},{}],499:[function(require,module,exports){
+'use strict';
+
+function isMultipleOf(n1, n2) {
+  return n1 % n2 === 0;
+}
+
+module.exports = isMultipleOf;
+},{}],500:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    mathAliases = require('../../common/var/mathAliases'),
+    periodSplit = require('../../common/internal/periodSplit'),
+    repeatString = require('../../common/internal/repeatString'),
+    withPrecision = require('../../common/internal/withPrecision'),
+    _numberOptions = require('../var/_numberOptions');
+
+var isNumber = classChecks.isNumber,
+    max = mathAliases.max;
+
+function numberFormat(num, place) {
+  var result = '', thousands, decimal, fraction, integer, split, str;
+
+  decimal   = _numberOptions('decimal');
+  thousands = _numberOptions('thousands');
+
+  if (isNumber(place)) {
+    str = withPrecision(num, place || 0).toFixed(max(place, 0));
+  } else {
+    str = num.toString();
+  }
+
+  str = str.replace(/^-/, '');
+  split    = periodSplit(str);
+  integer  = split[0];
+  fraction = split[1];
+  if (/e/.test(str)) {
+    result = str;
+  } else {
+    for(var i = integer.length; i > 0; i -= 3) {
+      if (i < integer.length) {
+        result = thousands + result;
+      }
+      result = integer.slice(max(0, i - 3), i) + result;
+    }
+  }
+  if (fraction) {
+    result += decimal + repeatString('0', (place || 0) - fraction.length) + fraction;
+  }
+  return (num < 0 ? '-' : '') + result;
+}
+
+module.exports = numberFormat;
+},{"../../common/internal/periodSplit":163,"../../common/internal/repeatString":166,"../../common/internal/withPrecision":178,"../../common/var/classChecks":192,"../../common/var/mathAliases":195,"../var/_numberOptions":562}],501:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isMultipleOf = require('./internal/isMultipleOf');
+
+Sugar.Number.defineInstance({
+
+  'isEven': function(n) {
+    return isMultipleOf(n, 2);
+  }
+
+});
+
+module.exports = Sugar.Number.isEven;
+},{"./internal/isMultipleOf":499,"sugar-core":18}],502:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isInteger = require('./internal/isInteger');
+
+Sugar.Number.defineInstance({
+
+  'isInteger': function(n) {
+    return isInteger(n);
+  }
+
+});
+
+module.exports = Sugar.Number.isInteger;
+},{"./internal/isInteger":498,"sugar-core":18}],503:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isMultipleOf = require('./internal/isMultipleOf');
+
+Sugar.Number.defineInstance({
+
+  'isMultipleOf': function(n, num) {
+    return isMultipleOf(n, num);
+  }
+
+});
+
+module.exports = Sugar.Number.isMultipleOf;
+},{"./internal/isMultipleOf":499,"sugar-core":18}],504:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isInteger = require('./internal/isInteger'),
+    isMultipleOf = require('./internal/isMultipleOf');
+
+Sugar.Number.defineInstance({
+
+  'isOdd': function(n) {
+    return isInteger(n) && !isMultipleOf(n, 2);
+  }
+
+});
+
+module.exports = Sugar.Number.isOdd;
+},{"./internal/isInteger":498,"./internal/isMultipleOf":499,"sugar-core":18}],505:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.Number.defineInstance({
+
+  'log': function(n, base) {
+    return Math.log(n) / (base ? Math.log(base) : 1);
+  }
+
+});
+
+module.exports = Sugar.Number.log;
+},{"sugar-core":18}],506:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    AbbreviationUnits = require('./var/AbbreviationUnits'),
+    abbreviateNumber = require('./internal/abbreviateNumber');
+
+var METRIC_UNITS_SHORT = AbbreviationUnits.METRIC_UNITS_SHORT,
+    METRIC_UNITS_FULL = AbbreviationUnits.METRIC_UNITS_FULL;
+
+Sugar.Number.defineInstance({
+
+  'metric': function(n, precision, units) {
+    if (units === 'all') {
+      units = METRIC_UNITS_FULL;
+    } else if (!units) {
+      units = METRIC_UNITS_SHORT;
+    }
+    return abbreviateNumber(n, precision, units);
+  }
+
+});
+
+module.exports = Sugar.Number.metric;
+},{"./internal/abbreviateNumber":495,"./var/AbbreviationUnits":560,"sugar-core":18}],507:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.millisecond;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],508:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.millisecondAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],509:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.millisecondAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],510:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.millisecondBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],511:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.millisecondFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],512:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.milliseconds;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],513:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.millisecondsAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],514:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.millisecondsAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],515:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.millisecondsBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],516:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.millisecondsFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],517:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minute;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],518:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minuteAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],519:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minuteAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],520:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minuteBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],521:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minuteFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],522:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minutes;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],523:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minutesAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],524:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minutesAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],525:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minutesBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],526:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.minutesFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],527:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.month;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],528:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.monthAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],529:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.monthAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],530:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.monthBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],531:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.monthFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],532:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.months;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],533:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.monthsAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],534:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.monthsAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],535:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.monthsBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],536:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.monthsFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],537:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    mathAliases = require('../common/var/mathAliases'),
+    getOrdinalSuffix = require('../common/internal/getOrdinalSuffix');
+
+var abs = mathAliases.abs;
+
+Sugar.Number.defineInstance({
+
+  'ordinalize': function(n) {
+    var num = abs(n), last = +num.toString().slice(-2);
+    return n + getOrdinalSuffix(last);
+  }
+
+});
+
+module.exports = Sugar.Number.ordinalize;
+},{"../common/internal/getOrdinalSuffix":138,"../common/var/mathAliases":195,"sugar-core":18}],538:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    padNumber = require('../common/internal/padNumber');
+
+Sugar.Number.defineInstance({
+
+  'pad': function(n, place, sign, base) {
+    return padNumber(n, place, sign, base);
+  }
+
+});
+
+module.exports = Sugar.Number.pad;
+},{"../common/internal/padNumber":162,"sugar-core":18}],539:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.pow;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],540:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    trunc = require('../common/var/trunc'),
+    mathAliases = require('../common/var/mathAliases'),
+    isUndefined = require('../common/internal/isUndefined');
+
+var min = mathAliases.min,
+    max = mathAliases.max;
+
+Sugar.Number.defineStatic({
+
+  'random': function(n1, n2) {
+    var minNum, maxNum;
+    if (arguments.length == 1) n2 = n1, n1 = 0;
+    minNum = min(n1 || 0, isUndefined(n2) ? 1 : n2);
+    maxNum = max(n1 || 0, isUndefined(n2) ? 1 : n2) + 1;
+    return trunc((Math.random() * (maxNum - minNum)) + minNum);
+  }
+
+});
+
+module.exports = Sugar.Number.random;
+},{"../common/internal/isUndefined":155,"../common/var/mathAliases":195,"../common/var/trunc":198,"sugar-core":18}],541:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    PrimitiveRangeConstructor = require('../range/var/PrimitiveRangeConstructor');
+
+Sugar.Number.defineStatic({
+
+  'range': PrimitiveRangeConstructor
+
+});
+
+module.exports = Sugar.Number.range;
+},{"../range/var/PrimitiveRangeConstructor":718,"sugar-core":18}],542:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    mathAliases = require('../common/var/mathAliases'),
+    createRoundingFunction = require('./internal/createRoundingFunction');
+
+var round = mathAliases.round;
+
+Sugar.Number.defineInstance({
+
+  'round': createRoundingFunction(round)
+
+});
+
+module.exports = Sugar.Number.round;
+},{"../common/var/mathAliases":195,"./internal/createRoundingFunction":497,"sugar-core":18}],543:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.second;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],544:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.secondAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],545:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.secondAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],546:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.secondBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],547:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.secondFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],548:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.seconds;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],549:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.secondsAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],550:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.secondsAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],551:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.secondsBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],552:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.secondsFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],553:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    _numberOptions = require('./var/_numberOptions');
+
+module.exports = Sugar.Number.setOption;
+},{"./var/_numberOptions":562,"sugar-core":18}],554:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.sin;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],555:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.sqrt;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],556:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildMathAliasesCall');
+
+module.exports = Sugar.Number.tan;
+},{"./build/buildMathAliasesCall":460,"sugar-core":18}],557:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isDefined = require('../common/internal/isDefined');
+
+Sugar.Number.defineInstance({
+
+  'times': function(n, fn) {
+    var arr, result;
+    for(var i = 0; i < n; i++) {
+      result = fn.call(n, i);
+      if (isDefined(result)) {
+        if (!arr) {
+          arr = [];
+        }
+        arr.push(result);
+      }
+    }
+    return arr;
+  }
+
+});
+
+module.exports = Sugar.Number.times;
+},{"../common/internal/isDefined":149,"sugar-core":18}],558:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.Number.defineInstance({
+
+  'toNumber': function(n) {
+    return n.valueOf();
+  }
+
+});
+
+module.exports = Sugar.Number.toNumber;
+},{"sugar-core":18}],559:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    Range = require('../range/internal/Range'),
+    rangeEvery = require('../range/internal/rangeEvery');
+
+Sugar.Number.defineInstance({
+
+  'upto': function(n, num, step, fn) {
+    return rangeEvery(new Range(n, num), step, false, fn);
+  }
+
+});
+
+module.exports = Sugar.Number.upto;
+},{"../range/internal/Range":684,"../range/internal/rangeEvery":699,"sugar-core":18}],560:[function(require,module,exports){
+'use strict';
+
+module.exports = {
+  BASIC_UNITS: '|kmbt',
+  MEMORY_UNITS: '|KMGTPE',
+  MEMORY_BINARY_UNITS: '|,Ki,Mi,Gi,Ti,Pi,Ei',
+  METRIC_UNITS_SHORT: 'nμm|k',
+  METRIC_UNITS_FULL: 'yzafpnμm|KMGTPEZY'
+};
+},{}],561:[function(require,module,exports){
+'use strict';
+
+var CommonChars = require('../../common/var/CommonChars');
+
+var HALF_WIDTH_PERIOD = CommonChars.HALF_WIDTH_PERIOD,
+    HALF_WIDTH_COMMA = CommonChars.HALF_WIDTH_COMMA;
+
+var NUMBER_OPTIONS = {
+  'decimal': HALF_WIDTH_PERIOD,
+  'thousands': HALF_WIDTH_COMMA
+};
+
+module.exports = NUMBER_OPTIONS;
+},{"../../common/var/CommonChars":180}],562:[function(require,module,exports){
+'use strict';
+
+var NUMBER_OPTIONS = require('./NUMBER_OPTIONS'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    defineOptionsAccessor = require('../../common/internal/defineOptionsAccessor');
+
+var sugarNumber = namespaceAliases.sugarNumber;
+
+module.exports = defineOptionsAccessor(sugarNumber, NUMBER_OPTIONS);
+},{"../../common/internal/defineOptionsAccessor":124,"../../common/var/namespaceAliases":197,"./NUMBER_OPTIONS":561}],563:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.week;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],564:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.weekAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],565:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.weekAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],566:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.weekBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],567:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.weekFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],568:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.weeks;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],569:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.weeksAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],570:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.weeksAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],571:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.weeksBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],572:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.weeksFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],573:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.year;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],574:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.yearAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],575:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.yearAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],576:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.yearBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],577:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.yearFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],578:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.years;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],579:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.yearsAfter;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],580:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.yearsAgo;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],581:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.yearsBefore;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],582:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('../date/build/buildNumberUnitMethodsCall');
+
+module.exports = Sugar.Number.yearsFromNow;
+},{"../date/build/buildNumberUnitMethodsCall":215,"sugar-core":18}],583:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    clone = require('./internal/clone'),
+    mergeWithOptions = require('./internal/mergeWithOptions');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'add': function(obj1, obj2, opts) {
+    return mergeWithOptions(clone(obj1), obj2, opts);
+  }
+
+});
+
+module.exports = Sugar.Object.add;
+},{"./internal/clone":600,"./internal/mergeWithOptions":615,"sugar-core":18}],584:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    clone = require('./internal/clone'),
+    mergeAll = require('./internal/mergeAll');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'addAll': function(obj, sources, opts) {
+    return mergeAll(clone(obj), sources, opts);
+  }
+
+});
+
+module.exports = Sugar.Object.addAll;
+},{"./internal/clone":600,"./internal/mergeAll":613,"sugar-core":18}],585:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    average = require('../enumerable/internal/average');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'average': function(obj, map) {
+    return average(obj, map);
+  }
+
+});
+
+module.exports = Sugar.Object.average;
+},{"../enumerable/internal/average":408,"sugar-core":18}],586:[function(require,module,exports){
+'use strict';
+
+var buildClassCheckMethods = require('../internal/buildClassCheckMethods');
+
+buildClassCheckMethods();
+},{"../internal/buildClassCheckMethods":599}],587:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    clone = require('./internal/clone');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'clone': function(obj, deep) {
+    return clone(obj, deep);
+  }
+
+});
+
+module.exports = Sugar.Object.clone;
+},{"./internal/clone":600,"sugar-core":18}],588:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectCount = require('../enumerable/internal/objectCount');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'count': function(obj, f) {
+    return objectCount(obj, f);
+  }
+
+});
+
+module.exports = Sugar.Object.count;
+},{"../enumerable/internal/objectCount":419,"sugar-core":18}],589:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    defaults = require('./internal/defaults');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'defaults': function(target, sources, opts) {
+    return defaults(target, sources, opts);
+  }
+
+});
+
+module.exports = Sugar.Object.defaults;
+},{"./internal/defaults":601,"sugar-core":18}],590:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectMatchers = require('../enumerable/var/objectMatchers');
+
+var objectEvery = objectMatchers.objectEvery;
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'every': objectEvery
+
+});
+
+module.exports = Sugar.Object.every;
+},{"../enumerable/var/objectMatchers":431,"sugar-core":18}],591:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectExclude = require('./internal/objectExclude');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'exclude': function(obj, f) {
+    return objectExclude(obj, f);
+  }
+
+});
+
+module.exports = Sugar.Object.exclude;
+},{"./internal/objectExclude":616,"sugar-core":18}],592:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectFilter = require('../enumerable/internal/objectFilter');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'filter': function(obj, f) {
+    return objectFilter(obj, f);
+  }
+
+});
+
+module.exports = Sugar.Object.filter;
+},{"../enumerable/internal/objectFilter":420,"sugar-core":18}],593:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectMatchers = require('../enumerable/var/objectMatchers');
+
+var objectFind = objectMatchers.objectFind;
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'find': objectFind
+
+});
+
+module.exports = Sugar.Object.find;
+},{"../enumerable/var/objectMatchers":431,"sugar-core":18}],594:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectForEach = require('../enumerable/internal/objectForEach');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'forEach': function(obj, fn) {
+    return objectForEach(obj, fn);
+  }
+
+});
+
+module.exports = Sugar.Object.forEach;
+},{"../enumerable/internal/objectForEach":421,"sugar-core":18}],595:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    fromQueryStringWithOptions = require('./internal/fromQueryStringWithOptions');
+
+Sugar.Object.defineStatic({
+
+  'fromQueryString': function(obj, options) {
+    return fromQueryStringWithOptions(obj, options);
+  }
+
+});
+
+module.exports = Sugar.Object.fromQueryString;
+},{"./internal/fromQueryStringWithOptions":602,"sugar-core":18}],596:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    deepGetProperty = require('../common/internal/deepGetProperty');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'get': function(obj, key, any) {
+    return deepGetProperty(obj, key, any);
+  }
+
+});
+
+module.exports = Sugar.Object.get;
+},{"../common/internal/deepGetProperty":116,"sugar-core":18}],597:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    deepHasProperty = require('../common/internal/deepHasProperty');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'has': function(obj, key, any) {
+    return deepHasProperty(obj, key, any);
+  }
+
+});
+
+module.exports = Sugar.Object.has;
+},{"../common/internal/deepHasProperty":117,"sugar-core":18}],598:[function(require,module,exports){
+'use strict';
+
+// Static Methods
+require('./add');
+require('./addAll');
+require('./clone');
+require('./defaults');
+require('./exclude');
+require('./fromQueryString');
+require('./get');
+require('./has');
+require('./intersect');
+require('./invert');
+require('./isArguments');
+require('./isArray');
+require('./isBoolean');
+require('./isDate');
+require('./isEmpty');
+require('./isEqual');
+require('./isError');
+require('./isFunction');
+require('./isMap');
+require('./isNumber');
+require('./isObject');
+require('./isRegExp');
+require('./isSet');
+require('./isString');
+require('./merge');
+require('./mergeAll');
+require('./reject');
+require('./remove');
+require('./select');
+require('./set');
+require('./size');
+require('./subtract');
+require('./tap');
+require('./toQueryString');
+require('./values');
+
+// Instance Methods
+require('./keys');
+
+module.exports = require('sugar-core');
+},{"./add":583,"./addAll":584,"./clone":587,"./defaults":589,"./exclude":591,"./fromQueryString":595,"./get":596,"./has":597,"./intersect":632,"./invert":633,"./isArguments":634,"./isArray":635,"./isBoolean":636,"./isDate":637,"./isEmpty":638,"./isEqual":639,"./isError":640,"./isFunction":641,"./isMap":642,"./isNumber":643,"./isObject":644,"./isRegExp":645,"./isSet":646,"./isString":647,"./keys":648,"./merge":653,"./mergeAll":654,"./reject":659,"./remove":660,"./select":661,"./set":662,"./size":663,"./subtract":665,"./tap":667,"./toQueryString":668,"./values":669,"sugar-core":18}],599:[function(require,module,exports){
+'use strict';
+
+var NATIVE_TYPES = require('../../common/var/NATIVE_TYPES'),
+    classChecks = require('../../common/var/classChecks'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    defineInstanceAndStaticSimilar = require('../../common/internal/defineInstanceAndStaticSimilar');
+
+var isBoolean = classChecks.isBoolean,
+    isNumber = classChecks.isNumber,
+    isString = classChecks.isString,
+    isDate = classChecks.isDate,
+    isRegExp = classChecks.isRegExp,
+    isFunction = classChecks.isFunction,
+    isArray = classChecks.isArray,
+    isSet = classChecks.isSet,
+    isMap = classChecks.isMap,
+    isError = classChecks.isError,
+    sugarObject = namespaceAliases.sugarObject;
+
+function buildClassCheckMethods() {
+  var checks = [isBoolean, isNumber, isString, isDate, isRegExp, isFunction, isArray, isError, isSet, isMap];
+  defineInstanceAndStaticSimilar(sugarObject, NATIVE_TYPES, function(methods, name, i) {
+    methods['is' + name] = checks[i];
   });
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('zh-CN');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = buildClassCheckMethods;
+},{"../../common/internal/defineInstanceAndStaticSimilar":121,"../../common/var/NATIVE_TYPES":184,"../../common/var/classChecks":192,"../../common/var/namespaceAliases":197}],600:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('zh-CN', {
-    'variant': true,
-    'monthSuffix': '月',
-    'weekdays': '星期日|周日|星期天,星期一|周一,星期二|周二,星期三|周三,星期四|周四,星期五|周五,星期六|周六',
-    'units': '毫秒,秒钟,分钟,小时,天,个星期|周,个月,年',
-    'tokens': '日|号',
-    'short':'{yyyy}年{M}月{d}日',
-    'long': '{yyyy}年{M}月{d}日 {tt}{h}:{mm}',
-    'full': '{yyyy}年{M}月{d}日 {weekday} {tt}{h}:{mm}:{ss}',
-    'past': '{num}{unit}{sign}',
-    'future': '{num}{unit}{sign}',
-    'duration': '{num}{unit}',
-    'timeSuffixes': '点|时,分钟?,秒',
-    'ampm': '上午,下午',
-    'modifiers': [
-      { 'name': 'day', 'src': '大前天', 'value': -3 },
-      { 'name': 'day', 'src': '前天', 'value': -2 },
-      { 'name': 'day', 'src': '昨天', 'value': -1 },
-      { 'name': 'day', 'src': '今天', 'value': 0 },
-      { 'name': 'day', 'src': '明天', 'value': 1 },
-      { 'name': 'day', 'src': '后天', 'value': 2 },
-      { 'name': 'day', 'src': '大后天', 'value': 3 },
-      { 'name': 'sign', 'src': '前', 'value': -1 },
-      { 'name': 'sign', 'src': '后', 'value':  1 },
-      { 'name': 'shift', 'src': '上|去', 'value': -1 },
-      { 'name': 'shift', 'src': '这', 'value':  0 },
-      { 'name': 'shift', 'src': '下|明', 'value':  1 }
-    ],
-    'dateParse': [
-      '{num}{unit}{sign}',
-      '{shift}{unit=5-7}'
-    ],
-    'timeParse': [
-      '{shift}{weekday}',
-      '{year}年{month?}月?{date?}{0?}',
-      '{month}月{date?}{0?}',
-      '{date}[日号]'
-    ]
+var objectMerge = require('./objectMerge'),
+    getNewObjectForMerge = require('./getNewObjectForMerge');
+
+function clone(source, deep) {
+  var target = getNewObjectForMerge(source);
+  return objectMerge(target, source, deep, true, true, true);
+}
+
+module.exports = clone;
+},{"./getNewObjectForMerge":604,"./objectMerge":618}],601:[function(require,module,exports){
+'use strict';
+
+var mergeAll = require('./mergeAll');
+
+function defaults(target, sources, opts) {
+  opts = opts || {};
+  opts.resolve = opts.resolve || false;
+  return mergeAll(target, sources, opts);
+}
+
+module.exports = defaults;
+},{"./mergeAll":613}],602:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    parseQueryComponent = require('./parseQueryComponent');
+
+function fromQueryStringWithOptions(obj, opts) {
+  var str = String(obj || '').replace(/^.*?\?/, ''), result = {}, auto;
+  opts = opts || {};
+  if (str) {
+    forEach(str.split('&'), function(p) {
+      var split = p.split('=');
+      var key = decodeURIComponent(split[0]);
+      var val = split.length === 2 ? decodeURIComponent(split[1]) : '';
+      auto = opts.auto !== false;
+      parseQueryComponent(result, key, val, opts.deep, auto, opts.separator, opts.transform);
+    });
+  }
+  return result;
+}
+
+module.exports = fromQueryStringWithOptions;
+},{"../../common/internal/forEach":129,"./parseQueryComponent":624}],603:[function(require,module,exports){
+'use strict';
+
+var getKeys = require('../../common/internal/getKeys'),
+    coercePrimitiveToObject = require('../../common/internal/coercePrimitiveToObject');
+
+function getKeysWithObjectCoercion(obj) {
+  return getKeys(coercePrimitiveToObject(obj));
+}
+
+module.exports = getKeysWithObjectCoercion;
+},{"../../common/internal/coercePrimitiveToObject":111,"../../common/internal/getKeys":135}],604:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    isPrimitive = require('../../common/internal/isPrimitive'),
+    isPlainObject = require('../../common/internal/isPlainObject'),
+    getRegExpFlags = require('../../common/internal/getRegExpFlags'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var classToString = coreUtilityAliases.classToString,
+    isDate = classChecks.isDate,
+    isRegExp = classChecks.isRegExp,
+    isArray = classChecks.isArray;
+
+function getNewObjectForMerge(source) {
+  var klass = classToString(source);
+  // Primitive types, dates, and regexes have no "empty" state. If they exist
+  // at all, then they have an associated value. As we are only creating new
+  // objects when they don't exist in the target, these values can come alone
+  // for the ride when created.
+  if (isArray(source, klass)) {
+    return [];
+  } else if (isPlainObject(source, klass)) {
+    return {};
+  } else if (isDate(source, klass)) {
+    return new Date(source.getTime());
+  } else if (isRegExp(source, klass)) {
+    return RegExp(source.source, getRegExpFlags(source));
+  } else if (isPrimitive(source && source.valueOf())) {
+    return source;
+  }
+  // If the object is not of a known type, then simply merging its
+  // properties into a plain object will result in something different
+  // (it will not respond to instanceof operator etc). Similarly we don't
+  // want to call a constructor here as we can't know for sure what the
+  // original constructor was called with (Events etc), so throw an
+  // error here instead. Non-standard types can be handled if either they
+  // already exist and simply have their properties merged, if the merge
+  // is not deep so their references will simply be copied over, or if a
+  // resolve function is used to assist the merge.
+  throw new TypeError('Must be a basic data type');
+}
+
+module.exports = getNewObjectForMerge;
+},{"../../common/internal/getRegExpFlags":140,"../../common/internal/isPlainObject":152,"../../common/internal/isPrimitive":153,"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193}],605:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    stringIsDecimal = require('./stringIsDecimal'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var getOwn = coreUtilityAliases.getOwn,
+    isArray = classChecks.isArray;
+
+function getQueryValueAuto(obj, key, val) {
+  if (!val) {
+    return null;
+  } else if (val === 'true') {
+    return true;
+  } else if (val === 'false') {
+    return false;
+  }
+  var num = +val;
+  if (!isNaN(num) && stringIsDecimal(val)) {
+    return num;
+  }
+  var existing = getOwn(obj, key);
+  if (val && existing) {
+    return isArray(existing) ? existing.concat(val) : [existing, val];
+  }
+  return val;
+}
+
+module.exports = getQueryValueAuto;
+},{"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193,"./stringIsDecimal":628}],606:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    sanitizeURIComponent = require('./sanitizeURIComponent');
+
+var isDate = classChecks.isDate;
+
+function getURIComponentValue(obj, prefix, transform) {
+  var value;
+  if (transform) {
+    value = transform(obj, prefix);
+  } else if (isDate(obj)) {
+    value = obj.getTime();
+  } else {
+    value = obj;
+  }
+  return sanitizeURIComponent(prefix) + '=' + sanitizeURIComponent(value);
+}
+
+module.exports = getURIComponentValue;
+},{"../../common/var/classChecks":192,"./sanitizeURIComponent":625}],607:[function(require,module,exports){
+'use strict';
+
+var coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function getValues(obj) {
+  var values = [];
+  forEachProperty(obj, function(val) {
+    values.push(val);
   });
+  return values;
+}
 
-  /*
-   *
-   * Date.addLocale(<code>) adds this locale to Sugar.
-   * To set the locale globally, simply call:
-   *
-   * Date.setLocale('zh-TW');
-   *
-   * var locale = Date.getLocale(<code>) will return this object, which
-   * can be tweaked to change the behavior of parsing/formatting in the locales.
-   *
-   * locale.addFormat adds a date format (see this file for examples).
-   * Special tokens in the date format will be parsed out into regex tokens:
-   *
-   * {0} is a reference to an entry in locale.tokens. Output: (?:the)?
-   * {unit} is a reference to all units. Output: (day|week|month|...)
-   * {unit3} is a reference to a specific unit. Output: (hour)
-   * {unit3-5} is a reference to a subset of the units array. Output: (hour|day|week)
-   * {unit?} "?" makes that token optional. Output: (day|week|month)?
-   *
-   * {day} Any reference to tokens in the modifiers array will include all with the same name. Output: (yesterday|today|tomorrow)
-   *
-   * All spaces are optional and will be converted to "\s*"
-   *
-   * Locale arrays months, weekdays, units, numbers, as well as the "src" field for
-   * all entries in the modifiers array follow a special format indicated by a colon:
-   *
-   * minute:|s  = minute|minutes
-   * thicke:n|r = thicken|thicker
-   *
-   * Additionally in the months, weekdays, units, and numbers array these will be added at indexes that are multiples
-   * of the relevant number for retrieval. For example having "sunday:|s" in the units array will result in:
-   *
-   * units: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sundays']
-   *
-   * When matched, the index will be found using:
-   *
-   * units.indexOf(match) % 7;
-   *
-   * Resulting in the correct index with any number of alternates for that entry.
-   *
-   */
+module.exports = getValues;
+},{"../../common/var/coreUtilityAliases":193}],608:[function(require,module,exports){
+'use strict';
 
-  Date.addLocale('zh-TW', {
-    'monthSuffix': '月',
-    'weekdays': '星期日|週日|星期天,星期一|週一,星期二|週二,星期三|週三,星期四|週四,星期五|週五,星期六|週六',
-    'units': '毫秒,秒鐘,分鐘,小時,天,個星期|週,個月,年',
-    'tokens': '日|號',
-    'short':'{yyyy}年{M}月{d}日',
-    'long': '{yyyy}年{M}月{d}日 {tt}{h}:{mm}',
-    'full': '{yyyy}年{M}月{d}日 {Weekday} {tt}{h}:{mm}:{ss}',
-    'past': '{num}{unit}{sign}',
-    'future': '{num}{unit}{sign}',
-    'duration': '{num}{unit}',
-    'timeSuffixes': '點|時,分鐘?,秒',
-    'ampm': '上午,下午',
-    'modifiers': [
-      { 'name': 'day', 'src': '大前天', 'value': -3 },
-      { 'name': 'day', 'src': '前天', 'value': -2 },
-      { 'name': 'day', 'src': '昨天', 'value': -1 },
-      { 'name': 'day', 'src': '今天', 'value': 0 },
-      { 'name': 'day', 'src': '明天', 'value': 1 },
-      { 'name': 'day', 'src': '後天', 'value': 2 },
-      { 'name': 'day', 'src': '大後天', 'value': 3 },
-      { 'name': 'sign', 'src': '前', 'value': -1 },
-      { 'name': 'sign', 'src': '後', 'value': 1 },
-      { 'name': 'shift', 'src': '上|去', 'value': -1 },
-      { 'name': 'shift', 'src': '這', 'value':  0 },
-      { 'name': 'shift', 'src': '下|明', 'value':  1 }
-    ],
-    'dateParse': [
-      '{num}{unit}{sign}',
-      '{shift}{unit=5-7}'
-    ],
-    'timeParse': [
-      '{shift}{weekday}',
-      '{year}年{month?}月?{date?}{0?}',
-      '{month}月{date?}{0?}',
-      '{date}[日號]'
-    ]
+var hasProperty = require('../../common/internal/hasProperty'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var classToString = coreUtilityAliases.classToString;
+
+function isArguments(obj, className) {
+  className = className || classToString(obj);
+  // .callee exists on Arguments objects in < IE8
+  return hasProperty(obj, 'length') && (className === '[object Arguments]' || !!obj.callee);
+}
+
+module.exports = isArguments;
+},{"../../common/internal/hasProperty":144,"../../common/var/coreUtilityAliases":193}],609:[function(require,module,exports){
+'use strict';
+
+var getOwnPropertyDescriptor = require('../var/getOwnPropertyDescriptor');
+
+function iterateOverKeys(getFn, obj, fn, hidden) {
+  var keys = getFn(obj), desc;
+  for (var i = 0, key; key = keys[i]; i++) {
+    desc = getOwnPropertyDescriptor(obj, key);
+    if (desc.enumerable || hidden) {
+      fn(obj[key], key);
+    }
+  }
+}
+
+module.exports = iterateOverKeys;
+},{"../var/getOwnPropertyDescriptor":672}],610:[function(require,module,exports){
+'use strict';
+
+var iterateOverKeys = require('./iterateOverKeys'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases'),
+    getOwnPropertyNames = require('../var/getOwnPropertyNames'),
+    getOwnPropertySymbols = require('../var/getOwnPropertySymbols');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function iterateOverProperties(hidden, obj, fn) {
+  if (getOwnPropertyNames && hidden) {
+    iterateOverKeys(getOwnPropertyNames, obj, fn, hidden);
+  } else {
+    forEachProperty(obj, fn);
+  }
+  if (getOwnPropertySymbols) {
+    iterateOverKeys(getOwnPropertySymbols, obj, fn, hidden);
+  }
+}
+
+module.exports = iterateOverProperties;
+},{"../../common/var/coreUtilityAliases":193,"../var/getOwnPropertyNames":673,"../var/getOwnPropertySymbols":674,"./iterateOverKeys":609}],611:[function(require,module,exports){
+'use strict';
+
+function mapQuerySeparatorToKeys(key, separator) {
+  var split = key.split(separator), result = split[0];
+  for (var i = 1, len = split.length; i < len; i++) {
+    result += '[' + split[i] + ']';
+  }
+  return result;
+}
+
+module.exports = mapQuerySeparatorToKeys;
+},{}],612:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    isObjectType = require('../../common/internal/isObjectType');
+
+var isRegExp = classChecks.isRegExp;
+
+function matchInObject(match, key) {
+  if (isRegExp(match)) {
+    return match.test(key);
+  } else if (isObjectType(match)) {
+    return key in match;
+  } else {
+    return key === String(match);
+  }
+}
+
+module.exports = matchInObject;
+},{"../../common/internal/isObjectType":151,"../../common/var/classChecks":192}],613:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    classChecks = require('../../common/var/classChecks'),
+    mergeWithOptions = require('./mergeWithOptions');
+
+var isArray = classChecks.isArray;
+
+function mergeAll(target, sources, opts) {
+  if (!isArray(sources)) {
+    sources = [sources];
+  }
+  forEach(sources, function(source) {
+    return mergeWithOptions(target, source, opts);
   });
+  return target;
+}
 
+module.exports = mergeAll;
+},{"../../common/internal/forEach":129,"../../common/var/classChecks":192,"./mergeWithOptions":615}],614:[function(require,module,exports){
+'use strict';
 
-}).call(this);
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"buffer":24}],19:[function(require,module,exports){
+var isDefined = require('../../common/internal/isDefined'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases'),
+    getOwnPropertyDescriptor = require('../var/getOwnPropertyDescriptor');
+
+var defineProperty = coreUtilityAliases.defineProperty;
+
+function mergeByPropertyDescriptor(target, source, prop, sourceVal) {
+  var descriptor = getOwnPropertyDescriptor(source, prop);
+  if (isDefined(descriptor.value)) {
+    descriptor.value = sourceVal;
+  }
+  defineProperty(target, prop, descriptor);
+}
+
+module.exports = mergeByPropertyDescriptor;
+},{"../../common/internal/isDefined":149,"../../common/var/coreUtilityAliases":193,"../var/getOwnPropertyDescriptor":672}],615:[function(require,module,exports){
+'use strict';
+
+var objectMerge = require('./objectMerge');
+
+function mergeWithOptions(target, source, opts) {
+  opts = opts || {};
+  return objectMerge(target, source, opts.deep, opts.resolve, opts.hidden, opts.descriptor);
+}
+
+module.exports = mergeWithOptions;
+},{"./objectMerge":618}],616:[function(require,module,exports){
+'use strict';
+
+var getMatcher = require('../../common/internal/getMatcher'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function objectExclude(obj, f) {
+  var result = {};
+  var matcher = getMatcher(f);
+  forEachProperty(obj, function(val, key) {
+    if (!matcher(val, key, obj)) {
+      result[key] = val;
+    }
+  });
+  return result;
+}
+
+module.exports = objectExclude;
+},{"../../common/internal/getMatcher":136,"../../common/var/coreUtilityAliases":193}],617:[function(require,module,exports){
+'use strict';
+
+var isEqual = require('../../common/internal/isEqual'),
+    objectMerge = require('./objectMerge'),
+    isObjectType = require('../../common/internal/isObjectType'),
+    coercePrimitiveToObject = require('../../common/internal/coercePrimitiveToObject');
+
+function objectIntersectOrSubtract(obj1, obj2, subtract) {
+  if (!isObjectType(obj1)) {
+    return subtract ? obj1 : {};
+  }
+  obj2 = coercePrimitiveToObject(obj2);
+  function resolve(key, val, val1) {
+    var exists = key in obj2 && isEqual(val1, obj2[key]);
+    if (exists !== subtract) {
+      return val1;
+    }
+  }
+  return objectMerge({}, obj1, false, resolve);
+}
+
+module.exports = objectIntersectOrSubtract;
+},{"../../common/internal/coercePrimitiveToObject":111,"../../common/internal/isEqual":150,"../../common/internal/isObjectType":151,"./objectMerge":618}],618:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isDefined = require('../../common/internal/isDefined'),
+    classChecks = require('../../common/var/classChecks'),
+    isPrimitive = require('../../common/internal/isPrimitive'),
+    isUndefined = require('../../common/internal/isUndefined'),
+    isObjectType = require('../../common/internal/isObjectType'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases'),
+    getOwnPropertyNames = require('../var/getOwnPropertyNames'),
+    getNewObjectForMerge = require('./getNewObjectForMerge'),
+    iterateOverProperties = require('./iterateOverProperties'),
+    coercePrimitiveToObject = require('../../common/internal/coercePrimitiveToObject'),
+    mergeByPropertyDescriptor = require('./mergeByPropertyDescriptor');
+
+var isDate = classChecks.isDate,
+    isRegExp = classChecks.isRegExp,
+    isFunction = classChecks.isFunction,
+    getOwn = coreUtilityAliases.getOwn;
+
+function objectMerge(target, source, deep, resolve, hidden, descriptor) {
+  var resolveByFunction = isFunction(resolve), resolveConflicts = resolve !== false;
+
+  if (isUndefined(target)) {
+    target = getNewObjectForMerge(source);
+  } else if (resolveConflicts && isDate(target) && isDate(source)) {
+    // A date's timestamp is a property that can only be reached through its
+    // methods, so actively set it up front if both are dates.
+    target.setTime(source.getTime());
+  }
+
+  if (isPrimitive(target)) {
+    // Will not merge into a primitive type, so simply override.
+    return source;
+  }
+
+  // If the source object is a primitive
+  // type then coerce it into an object.
+  if (isPrimitive(source)) {
+    source = coercePrimitiveToObject(source);
+  }
+
+  iterateOverProperties(hidden, source, function(val, key) {
+    var sourceVal, targetVal, resolved, goDeep, result;
+
+    sourceVal = source[key];
+
+    // We are iterating over properties of the source, so hasOwnProperty on
+    // it is guaranteed to always be true. However, the target may happen to
+    // have properties in its prototype chain that should not be considered
+    // as conflicts.
+    targetVal = getOwn(target, key);
+
+    if (resolveByFunction) {
+      result = resolve(key, targetVal, sourceVal, target, source);
+      if (isUndefined(result)) {
+        // Result is undefined so do not merge this property.
+        return;
+      } else if (isDefined(result) && result !== Sugar) {
+        // If the source returns anything except undefined, then the conflict
+        // has been resolved, so don't continue traversing into the object. If
+        // the returned value is the Sugar global object, then allowing Sugar
+        // to resolve the conflict, so continue on.
+        sourceVal = result;
+        resolved = true;
+      }
+    } else if (isUndefined(sourceVal)) {
+      // Will not merge undefined.
+      return;
+    }
+
+    // Regex properties are read-only, so intentionally disallowing deep
+    // merging for now. Instead merge by reference even if deep.
+    goDeep = !resolved && deep && isObjectType(sourceVal) && !isRegExp(sourceVal);
+
+    if (!goDeep && !resolveConflicts && isDefined(targetVal)) {
+      return;
+    }
+
+    if (goDeep) {
+      sourceVal = objectMerge(targetVal, sourceVal, deep, resolve, hidden, descriptor);
+    }
+
+    // getOwnPropertyNames is standing in as
+    // a test for property descriptor support
+    if (getOwnPropertyNames && descriptor) {
+      mergeByPropertyDescriptor(target, source, key, sourceVal);
+    } else {
+      target[key] = sourceVal;
+    }
+
+  });
+  return target;
+}
+
+module.exports = objectMerge;
+},{"../../common/internal/coercePrimitiveToObject":111,"../../common/internal/isDefined":149,"../../common/internal/isObjectType":151,"../../common/internal/isPrimitive":153,"../../common/internal/isUndefined":155,"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193,"../var/getOwnPropertyNames":673,"./getNewObjectForMerge":604,"./iterateOverProperties":610,"./mergeByPropertyDescriptor":614,"sugar-core":18}],619:[function(require,module,exports){
+'use strict';
+
+var selectFromObject = require('./selectFromObject');
+
+function objectReject(obj, f) {
+  return selectFromObject(obj, f, false);
+}
+
+module.exports = objectReject;
+},{"./selectFromObject":626}],620:[function(require,module,exports){
+'use strict';
+
+var getMatcher = require('../../common/internal/getMatcher'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function objectRemove(obj, f) {
+  var matcher = getMatcher(f);
+  forEachProperty(obj, function(val, key) {
+    if (matcher(val, key, obj)) {
+      delete obj[key];
+    }
+  });
+  return obj;
+}
+
+module.exports = objectRemove;
+},{"../../common/internal/getMatcher":136,"../../common/var/coreUtilityAliases":193}],621:[function(require,module,exports){
+'use strict';
+
+var selectFromObject = require('./selectFromObject');
+
+function objectSelect(obj, f) {
+  return selectFromObject(obj, f, true);
+}
+
+module.exports = objectSelect;
+},{"./selectFromObject":626}],622:[function(require,module,exports){
+'use strict';
+
+var getKeysWithObjectCoercion = require('./getKeysWithObjectCoercion');
+
+function objectSize(obj) {
+  return getKeysWithObjectCoercion(obj).length;
+}
+
+module.exports = objectSize;
+},{"./getKeysWithObjectCoercion":603}],623:[function(require,module,exports){
+'use strict';
+
+var forEach = require('../../common/internal/forEach'),
+    setQueryProperty = require('./setQueryProperty'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var hasOwn = coreUtilityAliases.hasOwn,
+    getOwn = coreUtilityAliases.getOwn;
+
+function parseDeepQueryComponent(obj, match, val, deep, auto, separator, transform) {
+  var key = match[1];
+  var inner = match[2].slice(1, -1).split('][');
+  forEach(inner, function(k) {
+    if (!hasOwn(obj, key)) {
+      obj[key] = k ? {} : [];
+    }
+    obj = getOwn(obj, key);
+    key = k ? k : obj.length.toString();
+  });
+  setQueryProperty(obj, key, val, auto, transform);
+}
+
+module.exports = parseDeepQueryComponent;
+},{"../../common/internal/forEach":129,"../../common/var/coreUtilityAliases":193,"./setQueryProperty":627}],624:[function(require,module,exports){
+'use strict';
+
+var DEEP_QUERY_STRING_REG = require('../var/DEEP_QUERY_STRING_REG'),
+    setQueryProperty = require('./setQueryProperty'),
+    mapQuerySeparatorToKeys = require('./mapQuerySeparatorToKeys'),
+    parseDeepQueryComponent = require('./parseDeepQueryComponent');
+
+function parseQueryComponent(obj, key, val, deep, auto, separator, transform) {
+  var match;
+  if (separator) {
+    key = mapQuerySeparatorToKeys(key, separator);
+    deep = true;
+  }
+  if (deep === true && (match = key.match(DEEP_QUERY_STRING_REG))) {
+    parseDeepQueryComponent(obj, match, val, deep, auto, separator, transform);
+  } else {
+    setQueryProperty(obj, key, val, auto, transform);
+  }
+}
+
+module.exports = parseQueryComponent;
+},{"../var/DEEP_QUERY_STRING_REG":670,"./mapQuerySeparatorToKeys":611,"./parseDeepQueryComponent":623,"./setQueryProperty":627}],625:[function(require,module,exports){
+'use strict';
+
+function sanitizeURIComponent(obj) {
+  // undefined, null, and NaN are represented as a blank string,
+  // while false and 0 are stringified.
+  return !obj && obj !== false && obj !== 0 ? '' : encodeURIComponent(obj);
+}
+
+module.exports = sanitizeURIComponent;
+},{}],626:[function(require,module,exports){
+'use strict';
+
+var matchInObject = require('./matchInObject'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+function selectFromObject(obj, f, select) {
+  var match, result = {};
+  f = [].concat(f);
+  forEachProperty(obj, function(val, key) {
+    match = false;
+    for (var i = 0; i < f.length; i++) {
+      if (matchInObject(f[i], key)) {
+        match = true;
+      }
+    }
+    if (match === select) {
+      result[key] = val;
+    }
+  });
+  return result;
+}
+
+module.exports = selectFromObject;
+},{"../../common/var/coreUtilityAliases":193,"./matchInObject":612}],627:[function(require,module,exports){
+'use strict';
+
+var isDefined = require('../../common/internal/isDefined'),
+    getQueryValueAuto = require('./getQueryValueAuto');
+
+function setQueryProperty(obj, key, val, auto, transform) {
+  var fnValue;
+  if (transform) {
+    fnValue = transform(val, key, obj);
+  }
+  if (isDefined(fnValue)) {
+    val = fnValue;
+  } else if (auto) {
+    val = getQueryValueAuto(obj, key, val);
+  }
+  obj[key] = val;
+}
+
+module.exports = setQueryProperty;
+},{"../../common/internal/isDefined":149,"./getQueryValueAuto":605}],628:[function(require,module,exports){
+'use strict';
+
+var NON_DECIMAL_REG = require('../var/NON_DECIMAL_REG');
+
+function stringIsDecimal(str) {
+  return str !== '' && !NON_DECIMAL_REG.test(str);
+}
+
+module.exports = stringIsDecimal;
+},{"../var/NON_DECIMAL_REG":671}],629:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks');
+
+var isFunction = classChecks.isFunction;
+
+function tap(obj, arg) {
+  var fn = arg;
+  if (!isFunction(arg)) {
+    fn = function() {
+      if (arg) obj[arg]();
+    };
+  }
+  fn.call(obj, obj);
+  return obj;
+}
+
+module.exports = tap;
+},{"../../common/var/classChecks":192}],630:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    isObjectType = require('../../common/internal/isObjectType'),
+    internalToString = require('../var/internalToString'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases'),
+    getURIComponentValue = require('./getURIComponentValue'),
+    sanitizeURIComponent = require('./sanitizeURIComponent');
+
+var isArray = classChecks.isArray,
+    forEachProperty = coreUtilityAliases.forEachProperty;
+
+function toQueryString(obj, deep, transform, prefix, separator) {
+  if (isArray(obj)) {
+    return collectArrayAsQueryString(obj, deep, transform, prefix, separator);
+  } else if (isObjectType(obj) && obj.toString === internalToString) {
+    return collectObjectAsQueryString(obj, deep, transform, prefix, separator);
+  } else if (prefix) {
+    return getURIComponentValue(obj, prefix, transform);
+  }
+  return '';
+}
+
+function collectArrayAsQueryString(arr, deep, transform, prefix, separator) {
+  var el, qc, key, result = [];
+  // Intentionally treating sparse arrays as dense here by avoiding map,
+  // otherwise indexes will shift during the process of serialization.
+  for (var i = 0, len = arr.length; i < len; i++) {
+    el = arr[i];
+    key = prefix + (prefix && deep ? '[]' : '');
+    if (!key && !isObjectType(el)) {
+      // If there is no key, then the values of the array should be
+      // considered as null keys, so use them instead;
+      qc = sanitizeURIComponent(el);
+    } else {
+      qc = toQueryString(el, deep, transform, key, separator);
+    }
+    result.push(qc);
+  }
+  return result.join('&');
+}
+
+function collectObjectAsQueryString(obj, deep, transform, prefix, separator) {
+  var result = [];
+  forEachProperty(obj, function(val, key) {
+    var fullKey;
+    if (prefix && deep) {
+      fullKey = prefix + '[' + key + ']';
+    } else if (prefix) {
+      fullKey = prefix + separator + key;
+    } else {
+      fullKey = key;
+    }
+    result.push(toQueryString(val, deep, transform, fullKey, separator));
+  });
+  return result.join('&');
+}
+
+module.exports = toQueryString;
+},{"../../common/internal/isObjectType":151,"../../common/var/classChecks":192,"../../common/var/coreUtilityAliases":193,"../var/internalToString":675,"./getURIComponentValue":606,"./sanitizeURIComponent":625}],631:[function(require,module,exports){
+'use strict';
+
+var isUndefined = require('../../common/internal/isUndefined'),
+    toQueryString = require('./toQueryString');
+
+function toQueryStringWithOptions(obj, opts) {
+  opts = opts || {};
+  if (isUndefined(opts.separator)) {
+    opts.separator = '_';
+  }
+  return toQueryString(obj, opts.deep, opts.transform, opts.prefix || '', opts.separator);
+}
+
+module.exports = toQueryStringWithOptions;
+},{"../../common/internal/isUndefined":155,"./toQueryString":630}],632:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectIntersectOrSubtract = require('./internal/objectIntersectOrSubtract');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'intersect': function(obj1, obj2) {
+    return objectIntersectOrSubtract(obj1, obj2, false);
+  }
+
+});
+
+module.exports = Sugar.Object.intersect;
+},{"./internal/objectIntersectOrSubtract":617,"sugar-core":18}],633:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    coreUtilityAliases = require('../common/var/coreUtilityAliases');
+
+var hasOwn = coreUtilityAliases.hasOwn,
+    forEachProperty = coreUtilityAliases.forEachProperty;
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'invert': function(obj, multi) {
+    var result = {};
+    multi = multi === true;
+    forEachProperty(obj, function(val, key) {
+      if (hasOwn(result, val) && multi) {
+        result[val].push(key);
+      } else if (multi) {
+        result[val] = [key];
+      } else {
+        result[val] = key;
+      }
+    });
+    return result;
+  }
+
+});
+
+module.exports = Sugar.Object.invert;
+},{"../common/var/coreUtilityAliases":193,"sugar-core":18}],634:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isArguments = require('./internal/isArguments');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'isArguments': function(obj) {
+    return isArguments(obj);
+  }
+
+});
+
+module.exports = Sugar.Object.isArguments;
+},{"./internal/isArguments":608,"sugar-core":18}],635:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isArray;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],636:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isBoolean;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],637:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isDate;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],638:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectSize = require('./internal/objectSize');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'isEmpty': function(obj) {
+    return objectSize(obj) === 0;
+  }
+
+});
+
+module.exports = Sugar.Object.isEmpty;
+},{"./internal/objectSize":622,"sugar-core":18}],639:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isEqual = require('../common/internal/isEqual');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'isEqual': function(obj1, obj2) {
+    return isEqual(obj1, obj2);
+  }
+
+});
+
+module.exports = Sugar.Object.isEqual;
+},{"../common/internal/isEqual":150,"sugar-core":18}],640:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isError;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],641:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isFunction;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],642:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isMap;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],643:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isNumber;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],644:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isPlainObject = require('../common/internal/isPlainObject');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'isObject': function(obj) {
+    return isPlainObject(obj);
+  }
+
+});
+
+module.exports = Sugar.Object.isObject;
+},{"../common/internal/isPlainObject":152,"sugar-core":18}],645:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isRegExp;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],646:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isSet;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],647:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+require('./build/buildClassCheckMethodsCall');
+
+module.exports = Sugar.Object.isString;
+},{"./build/buildClassCheckMethodsCall":586,"sugar-core":18}],648:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getKeys = require('../common/internal/getKeys');
+
+Sugar.Object.defineInstance({
+
+  'keys': function(obj) {
+    return getKeys(obj);
+  }
+
+});
+
+module.exports = Sugar.Object.keys;
+},{"../common/internal/getKeys":135,"sugar-core":18}],649:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getLeastOrMost = require('../enumerable/internal/getLeastOrMost');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'least': function(obj, all, map) {
+    return getLeastOrMost(obj, all, map, false, true);
+  }
+
+});
+
+module.exports = Sugar.Object.least;
+},{"../enumerable/internal/getLeastOrMost":415,"sugar-core":18}],650:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectMap = require('../enumerable/internal/objectMap');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'map': function(obj, map) {
+    return objectMap(obj, map);
+  }
+
+});
+
+module.exports = Sugar.Object.map;
+},{"../enumerable/internal/objectMap":422,"sugar-core":18}],651:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getMinOrMax = require('../enumerable/internal/getMinOrMax');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'max': function(obj, all, map) {
+    return getMinOrMax(obj, all, map, true, true);
+  }
+
+});
+
+module.exports = Sugar.Object.max;
+},{"../enumerable/internal/getMinOrMax":416,"sugar-core":18}],652:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    median = require('../enumerable/internal/median');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'median': function(obj, map) {
+    return median(obj, map);
+  }
+
+});
+
+module.exports = Sugar.Object.median;
+},{"../enumerable/internal/median":418,"sugar-core":18}],653:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    mergeWithOptions = require('./internal/mergeWithOptions');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'merge': function(target, source, opts) {
+    return mergeWithOptions(target, source, opts);
+  }
+
+});
+
+module.exports = Sugar.Object.merge;
+},{"./internal/mergeWithOptions":615,"sugar-core":18}],654:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    mergeAll = require('./internal/mergeAll');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'mergeAll': function(target, sources, opts) {
+    return mergeAll(target, sources, opts);
+  }
+
+});
+
+module.exports = Sugar.Object.mergeAll;
+},{"./internal/mergeAll":613,"sugar-core":18}],655:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getMinOrMax = require('../enumerable/internal/getMinOrMax');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'min': function(obj, all, map) {
+    return getMinOrMax(obj, all, map, false, true);
+  }
+
+});
+
+module.exports = Sugar.Object.min;
+},{"../enumerable/internal/getMinOrMax":416,"sugar-core":18}],656:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getLeastOrMost = require('../enumerable/internal/getLeastOrMost');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'most': function(obj, all, map) {
+    return getLeastOrMost(obj, all, map, true, true);
+  }
+
+});
+
+module.exports = Sugar.Object.most;
+},{"../enumerable/internal/getLeastOrMost":415,"sugar-core":18}],657:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectNone = require('../enumerable/internal/objectNone');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'none': function(obj, f) {
+    return objectNone(obj, f);
+  }
+
+});
+
+module.exports = Sugar.Object.none;
+},{"../enumerable/internal/objectNone":423,"sugar-core":18}],658:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectReduce = require('../enumerable/internal/objectReduce');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'reduce': function(obj, fn, init) {
+    return objectReduce(obj, fn, init);
+  }
+
+});
+
+module.exports = Sugar.Object.reduce;
+},{"../enumerable/internal/objectReduce":424,"sugar-core":18}],659:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectReject = require('./internal/objectReject');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'reject': function(obj, f) {
+    return objectReject(obj, f);
+  }
+
+});
+
+module.exports = Sugar.Object.reject;
+},{"./internal/objectReject":619,"sugar-core":18}],660:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectRemove = require('./internal/objectRemove');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'remove': function(obj, f) {
+    return objectRemove(obj, f);
+  }
+
+});
+
+module.exports = Sugar.Object.remove;
+},{"./internal/objectRemove":620,"sugar-core":18}],661:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectSelect = require('./internal/objectSelect');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'select': function(obj, f) {
+    return objectSelect(obj, f);
+  }
+
+});
+
+module.exports = Sugar.Object.select;
+},{"./internal/objectSelect":621,"sugar-core":18}],662:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    deepSetProperty = require('../common/internal/deepSetProperty');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'set': function(obj, key, val) {
+    return deepSetProperty(obj, key, val);
+  }
+
+});
+
+module.exports = Sugar.Object.set;
+},{"../common/internal/deepSetProperty":118,"sugar-core":18}],663:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectSize = require('./internal/objectSize');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'size': function(obj) {
+    return objectSize(obj);
+  }
+
+});
+
+module.exports = Sugar.Object.size;
+},{"./internal/objectSize":622,"sugar-core":18}],664:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectMatchers = require('../enumerable/var/objectMatchers');
+
+var objectSome = objectMatchers.objectSome;
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'some': objectSome
+
+});
+
+module.exports = Sugar.Object.some;
+},{"../enumerable/var/objectMatchers":431,"sugar-core":18}],665:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    objectIntersectOrSubtract = require('./internal/objectIntersectOrSubtract');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'subtract': function(obj1, obj2) {
+    return objectIntersectOrSubtract(obj1, obj2, true);
+  }
+
+});
+
+module.exports = Sugar.Object.subtract;
+},{"./internal/objectIntersectOrSubtract":617,"sugar-core":18}],666:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    sum = require('../enumerable/internal/sum');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'sum': function(obj, map) {
+    return sum(obj, map);
+  }
+
+});
+
+module.exports = Sugar.Object.sum;
+},{"../enumerable/internal/sum":425,"sugar-core":18}],667:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    tap = require('./internal/tap');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'tap': function(obj, arg) {
+    return tap(obj, arg);
+  }
+
+});
+
+module.exports = Sugar.Object.tap;
+},{"./internal/tap":629,"sugar-core":18}],668:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    toQueryStringWithOptions = require('./internal/toQueryStringWithOptions');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'toQueryString': function(obj, options) {
+    return toQueryStringWithOptions(obj, options);
+  }
+
+});
+
+module.exports = Sugar.Object.toQueryString;
+},{"./internal/toQueryStringWithOptions":631,"sugar-core":18}],669:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getValues = require('./internal/getValues');
+
+Sugar.Object.defineInstanceAndStatic({
+
+  'values': function(obj) {
+    return getValues(obj);
+  }
+
+});
+
+module.exports = Sugar.Object.values;
+},{"./internal/getValues":607,"sugar-core":18}],670:[function(require,module,exports){
+'use strict';
+
+module.exports = /^(.+?)(\[.*\])$/;
+},{}],671:[function(require,module,exports){
+'use strict';
+
+module.exports = /[^\d.-]/;
+},{}],672:[function(require,module,exports){
+'use strict';
+
+module.exports = Object.getOwnPropertyDescriptor;
+},{}],673:[function(require,module,exports){
+'use strict';
+
+module.exports = Object.getOwnPropertyNames;
+},{}],674:[function(require,module,exports){
+'use strict';
+
+module.exports = Object.getOwnPropertySymbols;
+},{}],675:[function(require,module,exports){
+'use strict';
+
+module.exports = Object.prototype.toString;
+},{}],676:[function(require,module,exports){
+'use strict';
+
+var buildDateRangeUnits = require('../internal/buildDateRangeUnits');
+
+buildDateRangeUnits();
+},{"../internal/buildDateRangeUnits":685}],677:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    rangeClamp = require('./internal/rangeClamp'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype');
+
+defineOnPrototype(Range, {
+
+  'clamp': function(el) {
+    return rangeClamp(this, el);
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "clamp" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"./internal/Range":684,"./internal/rangeClamp":698}],678:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype');
+
+defineOnPrototype(Range, {
+
+  'clone': function() {
+    return new Range(this.start, this.end);
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "clone" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"./internal/Range":684}],679:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype');
+
+defineOnPrototype(Range, {
+
+  'contains': function(el) {
+    if (el == null) return false;
+    if (el.start && el.end) {
+      return el.start >= this.start && el.start <= this.end &&
+             el.end   >= this.start && el.end   <= this.end;
+    } else {
+      return el >= this.start && el <= this.end;
+    }
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "contains" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"./internal/Range":684}],680:[function(require,module,exports){
+'use strict';
+
+require('./build/buildDateRangeUnitsCall');
+
+// This package does not export anything as it is
+// simply defining "days" on Range.prototype.
+},{"./build/buildDateRangeUnitsCall":676}],681:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    rangeEvery = require('./internal/rangeEvery'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype');
+
+defineOnPrototype(Range, {
+
+  'every': function(amount, fn) {
+    return rangeEvery(this, amount, false, fn);
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "every" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"./internal/Range":684,"./internal/rangeEvery":699}],682:[function(require,module,exports){
+'use strict';
+
+require('./build/buildDateRangeUnitsCall');
+
+// This package does not export anything as it is
+// simply defining "hours" on Range.prototype.
+},{"./build/buildDateRangeUnitsCall":676}],683:[function(require,module,exports){
+'use strict';
+
+// Static Methods
+require('../date/range');
+require('../number/range');
+require('../string/range');
+
+// Instance Methods
+require('../number/cap');
+require('../number/clamp');
+require('../number/upto');
+
+// Prototype Methods
+require('./clamp');
+require('./clone');
+require('./contains');
+require('./days');
+require('./every');
+require('./hours');
+require('./intersect');
+require('./isValid');
+require('./milliseconds');
+require('./minutes');
+require('./months');
+require('./seconds');
+require('./span');
+require('./toArray');
+require('./toString');
+require('./union');
+require('./weeks');
+require('./years');
+
+// Aliases
+require('../number/downto');
+
+module.exports = require('sugar-core');
+},{"../date/range":360,"../number/cap":462,"../number/clamp":465,"../number/downto":477,"../number/range":541,"../number/upto":559,"../string/range":774,"./clamp":677,"./clone":678,"./contains":679,"./days":680,"./every":681,"./hours":682,"./intersect":702,"./isValid":703,"./milliseconds":704,"./minutes":705,"./months":706,"./seconds":707,"./span":708,"./toArray":709,"./toString":710,"./union":711,"./weeks":719,"./years":720,"sugar-core":18}],684:[function(require,module,exports){
+'use strict';
+
+var cloneRangeMember = require('./cloneRangeMember');
+
+function Range(start, end) {
+  this.start = cloneRangeMember(start);
+  this.end   = cloneRangeMember(end);
+}
+
+module.exports = Range;
+},{"./cloneRangeMember":686}],685:[function(require,module,exports){
+'use strict';
+
+var MULTIPLIERS = require('../var/MULTIPLIERS'),
+    DURATION_UNITS = require('../var/DURATION_UNITS'),
+    Range = require('./Range'),
+    trunc = require('../../common/var/trunc'),
+    forEach = require('../../common/internal/forEach'),
+    rangeEvery = require('./rangeEvery'),
+    simpleCapitalize = require('../../common/internal/simpleCapitalize'),
+    defineOnPrototype = require('../../common/internal/defineOnPrototype');
+
+function buildDateRangeUnits() {
+  var methods = {};
+  forEach(DURATION_UNITS.split('|'), function(unit, i) {
+    var name = unit + 's', mult, fn;
+    if (i < 4) {
+      fn = function() {
+        return rangeEvery(this, unit, true);
+      };
+    } else {
+      mult = MULTIPLIERS[simpleCapitalize(name)];
+      fn = function() {
+        return trunc((this.end - this.start) / mult);
+      };
+    }
+    methods[name] = fn;
+  });
+  defineOnPrototype(Range, methods);
+}
+
+module.exports = buildDateRangeUnits;
+},{"../../common/internal/defineOnPrototype":123,"../../common/internal/forEach":129,"../../common/internal/simpleCapitalize":171,"../../common/var/trunc":198,"../var/DURATION_UNITS":713,"../var/MULTIPLIERS":717,"./Range":684,"./rangeEvery":699}],686:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    getRangeMemberPrimitiveValue = require('./getRangeMemberPrimitiveValue');
+
+var isDate = classChecks.isDate;
+
+function cloneRangeMember(m) {
+  if (isDate(m)) {
+    return new Date(m.getTime());
+  } else {
+    return getRangeMemberPrimitiveValue(m);
+  }
+}
+
+module.exports = cloneRangeMember;
+},{"../../common/var/classChecks":192,"./getRangeMemberPrimitiveValue":693}],687:[function(require,module,exports){
+'use strict';
+
+var Range = require('./Range'),
+    DurationTextFormats = require('../var/DurationTextFormats'),
+    incrementDate = require('./incrementDate'),
+    getDateForRange = require('./getDateForRange'),
+    namespaceAliases = require('../../common/var/namespaceAliases'),
+    getDateIncrementObject = require('./getDateIncrementObject');
+
+var sugarDate = namespaceAliases.sugarDate,
+    RANGE_REG_FROM_TO = DurationTextFormats.RANGE_REG_FROM_TO,
+    RANGE_REG_REAR_DURATION = DurationTextFormats.RANGE_REG_REAR_DURATION,
+    RANGE_REG_FRONT_DURATION = DurationTextFormats.RANGE_REG_FRONT_DURATION;
+
+function createDateRangeFromString(str) {
+  var match, datetime, duration, dio, start, end;
+  if (sugarDate.get && (match = str.match(RANGE_REG_FROM_TO))) {
+    start = getDateForRange(match[1].replace('from', 'at'));
+    end = sugarDate.get(start, match[2]);
+    return new Range(start, end);
+  }
+  if (match = str.match(RANGE_REG_FRONT_DURATION)) {
+    duration = match[1];
+    datetime = match[2];
+  }
+  if (match = str.match(RANGE_REG_REAR_DURATION)) {
+    datetime = match[1];
+    duration = match[2];
+  }
+  if (datetime && duration) {
+    start = getDateForRange(datetime);
+    dio = getDateIncrementObject(duration);
+    end = incrementDate(start, dio[0], dio[1]);
+  } else {
+    start = str;
+  }
+  return new Range(getDateForRange(start), getDateForRange(end));
+}
+
+module.exports = createDateRangeFromString;
+},{"../../common/var/namespaceAliases":197,"../var/DurationTextFormats":715,"./Range":684,"./getDateForRange":688,"./getDateIncrementObject":689,"./incrementDate":694}],688:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    namespaceAliases = require('../../common/var/namespaceAliases');
+
+var isDate = classChecks.isDate,
+    sugarDate = namespaceAliases.sugarDate;
+
+function getDateForRange(d) {
+  if (isDate(d)) {
+    return d;
+  } else if (d == null) {
+    return new Date();
+  } else if (sugarDate.create) {
+    return sugarDate.create(d);
+  }
+  return new Date(d);
+}
+
+module.exports = getDateForRange;
+},{"../../common/var/classChecks":192,"../../common/var/namespaceAliases":197}],689:[function(require,module,exports){
+'use strict';
+
+var DURATION_REG = require('../var/DURATION_REG'),
+    classChecks = require('../../common/var/classChecks'),
+    simpleCapitalize = require('../../common/internal/simpleCapitalize');
+
+var isNumber = classChecks.isNumber;
+
+function getDateIncrementObject(amt) {
+  var match, val, unit;
+  if (isNumber(amt)) {
+    return [amt, 'Milliseconds'];
+  }
+  match = amt.match(DURATION_REG);
+  val = +match[1] || 1;
+  unit = simpleCapitalize(match[2].toLowerCase());
+  if (unit.match(/hour|minute|second/i)) {
+    unit += 's';
+  } else if (unit === 'Year') {
+    unit = 'FullYear';
+  } else if (unit === 'Week') {
+    unit = 'Date';
+    val *= 7;
+  } else if (unit === 'Day') {
+    unit = 'Date';
+  }
+  return [val, unit];
+}
+
+module.exports = getDateIncrementObject;
+},{"../../common/internal/simpleCapitalize":171,"../../common/var/classChecks":192,"../var/DURATION_REG":712}],690:[function(require,module,exports){
+'use strict';
+
+var mathAliases = require('../../common/var/mathAliases'),
+    getPrecision = require('./getPrecision');
+
+var max = mathAliases.max;
+
+function getGreaterPrecision(n1, n2) {
+  return max(getPrecision(n1), getPrecision(n2));
+}
+
+module.exports = getGreaterPrecision;
+},{"../../common/var/mathAliases":195,"./getPrecision":691}],691:[function(require,module,exports){
+'use strict';
+
+var periodSplit = require('../../common/internal/periodSplit');
+
+function getPrecision(n) {
+  var split = periodSplit(n.toString());
+  return split[1] ? split[1].length : 0;
+}
+
+module.exports = getPrecision;
+},{"../../common/internal/periodSplit":163}],692:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks');
+
+var isString = classChecks.isString;
+
+function getRangeMemberNumericValue(m) {
+  return isString(m) ? m.charCodeAt(0) : m;
+}
+
+module.exports = getRangeMemberNumericValue;
+},{"../../common/var/classChecks":192}],693:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks');
+
+var isDate = classChecks.isDate;
+
+function getRangeMemberPrimitiveValue(m) {
+  if (m == null) return m;
+  return isDate(m) ? m.getTime() : m.valueOf();
+}
+
+module.exports = getRangeMemberPrimitiveValue;
+},{"../../common/var/classChecks":192}],694:[function(require,module,exports){
+'use strict';
+
+var MULTIPLIERS = require('../var/MULTIPLIERS'),
+    callDateSet = require('../../common/internal/callDateSet'),
+    callDateGet = require('../../common/internal/callDateGet');
+
+function incrementDate(src, amount, unit) {
+  var mult = MULTIPLIERS[unit], d;
+  if (mult) {
+    d = new Date(src.getTime() + (amount * mult));
+  } else {
+    d = new Date(src);
+    callDateSet(d, unit, callDateGet(src, unit) + amount);
+  }
+  return d;
+}
+
+module.exports = incrementDate;
+},{"../../common/internal/callDateGet":108,"../../common/internal/callDateSet":109,"../var/MULTIPLIERS":717}],695:[function(require,module,exports){
+'use strict';
+
+var withPrecision = require('../../common/internal/withPrecision');
+
+function incrementNumber(current, amount, precision) {
+  return withPrecision(current + amount, precision);
+}
+
+module.exports = incrementNumber;
+},{"../../common/internal/withPrecision":178}],696:[function(require,module,exports){
+'use strict';
+
+var chr = require('../../common/var/chr');
+
+function incrementString(current, amount) {
+  return chr(current.charCodeAt(0) + amount);
+}
+
+module.exports = incrementString;
+},{"../../common/var/chr":191}],697:[function(require,module,exports){
+'use strict';
+
+var valueIsNotInfinite = require('./valueIsNotInfinite'),
+    getRangeMemberPrimitiveValue = require('./getRangeMemberPrimitiveValue');
+
+function isValidRangeMember(m) {
+  var val = getRangeMemberPrimitiveValue(m);
+  return (!!val || val === 0) && valueIsNotInfinite(m);
+}
+
+module.exports = isValidRangeMember;
+},{"./getRangeMemberPrimitiveValue":693,"./valueIsNotInfinite":701}],698:[function(require,module,exports){
+'use strict';
+
+var cloneRangeMember = require('./cloneRangeMember');
+
+function rangeClamp(range, obj) {
+  var clamped,
+      start = range.start,
+      end = range.end,
+      min = end < start ? end : start,
+      max = start > end ? start : end;
+  if (obj < min) {
+    clamped = min;
+  } else if (obj > max) {
+    clamped = max;
+  } else {
+    clamped = obj;
+  }
+  return cloneRangeMember(clamped);
+}
+
+module.exports = rangeClamp;
+},{"./cloneRangeMember":686}],699:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    rangeIsValid = require('./rangeIsValid'),
+    incrementDate = require('./incrementDate'),
+    incrementNumber = require('./incrementNumber'),
+    incrementString = require('./incrementString'),
+    getGreaterPrecision = require('./getGreaterPrecision'),
+    getDateIncrementObject = require('./getDateIncrementObject');
+
+var isNumber = classChecks.isNumber,
+    isString = classChecks.isString,
+    isDate = classChecks.isDate,
+    isFunction = classChecks.isFunction;
+
+function rangeEvery(range, step, countOnly, fn) {
+  var increment,
+      precision,
+      dio,
+      unit,
+      start   = range.start,
+      end     = range.end,
+      inverse = end < start,
+      current = start,
+      index   = 0,
+      result  = [];
+
+  if (!rangeIsValid(range)) {
+    return countOnly ? NaN : [];
+  }
+  if (isFunction(step)) {
+    fn = step;
+    step = null;
+  }
+  step = step || 1;
+  if (isNumber(start)) {
+    precision = getGreaterPrecision(start, step);
+    increment = function() {
+      return incrementNumber(current, step, precision);
+    };
+  } else if (isString(start)) {
+    increment = function() {
+      return incrementString(current, step);
+    };
+  } else if (isDate(start)) {
+    dio  = getDateIncrementObject(step);
+    step = dio[0];
+    unit = dio[1];
+    increment = function() {
+      return incrementDate(current, step, unit);
+    };
+  }
+  // Avoiding infinite loops
+  if (inverse && step > 0) {
+    step *= -1;
+  }
+  while(inverse ? current >= end : current <= end) {
+    if (!countOnly) {
+      result.push(current);
+    }
+    if (fn) {
+      fn(current, index, range);
+    }
+    current = increment();
+    index++;
+  }
+  return countOnly ? index - 1 : result;
+}
+
+module.exports = rangeEvery;
+},{"../../common/var/classChecks":192,"./getDateIncrementObject":689,"./getGreaterPrecision":690,"./incrementDate":694,"./incrementNumber":695,"./incrementString":696,"./rangeIsValid":700}],700:[function(require,module,exports){
+'use strict';
+
+var isValidRangeMember = require('./isValidRangeMember');
+
+function rangeIsValid(range) {
+  return isValidRangeMember(range.start) &&
+         isValidRangeMember(range.end) &&
+         typeof range.start === typeof range.end;
+}
+
+module.exports = rangeIsValid;
+},{"./isValidRangeMember":697}],701:[function(require,module,exports){
+'use strict';
+
+function valueIsNotInfinite(m) {
+  return m !== -Infinity && m !== Infinity;
+}
+
+module.exports = valueIsNotInfinite;
+},{}],702:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype');
+
+defineOnPrototype(Range, {
+
+  'intersect': function(range) {
+    if (range.start > this.end || range.end < this.start) {
+      return new Range(NaN, NaN);
+    }
+    return new Range(
+      this.start > range.start ? this.start : range.start,
+      this.end   < range.end   ? this.end   : range.end
+    );
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "intersect" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"./internal/Range":684}],703:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    rangeIsValid = require('./internal/rangeIsValid'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype');
+
+defineOnPrototype(Range, {
+
+  'isValid': function() {
+    return rangeIsValid(this);
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "isValid" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"./internal/Range":684,"./internal/rangeIsValid":700}],704:[function(require,module,exports){
+'use strict';
+
+require('./build/buildDateRangeUnitsCall');
+
+// This package does not export anything as it is
+// simply defining "milliseconds" on Range.prototype.
+},{"./build/buildDateRangeUnitsCall":676}],705:[function(require,module,exports){
+'use strict';
+
+require('./build/buildDateRangeUnitsCall');
+
+// This package does not export anything as it is
+// simply defining "minutes" on Range.prototype.
+},{"./build/buildDateRangeUnitsCall":676}],706:[function(require,module,exports){
+'use strict';
+
+require('./build/buildDateRangeUnitsCall');
+
+// This package does not export anything as it is
+// simply defining "months" on Range.prototype.
+},{"./build/buildDateRangeUnitsCall":676}],707:[function(require,module,exports){
+'use strict';
+
+require('./build/buildDateRangeUnitsCall');
+
+// This package does not export anything as it is
+// simply defining "seconds" on Range.prototype.
+},{"./build/buildDateRangeUnitsCall":676}],708:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    mathAliases = require('../common/var/mathAliases'),
+    rangeIsValid = require('./internal/rangeIsValid'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype'),
+    getRangeMemberNumericValue = require('./internal/getRangeMemberNumericValue');
+
+var abs = mathAliases.abs;
+
+defineOnPrototype(Range, {
+
+  'span': function() {
+    var n = getRangeMemberNumericValue(this.end) - getRangeMemberNumericValue(this.start);
+    return rangeIsValid(this) ? abs(n) + 1 : NaN;
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "span" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"../common/var/mathAliases":195,"./internal/Range":684,"./internal/getRangeMemberNumericValue":692,"./internal/rangeIsValid":700}],709:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    rangeEvery = require('./internal/rangeEvery'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype');
+
+defineOnPrototype(Range, {
+
+  'toArray': function() {
+    return rangeEvery(this);
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "toArray" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"./internal/Range":684,"./internal/rangeEvery":699}],710:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    rangeIsValid = require('./internal/rangeIsValid'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype');
+
+defineOnPrototype(Range, {
+
+  'toString': function() {
+    return rangeIsValid(this) ? this.start + '..' + this.end : 'Invalid Range';
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "toString" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"./internal/Range":684,"./internal/rangeIsValid":700}],711:[function(require,module,exports){
+'use strict';
+
+var Range = require('./internal/Range'),
+    defineOnPrototype = require('../common/internal/defineOnPrototype');
+
+defineOnPrototype(Range, {
+
+  'union': function(range) {
+    return new Range(
+      this.start < range.start ? this.start : range.start,
+      this.end   > range.end   ? this.end   : range.end
+    );
+  }
+
+});
+
+// This package does not export anything as it is
+// simply defining "union" on Range.prototype.
+},{"../common/internal/defineOnPrototype":123,"./internal/Range":684}],712:[function(require,module,exports){
+'use strict';
+
+var DURATION_UNITS = require('./DURATION_UNITS');
+
+module.exports = RegExp('(\\d+)?\\s*('+ DURATION_UNITS +')s?', 'i');
+},{"./DURATION_UNITS":713}],713:[function(require,module,exports){
+'use strict';
+
+module.exports = 'year|month|week|day|hour|minute|second|millisecond';
+},{}],714:[function(require,module,exports){
+'use strict';
+
+var Range = require('../internal/Range'),
+    classChecks = require('../../common/var/classChecks'),
+    getDateForRange = require('../internal/getDateForRange'),
+    createDateRangeFromString = require('../internal/createDateRangeFromString');
+
+var isString = classChecks.isString;
+
+var DateRangeConstructor = function(start, end) {
+  if (arguments.length === 1 && isString(start)) {
+    return createDateRangeFromString(start);
+  }
+  return new Range(getDateForRange(start), getDateForRange(end));
+};
+
+module.exports = DateRangeConstructor;
+},{"../../common/var/classChecks":192,"../internal/Range":684,"../internal/createDateRangeFromString":687,"../internal/getDateForRange":688}],715:[function(require,module,exports){
+'use strict';
+
+var FULL_CAPTURED_DURATION = require('./FULL_CAPTURED_DURATION');
+
+module.exports = {
+  RANGE_REG_FROM_TO: /(?:from)?\s*(.+)\s+(?:to|until)\s+(.+)$/i,
+  RANGE_REG_REAR_DURATION: RegExp('(.+)\\s*for\\s*' + FULL_CAPTURED_DURATION, 'i'),
+  RANGE_REG_FRONT_DURATION: RegExp('(?:for)?\\s*'+ FULL_CAPTURED_DURATION +'\\s*(?:starting)?\\s(?:at\\s)?(.+)', 'i')
+};
+},{"./FULL_CAPTURED_DURATION":716}],716:[function(require,module,exports){
+'use strict';
+
+var DURATION_UNITS = require('./DURATION_UNITS');
+
+module.exports = '((?:\\d+)?\\s*(?:' + DURATION_UNITS + '))s?';
+},{"./DURATION_UNITS":713}],717:[function(require,module,exports){
+'use strict';
+
+var MULTIPLIERS = {
+  'Hours': 60 * 60 * 1000,
+  'Minutes': 60 * 1000,
+  'Seconds': 1000,
+  'Milliseconds': 1
+};
+
+module.exports = MULTIPLIERS;
+},{}],718:[function(require,module,exports){
+'use strict';
+
+var Range = require('../internal/Range');
+
+var PrimitiveRangeConstructor = function(start, end) {
+  return new Range(start, end);
+};
+
+module.exports = PrimitiveRangeConstructor;
+},{"../internal/Range":684}],719:[function(require,module,exports){
+'use strict';
+
+require('./build/buildDateRangeUnitsCall');
+
+// This package does not export anything as it is
+// simply defining "weeks" on Range.prototype.
+},{"./build/buildDateRangeUnitsCall":676}],720:[function(require,module,exports){
+'use strict';
+
+require('./build/buildDateRangeUnitsCall');
+
+// This package does not export anything as it is
+// simply defining "years" on Range.prototype.
+},{"./build/buildDateRangeUnitsCall":676}],721:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getRegExpFlags = require('../common/internal/getRegExpFlags');
+
+Sugar.RegExp.defineInstance({
+
+  'addFlags': function(r, flags) {
+    return RegExp(r.source, getRegExpFlags(r, flags));
+  }
+
+});
+
+module.exports = Sugar.RegExp.addFlags;
+},{"../common/internal/getRegExpFlags":140,"sugar-core":18}],722:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    escapeRegExp = require('../common/internal/escapeRegExp');
+
+Sugar.RegExp.defineStatic({
+
+  'escape': function(str) {
+    return escapeRegExp(str);
+  }
+
+});
+
+module.exports = Sugar.RegExp.escape;
+},{"../common/internal/escapeRegExp":126,"sugar-core":18}],723:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getRegExpFlags = require('../common/internal/getRegExpFlags');
+
+Sugar.RegExp.defineInstance({
+
+  'getFlags': function(r) {
+    return getRegExpFlags(r);
+  }
+
+});
+
+module.exports = Sugar.RegExp.getFlags;
+},{"../common/internal/getRegExpFlags":140,"sugar-core":18}],724:[function(require,module,exports){
+'use strict';
+
+// Static Methods
+require('./escape');
+
+// Instance Methods
+require('./addFlags');
+require('./getFlags');
+require('./removeFlags');
+require('./setFlags');
+
+module.exports = require('sugar-core');
+},{"./addFlags":721,"./escape":722,"./getFlags":723,"./removeFlags":725,"./setFlags":726,"sugar-core":18}],725:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    allCharsReg = require('../common/internal/allCharsReg'),
+    getRegExpFlags = require('../common/internal/getRegExpFlags');
+
+Sugar.RegExp.defineInstance({
+
+  'removeFlags': function(r, flags) {
+    var reg = allCharsReg(flags);
+    return RegExp(r.source, getRegExpFlags(r).replace(reg, ''));
+  }
+
+});
+
+module.exports = Sugar.RegExp.removeFlags;
+},{"../common/internal/allCharsReg":103,"../common/internal/getRegExpFlags":140,"sugar-core":18}],726:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.RegExp.defineInstance({
+
+  'setFlags': function(r, flags) {
+    return RegExp(r.source, flags);
+  }
+
+});
+
+module.exports = Sugar.RegExp.setFlags;
+},{"sugar-core":18}],727:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    getEntriesForIndexes = require('../common/internal/getEntriesForIndexes');
+
+Sugar.String.defineInstance({
+
+  'at': function(str, index, loop) {
+    return getEntriesForIndexes(str, index, loop, true);
+  }
+
+});
+
+module.exports = Sugar.String.at;
+},{"../common/internal/getEntriesForIndexes":133,"sugar-core":18}],728:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringCamelize = require('./internal/stringCamelize');
+
+Sugar.String.defineInstance({
+
+  'camelize': function(str, upper) {
+    return stringCamelize(str, upper);
+  }
+
+});
+
+module.exports = Sugar.String.camelize;
+},{"./internal/stringCamelize":753,"sugar-core":18}],729:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringCapitalize = require('./internal/stringCapitalize');
+
+Sugar.String.defineInstance({
+
+  'capitalize': function(str, lower, all) {
+    return stringCapitalize(str, lower, all);
+  }
+
+});
+
+module.exports = Sugar.String.capitalize;
+},{"./internal/stringCapitalize":754,"sugar-core":18}],730:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringEach = require('./internal/stringEach');
+
+Sugar.String.defineInstance({
+
+  'chars': function(str, search, fn) {
+    return stringEach(str, search, fn);
+  }
+
+});
+
+module.exports = Sugar.String.chars;
+},{"./internal/stringEach":756,"sugar-core":18}],731:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringCodes = require('./internal/stringCodes');
+
+Sugar.String.defineInstance({
+
+  'codes': function(str, fn) {
+    return stringCodes(str, fn);
+  }
+
+});
+
+module.exports = Sugar.String.codes;
+},{"./internal/stringCodes":755,"sugar-core":18}],732:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    trim = require('../common/internal/trim');
+
+Sugar.String.defineInstance({
+
+  'compact': function(str) {
+    return trim(str).replace(/([\r\n\s　])+/g, function(match, whitespace) {
+      return whitespace === '　' ? whitespace : ' ';
+    });
+  }
+
+});
+
+module.exports = Sugar.String.compact;
+},{"../common/internal/trim":177,"sugar-core":18}],733:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringUnderscore = require('./internal/stringUnderscore');
+
+Sugar.String.defineInstance({
+
+  'dasherize': function(str) {
+    return stringUnderscore(str).replace(/_/g, '-');
+  }
+
+});
+
+module.exports = Sugar.String.dasherize;
+},{"./internal/stringUnderscore":761,"sugar-core":18}],734:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    base64 = require('./var/base64');
+
+var decodeBase64 = base64.decodeBase64;
+
+Sugar.String.defineInstance({
+
+  'decodeBase64': function(str) {
+    return decodeBase64(str);
+  }
+
+});
+
+module.exports = Sugar.String.decodeBase64;
+},{"./var/base64":805,"sugar-core":18}],735:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    base64 = require('./var/base64');
+
+var encodeBase64 = base64.encodeBase64;
+
+Sugar.String.defineInstance({
+
+  'encodeBase64': function(str) {
+    return encodeBase64(str);
+  }
+
+});
+
+module.exports = Sugar.String.encodeBase64;
+},{"./var/base64":805,"sugar-core":18}],736:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    HTML_ESCAPE_REG = require('./var/HTML_ESCAPE_REG'),
+    HTMLToEntityMap = require('./var/HTMLToEntityMap'),
+    coreUtilityAliases = require('../common/var/coreUtilityAliases');
+
+var getOwn = coreUtilityAliases.getOwn;
+
+Sugar.String.defineInstance({
+
+  'escapeHTML': function(str) {
+    return str.replace(HTML_ESCAPE_REG, function(chr) {
+      return getOwn(HTMLToEntityMap, chr);
+    });
+  }
+
+});
+
+module.exports = Sugar.String.escapeHTML;
+},{"../common/var/coreUtilityAliases":193,"./var/HTMLToEntityMap":797,"./var/HTML_ESCAPE_REG":799,"sugar-core":18}],737:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.String.defineInstance({
+
+  'escapeURL': function(str, param) {
+    return param ? encodeURIComponent(str) : encodeURI(str);
+  }
+
+});
+
+module.exports = Sugar.String.escapeURL;
+},{"sugar-core":18}],738:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUndefined = require('../common/internal/isUndefined');
+
+Sugar.String.defineInstance({
+
+  'first': function(str, num) {
+    if (isUndefined(num)) num = 1;
+    return str.substr(0, num);
+  }
+
+});
+
+module.exports = Sugar.String.first;
+},{"../common/internal/isUndefined":155,"sugar-core":18}],739:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringEach = require('./internal/stringEach');
+
+Sugar.String.defineInstance({
+
+  'forEach': function(str, search, fn) {
+    return stringEach(str, search, fn);
+  }
+
+});
+
+module.exports = Sugar.String.forEach;
+},{"./internal/stringEach":756,"sugar-core":18}],740:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isObjectType = require('../common/internal/isObjectType'),
+    stringFormatMatcher = require('./var/stringFormatMatcher');
+
+Sugar.String.defineInstanceWithArguments({
+
+  'format': function(str, args) {
+    var arg1 = args[0] && args[0].valueOf();
+    // Unwrap if a single object is passed in.
+    if (args.length === 1 && isObjectType(arg1)) {
+      args = arg1;
+    }
+    return stringFormatMatcher(str, args);
+  }
+
+});
+
+module.exports = Sugar.String.format;
+},{"../common/internal/isObjectType":151,"./var/stringFormatMatcher":807,"sugar-core":18}],741:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    numberOrIndex = require('./internal/numberOrIndex');
+
+Sugar.String.defineInstance({
+
+  'from': function(str, from) {
+    return str.slice(numberOrIndex(str, from, true));
+  }
+
+});
+
+module.exports = Sugar.String.from;
+},{"./internal/numberOrIndex":747,"sugar-core":18}],742:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    ENHANCEMENTS_FLAG = require('../common/var/ENHANCEMENTS_FLAG'),
+    STRING_ENHANCEMENTS_FLAG = require('./var/STRING_ENHANCEMENTS_FLAG'),
+    fixArgumentLength = require('../common/internal/fixArgumentLength'),
+    callIncludesWithRegexSupport = require('./internal/callIncludesWithRegexSupport');
+
+Sugar.String.defineInstance({
+
+  'includes': fixArgumentLength(callIncludesWithRegexSupport)
+
+}, [ENHANCEMENTS_FLAG, STRING_ENHANCEMENTS_FLAG]);
+
+module.exports = Sugar.String.includes;
+},{"../common/internal/fixArgumentLength":128,"../common/var/ENHANCEMENTS_FLAG":181,"./internal/callIncludesWithRegexSupport":745,"./var/STRING_ENHANCEMENTS_FLAG":803,"sugar-core":18}],743:[function(require,module,exports){
+'use strict';
+
+// Instance Methods
+require('./at');
+require('./camelize');
+require('./capitalize');
+require('./chars');
+require('./codes');
+require('./compact');
+require('./dasherize');
+require('./decodeBase64');
+require('./encodeBase64');
+require('./escapeHTML');
+require('./escapeURL');
+require('./first');
+require('./forEach');
+require('./format');
+require('./from');
+require('./includes');
+require('./insert');
+require('./isBlank');
+require('./isEmpty');
+require('./last');
+require('./lines');
+require('./pad');
+require('./padLeft');
+require('./padRight');
+require('./parameterize');
+require('./remove');
+require('./removeAll');
+require('./removeTags');
+require('./replaceAll');
+require('./reverse');
+require('./shift');
+require('./spacify');
+require('./stripTags');
+require('./titleize');
+require('./to');
+require('./toNumber');
+require('./trimLeft');
+require('./trimRight');
+require('./truncate');
+require('./truncateOnWord');
+require('./underscore');
+require('./unescapeHTML');
+require('./unescapeURL');
+require('./words');
+
+module.exports = require('sugar-core');
+},{"./at":727,"./camelize":728,"./capitalize":729,"./chars":730,"./codes":731,"./compact":732,"./dasherize":733,"./decodeBase64":734,"./encodeBase64":735,"./escapeHTML":736,"./escapeURL":737,"./first":738,"./forEach":739,"./format":740,"./from":741,"./includes":742,"./insert":744,"./isBlank":766,"./isEmpty":767,"./last":768,"./lines":769,"./pad":770,"./padLeft":771,"./padRight":772,"./parameterize":773,"./remove":775,"./removeAll":776,"./removeTags":777,"./replaceAll":778,"./reverse":779,"./shift":780,"./spacify":781,"./stripTags":782,"./titleize":783,"./to":784,"./toNumber":785,"./trimLeft":786,"./trimRight":787,"./truncate":788,"./truncateOnWord":789,"./underscore":790,"./unescapeHTML":791,"./unescapeURL":792,"./words":808,"sugar-core":18}],744:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUndefined = require('../common/internal/isUndefined');
+
+Sugar.String.defineInstance({
+
+  'insert': function(str, substr, index) {
+    index = isUndefined(index) ? str.length : index;
+    return str.slice(0, index) + substr + str.slice(index);
+  }
+
+});
+
+module.exports = Sugar.String.insert;
+},{"../common/internal/isUndefined":155,"sugar-core":18}],745:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    nativeIncludes = require('../var/nativeIncludes');
+
+var isRegExp = classChecks.isRegExp;
+
+function callIncludesWithRegexSupport(str, search, position) {
+  if (!isRegExp(search)) {
+    return nativeIncludes.call(str, search, position);
+  }
+  if (position) {
+    str = str.slice(position);
+  }
+  return search.test(str);
+}
+
+module.exports = callIncludesWithRegexSupport;
+},{"../../common/var/classChecks":192,"../var/nativeIncludes":806}],746:[function(require,module,exports){
+'use strict';
+
+var trim = require('../../common/internal/trim'),
+    stringEach = require('./stringEach');
+
+function eachWord(str, fn) {
+  return stringEach(trim(str), /\S+/g, fn);
+}
+
+module.exports = eachWord;
+},{"../../common/internal/trim":177,"./stringEach":756}],747:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks');
+
+var isString = classChecks.isString;
+
+function numberOrIndex(str, n, from) {
+  if (isString(n)) {
+    n = str.indexOf(n);
+    if (n === -1) {
+      n = from ? str.length : 0;
+    }
+  }
+  return n;
+}
+
+module.exports = numberOrIndex;
+},{"../../common/var/classChecks":192}],748:[function(require,module,exports){
+'use strict';
+
+var isDefined = require('../../common/internal/isDefined'),
+    repeatString = require('../../common/internal/repeatString');
+
+function padString(num, padding) {
+  return repeatString(isDefined(padding) ? padding : ' ', num);
+}
+
+module.exports = padString;
+},{"../../common/internal/isDefined":149,"../../common/internal/repeatString":166}],749:[function(require,module,exports){
+'use strict';
+
+var map = require('../../common/internal/map'),
+    classChecks = require('../../common/var/classChecks'),
+    escapeRegExp = require('../../common/internal/escapeRegExp'),
+    runTagReplacements = require('./runTagReplacements');
+
+var isString = classChecks.isString;
+
+function replaceTags(str, find, replacement, strip) {
+  var tags = isString(find) ? [find] : find, reg, src;
+  tags = map(tags || [], function(t) {
+    return escapeRegExp(t);
+  }).join('|');
+  src = tags.replace('all', '') || '[^\\s>]+';
+  src = '<(\\/)?(' + src + ')(\\s+[^<>]*?)?\\s*(\\/)?>';
+  reg = RegExp(src, 'gi');
+  return runTagReplacements(str.toString(), reg, strip, replacement);
+}
+
+module.exports = replaceTags;
+},{"../../common/internal/escapeRegExp":126,"../../common/internal/map":158,"../../common/var/classChecks":192,"./runTagReplacements":752}],750:[function(require,module,exports){
+'use strict';
+
+function reverseString(str) {
+  return str.split('').reverse().join('');
+}
+
+module.exports = reverseString;
+},{}],751:[function(require,module,exports){
+'use strict';
+
+function runGlobalMatch(str, reg) {
+  var result = [], match, lastLastIndex;
+  while ((match = reg.exec(str)) != null) {
+    if (reg.lastIndex === lastLastIndex) {
+      reg.lastIndex += 1;
+    } else {
+      result.push(match[0]);
+    }
+    lastLastIndex = reg.lastIndex;
+  }
+  return result;
+}
+
+module.exports = runGlobalMatch;
+},{}],752:[function(require,module,exports){
+'use strict';
+
+var tagIsVoid = require('./tagIsVoid'),
+    classChecks = require('../../common/var/classChecks');
+
+var isString = classChecks.isString;
+
+function runTagReplacements(str, reg, strip, replacement, fullString) {
+
+  var match;
+  var result = '';
+  var currentIndex = 0;
+  var openTagName;
+  var openTagAttributes;
+  var openTagCount = 0;
+
+  function processTag(index, tagName, attributes, tagLength, isVoid) {
+    var content = str.slice(currentIndex, index), s = '', r = '';
+    if (isString(replacement)) {
+      r = replacement;
+    } else if (replacement) {
+      r = replacement.call(fullString, tagName, content, attributes, fullString) || '';
+    }
+    if (strip) {
+      s = r;
+    } else {
+      content = r;
+    }
+    if (content) {
+      content = runTagReplacements(content, reg, strip, replacement, fullString);
+    }
+    result += s + content + (isVoid ? '' : s);
+    currentIndex = index + (tagLength || 0);
+  }
+
+  fullString = fullString || str;
+  reg = RegExp(reg.source, 'gi');
+
+  while(match = reg.exec(str)) {
+
+    var tagName         = match[2];
+    var attributes      = (match[3]|| '').slice(1);
+    var isClosingTag    = !!match[1];
+    var isSelfClosing   = !!match[4];
+    var tagLength       = match[0].length;
+    var isVoid          = tagIsVoid(tagName);
+    var isOpeningTag    = !isClosingTag && !isSelfClosing && !isVoid;
+    var isSameAsCurrent = tagName === openTagName;
+
+    if (!openTagName) {
+      result += str.slice(currentIndex, match.index);
+      currentIndex = match.index;
+    }
+
+    if (isOpeningTag) {
+      if (!openTagName) {
+        openTagName = tagName;
+        openTagAttributes = attributes;
+        openTagCount++;
+        currentIndex += tagLength;
+      } else if (isSameAsCurrent) {
+        openTagCount++;
+      }
+    } else if (isClosingTag && isSameAsCurrent) {
+      openTagCount--;
+      if (openTagCount === 0) {
+        processTag(match.index, openTagName, openTagAttributes, tagLength, isVoid);
+        openTagName       = null;
+        openTagAttributes = null;
+      }
+    } else if (!openTagName) {
+      processTag(match.index, tagName, attributes, tagLength, isVoid);
+    }
+  }
+  if (openTagName) {
+    processTag(str.length, openTagName, openTagAttributes);
+  }
+  result += str.slice(currentIndex);
+  return result;
+}
+
+module.exports = runTagReplacements;
+},{"../../common/var/classChecks":192,"./tagIsVoid":762}],753:[function(require,module,exports){
+'use strict';
+
+var CAMELIZE_REG = require('../var/CAMELIZE_REG'),
+    getAcronym = require('../../common/internal/getAcronym'),
+    stringUnderscore = require('./stringUnderscore'),
+    stringCapitalize = require('./stringCapitalize');
+
+function stringCamelize(str, upper) {
+  str = stringUnderscore(str);
+  return str.replace(CAMELIZE_REG, function(match, pre, word, index) {
+    var cap = upper !== false || index > 0, acronym;
+    acronym = getAcronym(word);
+    if (acronym && cap) {
+      return acronym;
+    }
+    return cap ? stringCapitalize(word, true) : word;
+  });
+}
+
+module.exports = stringCamelize;
+},{"../../common/internal/getAcronym":132,"../var/CAMELIZE_REG":793,"./stringCapitalize":754,"./stringUnderscore":761}],754:[function(require,module,exports){
+'use strict';
+
+var CAPITALIZE_REG = require('../var/CAPITALIZE_REG'),
+    simpleCapitalize = require('../../common/internal/simpleCapitalize');
+
+function stringCapitalize(str, downcase, all) {
+  if (downcase) {
+    str = str.toLowerCase();
+  }
+  return all ? str.replace(CAPITALIZE_REG, simpleCapitalize) : simpleCapitalize(str);
+}
+
+module.exports = stringCapitalize;
+},{"../../common/internal/simpleCapitalize":171,"../var/CAPITALIZE_REG":794}],755:[function(require,module,exports){
+'use strict';
+
+function stringCodes(str, fn) {
+  var codes = new Array(str.length), i, len;
+  for(i = 0, len = str.length; i < len; i++) {
+    var code = str.charCodeAt(i);
+    codes[i] = code;
+    if (fn) {
+      fn.call(str, code, i, str);
+    }
+  }
+  return codes;
+}
+
+module.exports = stringCodes;
+},{}],756:[function(require,module,exports){
+'use strict';
+
+var isDefined = require('../../common/internal/isDefined'),
+    classChecks = require('../../common/var/classChecks'),
+    escapeRegExp = require('../../common/internal/escapeRegExp'),
+    getRegExpFlags = require('../../common/internal/getRegExpFlags'),
+    runGlobalMatch = require('./runGlobalMatch');
+
+var isString = classChecks.isString,
+    isRegExp = classChecks.isRegExp,
+    isFunction = classChecks.isFunction;
+
+function stringEach(str, search, fn) {
+  var chunks, chunk, reg, result = [];
+  if (isFunction(search)) {
+    fn = search;
+    reg = /[\s\S]/g;
+  } else if (!search) {
+    reg = /[\s\S]/g;
+  } else if (isString(search)) {
+    reg = RegExp(escapeRegExp(search), 'gi');
+  } else if (isRegExp(search)) {
+    reg = RegExp(search.source, getRegExpFlags(search, 'g'));
+  }
+  // Getting the entire array of chunks up front as we need to
+  // pass this into the callback function as an argument.
+  chunks = runGlobalMatch(str, reg);
+
+  if (chunks) {
+    for(var i = 0, len = chunks.length, r; i < len; i++) {
+      chunk = chunks[i];
+      result[i] = chunk;
+      if (fn) {
+        r = fn.call(str, chunk, i, chunks);
+        if (r === false) {
+          break;
+        } else if (isDefined(r)) {
+          result[i] = r;
+        }
+      }
+    }
+  }
+  return result;
+}
+
+module.exports = stringEach;
+},{"../../common/internal/escapeRegExp":126,"../../common/internal/getRegExpFlags":140,"../../common/internal/isDefined":149,"../../common/var/classChecks":192,"./runGlobalMatch":751}],757:[function(require,module,exports){
+'use strict';
+
+var escapeRegExp = require('../../common/internal/escapeRegExp');
+
+function stringParameterize(str, separator) {
+  if (separator === undefined) separator = '-';
+  str = str.replace(/[^a-z0-9\-_]+/gi, separator);
+  if (separator) {
+    var reg = RegExp('^{s}+|{s}+$|({s}){s}+'.split('{s}').join(escapeRegExp(separator)), 'g');
+    str = str.replace(reg, '$1');
+  }
+  return encodeURI(str.toLowerCase());
+}
+
+module.exports = stringParameterize;
+},{"../../common/internal/escapeRegExp":126}],758:[function(require,module,exports){
+'use strict';
+
+var classChecks = require('../../common/var/classChecks'),
+    escapeRegExp = require('../../common/internal/escapeRegExp'),
+    getRegExpFlags = require('../../common/internal/getRegExpFlags');
+
+var isString = classChecks.isString;
+
+function stringReplaceAll(str, f, replace) {
+  var i = 0, tokens;
+  if (isString(f)) {
+    f = RegExp(escapeRegExp(f), 'g');
+  } else if (f && !f.global) {
+    f = RegExp(f.source, getRegExpFlags(f, 'g'));
+  }
+  if (!replace) {
+    replace = '';
+  } else {
+    tokens = replace;
+    replace = function() {
+      var t = tokens[i++];
+      return t != null ? t : '';
+    };
+  }
+  return str.replace(f, replace);
+}
+
+module.exports = stringReplaceAll;
+},{"../../common/internal/escapeRegExp":126,"../../common/internal/getRegExpFlags":140,"../../common/var/classChecks":192}],759:[function(require,module,exports){
+'use strict';
+
+var stringUnderscore = require('./stringUnderscore');
+
+function stringSpacify(str) {
+  return stringUnderscore(str).replace(/_/g, ' ');
+}
+
+module.exports = stringSpacify;
+},{"./stringUnderscore":761}],760:[function(require,module,exports){
+'use strict';
+
+var DOWNCASED_WORDS = require('../var/DOWNCASED_WORDS'),
+    indexOf = require('../../common/internal/indexOf'),
+    eachWord = require('./eachWord'),
+    getAcronym = require('../../common/internal/getAcronym'),
+    getHumanWord = require('../../common/internal/getHumanWord'),
+    runHumanRules = require('../../common/internal/runHumanRules'),
+    stringSpacify = require('./stringSpacify'),
+    stringCapitalize = require('./stringCapitalize');
+
+function stringTitleize(str) {
+  var fullStopPunctuation = /[.:;!]$/, lastHadPunctuation;
+  str = runHumanRules(str);
+  str = stringSpacify(str);
+  return eachWord(str, function(word, index, words) {
+    word = getHumanWord(word) || word;
+    word = getAcronym(word) || word;
+    var hasPunctuation, isFirstOrLast;
+    var first = index == 0, last = index == words.length - 1;
+    hasPunctuation = fullStopPunctuation.test(word);
+    isFirstOrLast = first || last || hasPunctuation || lastHadPunctuation;
+    lastHadPunctuation = hasPunctuation;
+    if (isFirstOrLast || indexOf(DOWNCASED_WORDS, word) === -1) {
+      return stringCapitalize(word, false, true);
+    } else {
+      return word;
+    }
+  }).join(' ');
+}
+
+module.exports = stringTitleize;
+},{"../../common/internal/getAcronym":132,"../../common/internal/getHumanWord":134,"../../common/internal/indexOf":146,"../../common/internal/runHumanRules":167,"../var/DOWNCASED_WORDS":795,"./eachWord":746,"./stringCapitalize":754,"./stringSpacify":759}],761:[function(require,module,exports){
+'use strict';
+
+var Inflections = require('../../common/var/Inflections');
+
+function stringUnderscore(str) {
+  var areg = Inflections.acronyms && Inflections.acronyms.reg;
+  return str
+    .replace(/[-\s]+/g, '_')
+    .replace(areg, function(acronym, index) {
+      return (index > 0 ? '_' : '') + acronym.toLowerCase();
+    })
+    .replace(/([A-Z\d]+)([A-Z][a-z])/g,'$1_$2')
+    .replace(/([a-z\d])([A-Z])/g,'$1_$2')
+    .toLowerCase();
+}
+
+module.exports = stringUnderscore;
+},{"../../common/var/Inflections":183}],762:[function(require,module,exports){
+'use strict';
+
+var HTML_VOID_ELEMENTS = require('../var/HTML_VOID_ELEMENTS'),
+    indexOf = require('../../common/internal/indexOf');
+
+function tagIsVoid(tag) {
+  return indexOf(HTML_VOID_ELEMENTS, tag.toLowerCase()) !== -1;
+}
+
+module.exports = tagIsVoid;
+},{"../../common/internal/indexOf":146,"../var/HTML_VOID_ELEMENTS":800}],763:[function(require,module,exports){
+'use strict';
+
+var TRUNC_REG = require('../var/TRUNC_REG'),
+    filter = require('../../common/internal/filter'),
+    reverseString = require('./reverseString');
+
+function truncateOnWord(str, limit, fromLeft) {
+  if (fromLeft) {
+    return reverseString(truncateOnWord(reverseString(str), limit));
+  }
+  var words = str.split(TRUNC_REG);
+  var count = 0;
+  return filter(words, function(word) {
+    count += word.length;
+    return count <= limit;
+  }).join('');
+}
+
+module.exports = truncateOnWord;
+},{"../../common/internal/filter":127,"../var/TRUNC_REG":804,"./reverseString":750}],764:[function(require,module,exports){
+'use strict';
+
+var isUndefined = require('../../common/internal/isUndefined'),
+    mathAliases = require('../../common/var/mathAliases'),
+    truncateOnWord = require('./truncateOnWord');
+
+var ceil = mathAliases.ceil,
+    floor = mathAliases.floor;
+
+function truncateString(str, length, from, ellipsis, split) {
+  var str1, str2, len1, len2;
+  if (str.length <= length) {
+    return str.toString();
+  }
+  ellipsis = isUndefined(ellipsis) ? '...' : ellipsis;
+  switch(from) {
+    case 'left':
+      str2 = split ? truncateOnWord(str, length, true) : str.slice(str.length - length);
+      return ellipsis + str2;
+    case 'middle':
+      len1 = ceil(length / 2);
+      len2 = floor(length / 2);
+      str1 = split ? truncateOnWord(str, len1) : str.slice(0, len1);
+      str2 = split ? truncateOnWord(str, len2, true) : str.slice(str.length - len2);
+      return str1 + ellipsis + str2;
+    default:
+      str1 = split ? truncateOnWord(str, length) : str.slice(0, length);
+      return str1 + ellipsis;
+  }
+}
+
+module.exports = truncateString;
+},{"../../common/internal/isUndefined":155,"../../common/var/mathAliases":195,"./truncateOnWord":763}],765:[function(require,module,exports){
+'use strict';
+
+var HTML_ENTITY_REG = require('../var/HTML_ENTITY_REG'),
+    HTMLFromEntityMap = require('../var/HTMLFromEntityMap'),
+    chr = require('../../common/var/chr');
+
+function unescapeHTML(str) {
+  return str.replace(HTML_ENTITY_REG, function(full, hex, code) {
+    var special = HTMLFromEntityMap[code];
+    return special || chr(hex ? parseInt(code, 16) : +code);
+  });
+}
+
+module.exports = unescapeHTML;
+},{"../../common/var/chr":191,"../var/HTMLFromEntityMap":796,"../var/HTML_ENTITY_REG":798}],766:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    trim = require('../common/internal/trim');
+
+Sugar.String.defineInstance({
+
+  'isBlank': function(str) {
+    return trim(str).length === 0;
+  }
+
+});
+
+module.exports = Sugar.String.isBlank;
+},{"../common/internal/trim":177,"sugar-core":18}],767:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.String.defineInstance({
+
+  'isEmpty': function(str) {
+    return str.length === 0;
+  }
+
+});
+
+module.exports = Sugar.String.isEmpty;
+},{"sugar-core":18}],768:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUndefined = require('../common/internal/isUndefined');
+
+Sugar.String.defineInstance({
+
+  'last': function(str, num) {
+    if (isUndefined(num)) num = 1;
+    var start = str.length - num < 0 ? 0 : str.length - num;
+    return str.substr(start);
+  }
+
+});
+
+module.exports = Sugar.String.last;
+},{"../common/internal/isUndefined":155,"sugar-core":18}],769:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    trim = require('../common/internal/trim'),
+    stringEach = require('./internal/stringEach');
+
+Sugar.String.defineInstance({
+
+  'lines': function(str, fn) {
+    return stringEach(trim(str), /^.*$/gm, fn);
+  }
+
+});
+
+module.exports = Sugar.String.lines;
+},{"../common/internal/trim":177,"./internal/stringEach":756,"sugar-core":18}],770:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    padString = require('./internal/padString'),
+    mathAliases = require('../common/var/mathAliases'),
+    coercePositiveInteger = require('../common/internal/coercePositiveInteger');
+
+var max = mathAliases.max,
+    ceil = mathAliases.ceil,
+    floor = mathAliases.floor;
+
+Sugar.String.defineInstance({
+
+  'pad': function(str, num, padding) {
+    var half, front, back;
+    num   = coercePositiveInteger(num);
+    half  = max(0, num - str.length) / 2;
+    front = floor(half);
+    back  = ceil(half);
+    return padString(front, padding) + str + padString(back, padding);
+  }
+
+});
+
+module.exports = Sugar.String.pad;
+},{"../common/internal/coercePositiveInteger":110,"../common/var/mathAliases":195,"./internal/padString":748,"sugar-core":18}],771:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    padString = require('./internal/padString'),
+    mathAliases = require('../common/var/mathAliases'),
+    coercePositiveInteger = require('../common/internal/coercePositiveInteger');
+
+var max = mathAliases.max;
+
+Sugar.String.defineInstance({
+
+  'padLeft': function(str, num, padding) {
+    num = coercePositiveInteger(num);
+    return padString(max(0, num - str.length), padding) + str;
+  }
+
+});
+
+module.exports = Sugar.String.padLeft;
+},{"../common/internal/coercePositiveInteger":110,"../common/var/mathAliases":195,"./internal/padString":748,"sugar-core":18}],772:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    padString = require('./internal/padString'),
+    mathAliases = require('../common/var/mathAliases'),
+    coercePositiveInteger = require('../common/internal/coercePositiveInteger');
+
+var max = mathAliases.max;
+
+Sugar.String.defineInstance({
+
+  'padRight': function(str, num, padding) {
+    num = coercePositiveInteger(num);
+    return str + padString(max(0, num - str.length), padding);
+  }
+
+});
+
+module.exports = Sugar.String.padRight;
+},{"../common/internal/coercePositiveInteger":110,"../common/var/mathAliases":195,"./internal/padString":748,"sugar-core":18}],773:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringParameterize = require('./internal/stringParameterize');
+
+Sugar.String.defineInstance({
+
+  'parameterize': function(str, separator) {
+    return stringParameterize(str, separator);
+  }
+
+});
+
+module.exports = Sugar.String.parameterize;
+},{"./internal/stringParameterize":757,"sugar-core":18}],774:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    PrimitiveRangeConstructor = require('../range/var/PrimitiveRangeConstructor');
+
+Sugar.String.defineStatic({
+
+  'range': PrimitiveRangeConstructor
+
+});
+
+module.exports = Sugar.String.range;
+},{"../range/var/PrimitiveRangeConstructor":718,"sugar-core":18}],775:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.String.defineInstance({
+
+  'remove': function(str, f) {
+    return str.replace(f, '');
+  }
+
+});
+
+module.exports = Sugar.String.remove;
+},{"sugar-core":18}],776:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringReplaceAll = require('./internal/stringReplaceAll');
+
+Sugar.String.defineInstance({
+
+  'removeAll': function(str, f) {
+    return stringReplaceAll(str, f);
+  }
+
+});
+
+module.exports = Sugar.String.removeAll;
+},{"./internal/stringReplaceAll":758,"sugar-core":18}],777:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    replaceTags = require('./internal/replaceTags');
+
+Sugar.String.defineInstance({
+
+  'removeTags': function(str, tag, replace) {
+    return replaceTags(str, tag, replace, false);
+  }
+
+});
+
+module.exports = Sugar.String.removeTags;
+},{"./internal/replaceTags":749,"sugar-core":18}],778:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringReplaceAll = require('./internal/stringReplaceAll');
+
+Sugar.String.defineInstanceWithArguments({
+
+  'replaceAll': function(str, f, args) {
+    return stringReplaceAll(str, f, args);
+  }
+
+});
+
+module.exports = Sugar.String.replaceAll;
+},{"./internal/stringReplaceAll":758,"sugar-core":18}],779:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    reverseString = require('./internal/reverseString');
+
+Sugar.String.defineInstance({
+
+  'reverse': function(str) {
+    return reverseString(str);
+  }
+
+});
+
+module.exports = Sugar.String.reverse;
+},{"./internal/reverseString":750,"sugar-core":18}],780:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    chr = require('../common/var/chr'),
+    stringCodes = require('./internal/stringCodes');
+
+Sugar.String.defineInstance({
+
+  'shift': function(str, n) {
+    var result = '';
+    n = n || 0;
+    stringCodes(str, function(c) {
+      result += chr(c + n);
+    });
+    return result;
+  }
+
+});
+
+module.exports = Sugar.String.shift;
+},{"../common/var/chr":191,"./internal/stringCodes":755,"sugar-core":18}],781:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringSpacify = require('./internal/stringSpacify');
+
+Sugar.String.defineInstance({
+
+  'spacify': function(str) {
+    return stringSpacify(str);
+  }
+
+});
+
+module.exports = Sugar.String.spacify;
+},{"./internal/stringSpacify":759,"sugar-core":18}],782:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    replaceTags = require('./internal/replaceTags');
+
+Sugar.String.defineInstance({
+
+  'stripTags': function(str, tag, replace) {
+    return replaceTags(str, tag, replace, true);
+  }
+
+});
+
+module.exports = Sugar.String.stripTags;
+},{"./internal/replaceTags":749,"sugar-core":18}],783:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringTitleize = require('./internal/stringTitleize');
+
+Sugar.String.defineInstance({
+
+  'titleize': function(str) {
+    return stringTitleize(str);
+  }
+
+});
+
+module.exports = Sugar.String.titleize;
+},{"./internal/stringTitleize":760,"sugar-core":18}],784:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    isUndefined = require('../common/internal/isUndefined'),
+    numberOrIndex = require('./internal/numberOrIndex');
+
+Sugar.String.defineInstance({
+
+  'to': function(str, to) {
+    if (isUndefined(to)) to = str.length;
+    return str.slice(0, numberOrIndex(str, to));
+  }
+
+});
+
+module.exports = Sugar.String.to;
+},{"../common/internal/isUndefined":155,"./internal/numberOrIndex":747,"sugar-core":18}],785:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringToNumber = require('../common/internal/stringToNumber');
+
+Sugar.String.defineInstance({
+
+  'toNumber': function(str, base) {
+    return stringToNumber(str, base);
+  }
+
+});
+
+module.exports = Sugar.String.toNumber;
+},{"../common/internal/stringToNumber":176,"sugar-core":18}],786:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    LEFT_TRIM_REG = require('./var/LEFT_TRIM_REG');
+
+Sugar.String.defineInstance({
+
+  'trimLeft': function(str) {
+    return str.replace(LEFT_TRIM_REG, '');
+  }
+
+});
+
+module.exports = Sugar.String.trimLeft;
+},{"./var/LEFT_TRIM_REG":801,"sugar-core":18}],787:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    RIGHT_TRIM_REG = require('./var/RIGHT_TRIM_REG');
+
+Sugar.String.defineInstance({
+
+  'trimRight': function(str) {
+    return str.replace(RIGHT_TRIM_REG, '');
+  }
+
+});
+
+module.exports = Sugar.String.trimRight;
+},{"./var/RIGHT_TRIM_REG":802,"sugar-core":18}],788:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    truncateString = require('./internal/truncateString');
+
+Sugar.String.defineInstance({
+
+  'truncate': function(str, length, from, ellipsis) {
+    return truncateString(str, length, from, ellipsis);
+  }
+
+});
+
+module.exports = Sugar.String.truncate;
+},{"./internal/truncateString":764,"sugar-core":18}],789:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    truncateString = require('./internal/truncateString');
+
+Sugar.String.defineInstance({
+
+  'truncateOnWord': function(str, length, from, ellipsis) {
+    return truncateString(str, length, from, ellipsis, true);
+  }
+
+});
+
+module.exports = Sugar.String.truncateOnWord;
+},{"./internal/truncateString":764,"sugar-core":18}],790:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    stringUnderscore = require('./internal/stringUnderscore');
+
+Sugar.String.defineInstance({
+
+  'underscore': function(str) {
+    return stringUnderscore(str);
+  }
+
+});
+
+module.exports = Sugar.String.underscore;
+},{"./internal/stringUnderscore":761,"sugar-core":18}],791:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    unescapeHTML = require('./internal/unescapeHTML');
+
+Sugar.String.defineInstance({
+
+  'unescapeHTML': function(str) {
+    return unescapeHTML(str);
+  }
+
+});
+
+module.exports = Sugar.String.unescapeHTML;
+},{"./internal/unescapeHTML":765,"sugar-core":18}],792:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core');
+
+Sugar.String.defineInstance({
+
+  'unescapeURL': function(str, param) {
+    return param ? decodeURI(str) : decodeURIComponent(str);
+  }
+
+});
+
+module.exports = Sugar.String.unescapeURL;
+},{"sugar-core":18}],793:[function(require,module,exports){
+'use strict';
+
+module.exports = /(^|_)([^_]+)/g;
+},{}],794:[function(require,module,exports){
+'use strict';
+
+module.exports = /[^\u0000-\u0040\u005B-\u0060\u007B-\u007F]+('s)?/g;
+},{}],795:[function(require,module,exports){
+'use strict';
+
+var DOWNCASED_WORDS = [
+  'and', 'or', 'nor', 'a', 'an', 'the', 'so', 'but', 'to', 'of', 'at',
+  'by', 'from', 'into', 'on', 'onto', 'off', 'out', 'in', 'over',
+  'with', 'for'
+];
+
+module.exports = DOWNCASED_WORDS;
+},{}],796:[function(require,module,exports){
+'use strict';
+
+var HTMLFromEntityMap = {
+  'lt':    '<',
+  'gt':    '>',
+  'amp':   '&',
+  'nbsp':  ' ',
+  'quot':  '"',
+  'apos':  "'"
+};
+
+module.exports = HTMLFromEntityMap;
+},{}],797:[function(require,module,exports){
+'use strict';
+
+var HTMLFromEntityMap = require('./HTMLFromEntityMap'),
+    coreUtilityAliases = require('../../common/var/coreUtilityAliases');
+
+var forEachProperty = coreUtilityAliases.forEachProperty;
+
+var HTMLToEntityMap;
+
+function buildEntities() {
+  HTMLToEntityMap = {};
+  forEachProperty(HTMLFromEntityMap, function(val, key) {
+    HTMLToEntityMap[val] = '&' + key + ';';
+  });
+}
+
+buildEntities();
+
+module.exports = HTMLToEntityMap;
+},{"../../common/var/coreUtilityAliases":193,"./HTMLFromEntityMap":796}],798:[function(require,module,exports){
+'use strict';
+
+module.exports = /&#?(x)?([\w\d]{0,5});/gi;
+},{}],799:[function(require,module,exports){
+'use strict';
+
+module.exports = /[&<>]/g;
+},{}],800:[function(require,module,exports){
+'use strict';
+
+var HTML_VOID_ELEMENTS = [
+  'area','base','br','col','command','embed','hr','img',
+  'input','keygen','link','meta','param','source','track','wbr'
+];
+
+module.exports = HTML_VOID_ELEMENTS;
+},{}],801:[function(require,module,exports){
+'use strict';
+
+var TRIM_CHARS = require('../../common/var/TRIM_CHARS');
+
+module.exports = RegExp('^['+ TRIM_CHARS +']+');
+},{"../../common/var/TRIM_CHARS":189}],802:[function(require,module,exports){
+'use strict';
+
+var TRIM_CHARS = require('../../common/var/TRIM_CHARS');
+
+module.exports = RegExp('['+ TRIM_CHARS +']+$');
+},{"../../common/var/TRIM_CHARS":189}],803:[function(require,module,exports){
+'use strict';
+
+module.exports = 'enhanceString';
+},{}],804:[function(require,module,exports){
+'use strict';
+
+var TRIM_CHARS = require('../../common/var/TRIM_CHARS');
+
+module.exports = RegExp('(?=[' + TRIM_CHARS + '])');
+},{"../../common/var/TRIM_CHARS":189}],805:[function(require,module,exports){
+(function (Buffer){
+'use strict';
+
+var chr = require('../../common/var/chr');
+
+var encodeBase64, decodeBase64;
+
+function buildBase64() {
+  var encodeAscii, decodeAscii;
+
+  function catchEncodingError(fn) {
+    return function(str) {
+      try {
+        return fn(str);
+      } catch(e) {
+        return '';
+      }
+    };
+  }
+
+  if (typeof Buffer !== 'undefined') {
+    encodeBase64 = function(str) {
+      return new Buffer(str).toString('base64');
+    };
+    decodeBase64 = function(str) {
+      return new Buffer(str, 'base64').toString('utf8');
+    };
+    return;
+  }
+  if (typeof btoa !== 'undefined') {
+    encodeAscii = catchEncodingError(btoa);
+    decodeAscii = catchEncodingError(atob);
+  } else {
+    var key = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    var base64reg = /[^A-Za-z0-9\+\/\=]/g;
+    encodeAscii = function(str) {
+      var output = '';
+      var chr1, chr2, chr3;
+      var enc1, enc2, enc3, enc4;
+      var i = 0;
+      do {
+        chr1 = str.charCodeAt(i++);
+        chr2 = str.charCodeAt(i++);
+        chr3 = str.charCodeAt(i++);
+        enc1 = chr1 >> 2;
+        enc2 = ((chr1 & 3) << 4) | (chr2 >> 4);
+        enc3 = ((chr2 & 15) << 2) | (chr3 >> 6);
+        enc4 = chr3 & 63;
+        if (isNaN(chr2)) {
+          enc3 = enc4 = 64;
+        } else if (isNaN(chr3)) {
+          enc4 = 64;
+        }
+        output += key.charAt(enc1);
+        output += key.charAt(enc2);
+        output += key.charAt(enc3);
+        output += key.charAt(enc4);
+        chr1 = chr2 = chr3 = '';
+        enc1 = enc2 = enc3 = enc4 = '';
+      } while (i < str.length);
+      return output;
+    };
+    decodeAscii = function(input) {
+      var output = '';
+      var chr1, chr2, chr3;
+      var enc1, enc2, enc3, enc4;
+      var i = 0;
+      if (input.match(base64reg)) {
+        return '';
+      }
+      input = input.replace(/[^A-Za-z0-9\+\/\=]/g, '');
+      do {
+        enc1 = key.indexOf(input.charAt(i++));
+        enc2 = key.indexOf(input.charAt(i++));
+        enc3 = key.indexOf(input.charAt(i++));
+        enc4 = key.indexOf(input.charAt(i++));
+        chr1 = (enc1 << 2) | (enc2 >> 4);
+        chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
+        chr3 = ((enc3 & 3) << 6) | enc4;
+        output = output + chr(chr1);
+        if (enc3 != 64) {
+          output = output + chr(chr2);
+        }
+        if (enc4 != 64) {
+          output = output + chr(chr3);
+        }
+        chr1 = chr2 = chr3 = '';
+        enc1 = enc2 = enc3 = enc4 = '';
+      } while (i < input.length);
+      return output;
+    };
+  }
+  encodeBase64 = function(str) {
+    return encodeAscii(unescape(encodeURIComponent(str)));
+  };
+  decodeBase64 = function(str) {
+    return decodeURIComponent(escape(decodeAscii(str)));
+  };
+}
+
+buildBase64();
+
+module.exports = {
+  encodeBase64: encodeBase64,
+  decodeBase64: decodeBase64
+};
+}).call(this,require("buffer").Buffer)
+},{"../../common/var/chr":191,"buffer":814}],806:[function(require,module,exports){
+'use strict';
+
+module.exports = String.prototype.includes;
+},{}],807:[function(require,module,exports){
+'use strict';
+
+var deepGetProperty = require('../../common/internal/deepGetProperty'),
+    createFormatMatcher = require('../../common/internal/createFormatMatcher');
+
+module.exports = createFormatMatcher(deepGetProperty);
+},{"../../common/internal/createFormatMatcher":114,"../../common/internal/deepGetProperty":116}],808:[function(require,module,exports){
+'use strict';
+
+var Sugar = require('sugar-core'),
+    trim = require('../common/internal/trim'),
+    stringEach = require('./internal/stringEach');
+
+Sugar.String.defineInstance({
+
+  'words': function(str, fn) {
+    return stringEach(trim(str), /\S+/g, fn);
+  }
+
+});
+
+module.exports = Sugar.String.words;
+},{"../common/internal/trim":177,"./internal/stringEach":756,"sugar-core":18}],809:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -11935,7 +16701,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":22}],20:[function(require,module,exports){
+},{"./request":812}],810:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -12054,7 +16820,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":19,"./relay":21}],21:[function(require,module,exports){
+},{"./dispatch":809,"./relay":811}],811:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -12097,7 +16863,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],22:[function(require,module,exports){
+},{}],812:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -12222,11 +16988,11 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":25}],23:[function(require,module,exports){
+},{"events":815}],813:[function(require,module,exports){
 
-},{}],24:[function(require,module,exports){
-arguments[4][23][0].apply(exports,arguments)
-},{"dup":23}],25:[function(require,module,exports){
+},{}],814:[function(require,module,exports){
+arguments[4][813][0].apply(exports,arguments)
+},{"dup":813}],815:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -12529,5 +17295,191 @@ function isObject(arg) {
 function isUndefined(arg) {
   return arg === void 0;
 }
+
+},{}],816:[function(require,module,exports){
+// shim for using process in browser
+var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
 
 },{}]},{},[1]);
