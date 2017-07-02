@@ -31,10 +31,12 @@ The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to m
     
 3. If the SDK can establish a working connection and load the object model, the terminal will start successfully.
 
-        Use the 'session' variable to access the session. Type .exit to quit.
+        The main entry point of the SDK is accessible through the "session" variable.
+        Load securities using the $("AAPL stock") function.
+        Loaded securities will be directly addressable by their localSymbol.
+        A list of loaded securities is stored in "symbols".
+        Type .exit to quit.
         > 
-
-Explore the SDK using the terminal.
 
 ## Programming
 

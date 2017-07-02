@@ -1,6 +1,6 @@
 require("sugar").extend();
 
-const studies = { };
+const studies = module.exports = { };
 
 // Simple moving average
 studies.SMA = window => window.map("close").average();
@@ -45,5 +45,3 @@ studies.AR = window => {
     ar.oscillator = ar.up - ar.down;
     return ar;
 };
-
-module.exports = studies;

@@ -30,17 +30,25 @@ const terminal = exports.terminal = configuration => {
     ib.open(configuration, (err, session) => {
         if (err) printError(err);
         else {
-            console.log("Use the 'session' variable to access the session. Type .exit to quit.".gray);
+            console.log('The main entry point of the SDK is accessible through the "session" variable.'.gray);
+            console.log('Load securities using the $("AAPL stock") function.'.gray);
+            console.log('Loaded securities will be directly addressable by their localSymbol.'.gray);
+            console.log('A list of loaded securities is stored in "symbols".'.gray);
+            console.log("Type .exit to quit.".gray);
 
             let cmd = repl.start('> ');
             cmd.context.session = session;
+            cmd.context.symbols = [ ];
+            
             cmd.context.$ = text => {
                 session.securities(text, (err, list) => {
                     if (err) printError(err);
                     else {
-                        list.map(l => {
-                            cmd.context.$[l.contract.summary.localSymbol] = l;
-                            console.log(l.contract.summary.localSymbol);
+                        cmd.context.symbols.append(list.map(l => l.contract.summary.localSymbol)).unique().sort();
+                        list.forEach(l => {
+                            if (cmd.context[l.contract.summary.localSymbol] == null) {
+                                cmd.context[l.contract.summary.localSymbol] = l;
+                            }
                         });
                     }
                 });

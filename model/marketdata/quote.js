@@ -96,6 +96,10 @@ class Quote extends MarketData {
         return this;
     }
     
+    realTimeVolumeBuffer(duration) {
+        return new RealTimeVolume(this, duration || 5000);
+    }
+    
 }
 
 function parseQuotePart(datum) {
@@ -117,6 +121,33 @@ function parseQuotePart(datum) {
     }
     
     return { key: key.camelize(false), value: value };
+}
+
+class RealTimeVolumeBuffer extends MarketData {
+    
+    constructor(quote, duration) {
+        super(quote.session, quote.contract);
+        
+        this.history = [ ];
+        
+        quote.on("update", data => {
+            if (data.key == "rtVolume") {
+                this.history.push(data.newValue);
+            }
+            
+            this.prune();
+            setInterval(() => this.prune(), duration);
+            this.emit("update");
+        });
+    }
+    
+    prune() {
+        let now = (new Date()).getTime();
+        while (now - this.history.first().time.getTime() > duration) {
+            this.history.shift();
+        }
+    }
+    
 }
 
 module.exports = Quote;

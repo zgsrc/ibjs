@@ -57,7 +57,7 @@ class Bars extends MarketData {
             this.options.cursor = this.series.first().date;
             
             if (cb) cb();
-            else this.emit("load", range);
+            this.emit("load", range);
         }).send();
         
         return this;
@@ -118,7 +118,7 @@ class Bars extends MarketData {
                 if (start < 0) start = 0;
                 if (end < 0) end = this.series.length - 1;
 
-                start.upto(end).each(i => {
+                start.upto(end).forEach(i => {
                     let window = this.series.from(i).to(length);
                     this.series[i + length - 1][name] = calculator(window);
                 });

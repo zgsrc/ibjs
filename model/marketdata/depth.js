@@ -74,7 +74,7 @@ class Depth extends MarketData {
             exchanges = this.validExchanges;
         }
         
-        exchanges.each(exchange => {
+        exchanges.forEach(exchange => {
             this.streamExchange(exchange, rows);
         });
         

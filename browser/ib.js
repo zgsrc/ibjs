@@ -484,7 +484,7 @@ class Bars extends MarketData {
             this.options.cursor = this.series.first().date;
             
             if (cb) cb();
-            else this.emit("load", range);
+            this.emit("load", range);
         }).send();
         
         return this;
@@ -545,7 +545,7 @@ class Bars extends MarketData {
                 if (start < 0) start = 0;
                 if (end < 0) end = this.series.length - 1;
 
-                start.upto(end).each(i => {
+                start.upto(end).forEach(i => {
                     let window = this.series.from(i).to(length);
                     this.series[i + length - 1][name] = calculator(window);
                 });
@@ -791,7 +791,7 @@ class Depth extends MarketData {
             exchanges = this.validExchanges;
         }
         
-        exchanges.each(exchange => {
+        exchanges.forEach(exchange => {
             this.streamExchange(exchange, rows);
         });
         
@@ -1085,6 +1085,10 @@ class Quote extends MarketData {
         return this;
     }
     
+    realTimeVolumeBuffer(duration) {
+        return new RealTimeVolume(this, duration || 5000);
+    }
+    
 }
 
 function parseQuotePart(datum) {
@@ -1106,6 +1110,33 @@ function parseQuotePart(datum) {
     }
     
     return { key: key.camelize(false), value: value };
+}
+
+class RealTimeVolumeBuffer extends MarketData {
+    
+    constructor(quote, duration) {
+        super(quote.session, quote.contract);
+        
+        this.history = [ ];
+        
+        quote.on("update", data => {
+            if (data.key == "rtVolume") {
+                this.history.push(data.newValue);
+            }
+            
+            this.prune();
+            setInterval(() => this.prune(), duration);
+            this.emit("update");
+        });
+    }
+    
+    prune() {
+        let now = (new Date()).getTime();
+        while (now - this.history.first().time.getTime() > duration) {
+            this.history.shift();
+        }
+    }
+    
 }
 
 module.exports = Quote;
@@ -1167,8 +1198,8 @@ function parse(definition) {
             else tokens = tokens.from(1);
         }
         
-        tokens.inGroupsOf(2).each(field => {
-            if (field.length == 2 && field.all(a => a != null)) {
+        tokens.inGroupsOf(2).forEach(field => {
+            if (field.length == 2 && field.every(a => a != null)) {
                 if (field[0].toLowerCase() == "in") {
                     definition.currency = field[1].toUpperCase();
                     if (flags.CURRENCIES.indexOf(definition.currency) < 0) throw new Error("Invalid currency " + definition.currency);
@@ -1243,6 +1274,8 @@ function securities(session, description, cb) {
     try { summary = parse(description); }
     catch (ex) { cb(ex); return; }
     
+    console.log(summary);
+    
     let list = [ ];
     session.service.contractDetails(summary)
         .on("data", contract => list.push(new Security(session, contract)))
@@ -1255,7 +1288,7 @@ module.exports = securities;
 },{"../flags":7,"./charts":9,"./depth":10,"./marketdata":11,"./order":12,"./quote":13,"sugar":454}],15:[function(require,module,exports){
 require("sugar").extend();
 
-const studies = { };
+const studies = module.exports = { };
 
 // Simple moving average
 studies.SMA = window => window.map("close").average();
@@ -1300,8 +1333,6 @@ studies.AR = window => {
     ar.oscillator = ar.up - ar.down;
     return ar;
 };
-
-module.exports = studies;
 },{"sugar":454}],16:[function(require,module,exports){
 "use strict";
 
@@ -16856,7 +16887,7 @@ function relay(service, socket) {
         .on("disconnected", onDisconnected);
 
     socket.on("disconnect", () => { 
-        Object.values(map).each(id => service.dispatch.cancel(id));
+        Object.values(map).forEach(id => service.dispatch.cancel(id));
         map = null;
         
         service.socket.removeListener("connected", onConnected);

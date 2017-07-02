@@ -25,7 +25,7 @@ function relay(service, socket) {
         .on("disconnected", onDisconnected);
 
     socket.on("disconnect", () => { 
-        Object.values(map).each(id => service.dispatch.cancel(id));
+        Object.values(map).forEach(id => service.dispatch.cancel(id));
         map = null;
         
         service.socket.removeListener("connected", onConnected);

@@ -55,8 +55,8 @@ function parse(definition) {
             else tokens = tokens.from(1);
         }
         
-        tokens.inGroupsOf(2).each(field => {
-            if (field.length == 2 && field.all(a => a != null)) {
+        tokens.inGroupsOf(2).forEach(field => {
+            if (field.length == 2 && field.every(a => a != null)) {
                 if (field[0].toLowerCase() == "in") {
                     definition.currency = field[1].toUpperCase();
                     if (flags.CURRENCIES.indexOf(definition.currency) < 0) throw new Error("Invalid currency " + definition.currency);
@@ -130,6 +130,8 @@ function securities(session, description, cb) {
     let summary = description;
     try { summary = parse(description); }
     catch (ex) { cb(ex); return; }
+    
+    console.log(summary);
     
     let list = [ ];
     session.service.contractDetails(summary)
