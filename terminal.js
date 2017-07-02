@@ -30,7 +30,7 @@ const terminal = exports.terminal = configuration => {
     ib.open(configuration, (err, session) => {
         if (err) printError(err);
         else {
-            console.log('The main entry point of the SDK is accessible in "session".'.gray);
+            console.log('SDK entry point is accessible in "session".'.gray);
             console.log('Load securities with the $("AAPL stock") function.'.gray);
             console.log('Loaded securities are directly addressable (i.e. AAPL.quote).'.gray);
             console.log('A list of loaded securities is stored in "symbols".'.gray);
