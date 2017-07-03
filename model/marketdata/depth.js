@@ -18,7 +18,7 @@ class Depth extends MarketData {
     }
     
     get validExchanges() {
-        return this.contract.validExchanges.split(',');
+        return this.contract.validExchanges;
     }
     
     streamExchange(exchange, rows) {
