@@ -25,6 +25,16 @@ class Bars extends MarketData {
         return this;
     }
     
+    regularTradingHours() {
+        this.options.regularTradingHours = true;
+        return this;
+    }
+    
+    extendedTradingHours() {
+        this.options.regularTradingHours = false;
+        return this;
+    }
+    
     history(cb, retry) {
         let req = this.service.historicalData(
             this.contract.summary, 
