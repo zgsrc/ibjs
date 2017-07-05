@@ -24,20 +24,27 @@ sdk.open((err, session) => {
                     else console.log(quote);
                 });
                 
-                AAPL.quote.stream().on("update", data => {
-                    console.log(data);
-                });
-                
-                AAPL.depth.stream().on("update", data => {
-                    console.log(data);
-                });
+                if (AAPL.contract.marketsOpen) {
+                    AAPL.quote.stream().on("update", data => {
+                        console.log(data);
+                    });
+
+                    AAPL.depth.stream().on("update", data => {
+                        console.log(data);
+                    });
+
+                    AAPL.charts.stream();
+                    
+                    AAPL.charts.minutes.five.on("update", data => {
+                        console.log(data);
+                    });
+                }
+                else {
+                    // Streaming won't work so well.
+                }
                 
                 AAPL.charts.minutes.five.history(() => {
                     console.log(AAPL.charts.minutes.five.series);
-                });
-                
-                AAPL.charts.minutes.five.stream().on("update", data => {
-                    console.log(data);
                 });
                 
                 AAPL.charts.minutes.five.study("SMA20", 20, "SMA");
