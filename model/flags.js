@@ -1,3 +1,21 @@
+const HISTORICAL = {
+    trades: "TRADES",
+    midpoint: "MIDPOINT",
+    bid: "BID",
+    ask: "ASK",
+    bidAsk: "BID_ASK",
+    historicalVol: "HISTORICAL_VOLATILITY",
+    optionVol: "OPTION_IMPLIED_VOLATILITY",
+    rebate: "REBATE_RATE",
+    fee: "FEE_RATE",
+    yieldBid: "YIELD_BID",
+    yieldAsk: "YIELD_ASK",
+    yieldBidAsk: "YIELD_BID_ASK",
+    yieldLast: "YIELD_LAST"
+};
+
+exports.HISTORICAL = HISTORICAL;
+
 const TAGS = {
     accountType: "AccountType",
     netLiquidation: "NetLiquidation",

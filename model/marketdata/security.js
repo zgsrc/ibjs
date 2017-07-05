@@ -15,13 +15,8 @@ class Security extends MarketData {
         super(session, contract);
         
         this.quote = new Quote(session, contract);
-        this.quote.on("error", err => this.emit("error", err));
-        
         this.depth = new Depth(session, contract);
-        this.depth.on("error", err => this.emit("error", err));
-        
-        this.charts = new Charts(session, contract);
-        this.charts.on("error", err => this.emit("error", err));
+        this.charts = new Charts(session, contract, flags.HISTORICAL.trades);
     }
     
     fundamentals(type, cb) {

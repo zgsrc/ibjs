@@ -2,22 +2,35 @@
 
 const MarketData = require("./marketdata"),
       studies = require("./studies"),
+      flags = require("../flags"),
       fs = require("fs");
 
 class Bars extends MarketData {
     
-    constructor(session, contract, barSize) {
+    constructor(session, contract, charts, barSize) {
         super(session, contract);
-        
+
+        this.series = [ ];
+        this.charts = charts;
+        this.barSize = barSize;
         this.options = {
-            cursor: Date.create(),
-            field: "TRADES",
-            regularTradingHours: true,
-            dateFormat: 1,
-            barSize: barSize
+            regularTradingHours: false,
+            dateFormat: 1
         };
         
-        this.series = [ ];
+        charts.on("update", data => {
+            let bd = barDate(barSize.text, data.date);
+            if (this.series.length && this.series.last().date == bd) {
+                merge(this.series.last(), data);
+            }
+            else {
+                data.data = bd;
+                data.timestamp = bd.getTime();
+                this.series.push(data);
+            }
+            
+            this.emit("update", this.series.last());
+        });
     }
     
     set(options) {
@@ -25,23 +38,17 @@ class Bars extends MarketData {
         return this;
     }
     
-    regularTradingHours() {
-        this.options.regularTradingHours = true;
-        return this;
-    }
-    
-    extendedTradingHours() {
-        this.options.regularTradingHours = false;
-        return this;
-    }
-    
     history(cb, retry) {
+        if (this.options.cursor == null && this.series.length) {
+            this.options.cursor = this.series.first().date;
+        }
+        
         let req = this.service.historicalData(
             this.contract.summary, 
-            this.options.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : ""), 
-            this.options.barSize.duration, 
-            this.options.barSize.text, 
-            this.options.field, 
+            this.options.cursor ? this.options.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : "") : "", 
+            this.barSize.duration, 
+            this.barSize.text, 
+            this.charts.field, 
             this.options.regularTradingHours ? 1 : 0,
             this.options.dateFormat
         );
@@ -69,32 +76,6 @@ class Bars extends MarketData {
             if (cb) cb();
             this.emit("load", range);
         }).send();
-        
-        return this;
-    }
-    
-    stream() {
-        let req = this.service.realTimeBars(
-            this.contract.summary, 
-            this.options.barSize.integer, 
-            this.options.field, 
-            this.options.regularTradingHours
-        );
-        
-        req.on("data", data => {
-            data.date = Date.create(data.date * 1000);
-            data.timestamp = data.date.getTime();
-            this.series.push(data);
-            this.emit("update", data);
-        }).on("error", (err, cancel) => {
-            if (err.timeout) {
-                cancel();
-                this.emit("error", `${this.contract.summary.localSymbol} ${this.options.barSize.text} streaming bars request timed out. (Outside market hours?)`);
-            }
-            else this.emit("error", err);
-        }).send();
-        
-        this.cancel = () => req.cancel();
         
         return this;
     }
@@ -150,7 +131,45 @@ class Bars extends MarketData {
         
         return this;
     }
-    
+}
+
+function barDate(size, date) {
+    let now = new Date(date),
+        count = parseInt(size.split(' ').first());
+
+    if (size.endsWith("day")) now = now.beginningOfDay();
+    else if (size.endsWith("week")) now = now.beginningOfWeek();
+    else if (size.endsWith("month")) now = now.beginningOfMonth();
+    else if (size.endsWith("hour")) {
+        let hours = now.getHours();
+        let whole = Math.floor(hours / count);
+        let current= whole * count;
+
+        now.set({ hours: current }, true);
+    }
+    else if (size.endsWith("mins")) {
+        let minutes = now.getMinutes();
+        let whole = Math.floor(minutes / count);
+        let current= whole * count;
+
+        now.set({ minutes: current }, true);
+    }
+    else if (size.endsWith("secs")) {
+        let seconds = now.getSeconds();
+        let whole = Math.floor(seconds / count);
+        let current= whole * count;
+
+        now.set({ seconds: current }, true);
+    }
+
+    return now;
+}
+
+function merge(oldBar, newBar) {
+    oldBar.high = Math.max(oldBar.high, newBar.high);
+    oldBar.low = Math.min(oldBar.low, newBar.low);
+    oldBar.close = newBar.close;
+    oldBar.volume += newBar.volume;
 }
 
 module.exports = Bars;

@@ -5,136 +5,174 @@ require("sugar").extend();
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
 
 const MarketData = require("./marketdata"),
-      Bars = require("./bars");
+      Bars = require("./bars"),
+      flags = require("../flags");
 
 class Charts extends MarketData {
     
-    constructor(session, contract) {
+    constructor(session, contract, field) {
         
         super(session, contract);
         
-        this.service.headTimestamp(this.contract.summary, "TRADES", 0, 1).once("data", data => {
-            this.earliestDataTimestamp = Date.create(data);
-        }).send();
+        Object.defineProperty(this, 'field', { value: field });
+        
+        this.setMaxListeners(50);
+        
+        this.series = [ ];
         
         this.seconds = {
-            one: new Bars(session, contract, {
-                text: "1 sec",
-                integer: 1,
-                duration: "1800 S"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            five: new Bars(session, contract, {
+            five: new Bars(session, contract, this, {
                 text: "5 secs",
                 integer: 5,
                 duration: "3600 S"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            ten: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            ten: new Bars(session, contract, this, {
                 text: "10 secs",
                 integer: 10,
                 duration: "7200 S"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            fifteen: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            fifteen: new Bars(session, contract, this, {
                 text: "15 secs",
                 integer: 15,
                 duration: "10800 S"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            thirty: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            thirty: new Bars(session, contract, this, {
                 text: "30 secs",
                 integer: 30,
                 duration: "1 D"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data))
+            }).on("error", err => this.emit("error", err))
         };
         
         this.minutes = { 
-            one: new Bars(session, contract, {
+            one: new Bars(session, contract, this, {
                 text: "1 min",
                 integer: 60,
                 duration: "2 D"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            two: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            two: new Bars(session, contract, this, {
                 text: "2 mins",
                 integer: 120,
                 duration: "3 D"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            three: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            three: new Bars(session, contract, this, {
                 text: "3 mins",
                 integer: 180,
                 duration: "4 D"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            five:  new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            five:  new Bars(session, contract, this, {
                 text: "5 mins",
                 integer: 300,
                 duration: "1 W"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            ten: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            ten: new Bars(session, contract, this, {
                 text: "10 mins",
                 integer: 600,
                 duration: "2 W"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            fifteen: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            fifteen: new Bars(session, contract, this, {
                 text: "15 mins",
                 integer: 900,
                 duration: "2 W"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            thirty: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            twenty: new Bars(session, contract, this, {
+                text: "20 mins",
+                integer: 1200,
+                duration: "3 W"
+            }).on("error", err => this.emit("error", err)),
+            thirty: new Bars(session, contract, this, {
                 text: "30 mins",
                 integer: 1800,
                 duration: "1 M"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data))
+            }).on("error", err => this.emit("error", err))
         };
         
         this.hours = {
-            one: new Bars(session, contract, {
+            one: new Bars(session, contract, this, {
                 text: "1 hour",
                 integer: 3600,
                 duration: "2 M"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            two: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            two: new Bars(session, contract, this, {
                 text: "2 hour",
                 integer: 7200,
                 duration: "2 M"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            four: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            three: new Bars(session, contract, this, {
+                text: "3 hour",
+                integer: 10800,
+                duration: "3 M"
+            }).on("error", err => this.emit("error", err)),
+            four: new Bars(session, contract, this, {
                 text: "4 hour",
                 integer: 14400,
                 duration: "4 M"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data)),
-            eight: new Bars(session, contract, {
+            }).on("error", err => this.emit("error", err)),
+            eight: new Bars(session, contract, this, {
                 text: "4 hour",
                 integer: 28800,
                 duration: "8 M"
-            }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data))
+            }).on("error", err => this.emit("error", err))
         };
 
-        this.daily = new Bars(session, contract, {
+        this.daily = new Bars(session, contract, this, {
             text: "1 day",
             integer: 3600 * 24,
             duration: "1 Y"
-        }).on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
+        }).on("error", err => this.emit("error", err));
         
+        this.weekly = new Bars(session, contract, this, {
+            text: "1 week",
+            integer: 3600 * 24 * 7,
+            duration: "2 Y"
+        }).on("error", err => this.emit("error", err));
+        
+        this.monthly = new Bars(session, contract, this, {
+            text: "1 month",
+            integer: 3600 * 24 * 7 * 30,
+            duration: "5 Y" 
+        }).on("error", err => this.emit("error", err));
     }
     
-    cancel() {
-        this.seconds.one.cancel();
-        this.seconds.two.cancel();
-        this.seconds.five.cancel();
-        this.seconds.ten.cancel();
-        this.seconds.fifteen.cancel();
-        this.seconds.thirty.cancel();
+    get all() {
+        return Object.values(this.seconds)
+                     .append(Object.values(this.minutes))
+                     .append(Object.values(this.hours))
+                     .append(this.daily)
+                     .append(this.weekly)
+                     .append(this.monthly);
+    }
+    
+    each(cb) {
+        Object.values(this.seconds).forEach(cb);
+        Object.values(this.minutes).forEach(cb);
+        Object.values(this.hours).forEach(cb);
+        cb(this.daily);
+        cb(this.weekly);
+        cb(this.monthly);
+        return this;
+    }
+    
+    stream() {
+        this.service.headTimestamp(this.contract.summary, this.field, 0, 1).once("data", data => {
+            this.earliestDataTimestamp = Date.create(data);
+        }).send();
         
-        this.minutes.one.cancel();
-        this.minutes.two.cancel();
-        this.minutes.five.cancel();
-        this.minutes.ten.cancel();
-        this.minutes.fifteen.cancel();
-        this.minutes.thirty.cancel();
+        let req = this.service.realTimeBars(this.contract.summary, 5, this.field, false).on("data", data => {
+            data.date = Date.create(data.date * 1000);
+            data.timestamp = data.date.getTime();
+            this.series.push(data);
+            this.emit("update", data);
+        }).on("error", (err, cancel) => {
+            if (err.timeout) {
+                cancel();
+                this.emit("error", `Real time streaming bars request for ${this.contract.summary.localSymbol} timed out.`);
+            }
+            else this.emit("error", err);
+        }).send();
         
-        this.hours.one.cancel();
-        this.hours.two.cancel();
-        this.hours.four.cancel();
-        this.hours.eight.cancel();
+        this.cancel = () => req.cancel();
         
-        this.daily.cancel();
+        return this;
     }
     
 }

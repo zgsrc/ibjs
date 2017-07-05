@@ -1,7 +1,7 @@
 "use strict";
 
 const fs = require("fs"),
-      IB = require("../node-ib"),
+      IB = require("ib"),
       Service = exports.Service = require("./service/service"),
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),

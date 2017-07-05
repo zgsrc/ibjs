@@ -2,44 +2,108 @@
 
 require("sugar").extend();
 
-const flags = require("../flags");
+const flags = require("../flags"),
+      RealTime = require("../realtime");
 
 function details(session, summary, cb) {
     let list = [ ];
     session.service.contractDetails(summary)
-        .on("data", contract => list.push(parseContract(contract)))
+        .on("data", contract => list.push(new Contract(session, contract)))
         .once("error", err => cb(err, list))
         .once("end", () => cb(null, list))
         .send();
 }
 
-function parseContract(contract) {
-    contract.orderTypes = contract.orderTypes.split(",").compact();
-    contract.validExchanges = contract.validExchanges.split(",").compact();
+class Contract extends RealTime {
     
+    constructor(session, data) {
+        super(session);
+        this.merge(data);
+    } 
     
-    let timeZoneId = contract.timeZoneId,
-        tradingHours = (contract.tradingHours || "").split(';').map(d => d.split(':')),
-        liquidHours = (contract.liquidHours || "").split(';').map(d => d.split(':'));
+    merge(data) {
+        Object.merge(this, data);
+        
+        this.orderTypes = this.orderTypes.split(",").compact();
+        this.validExchanges = this.validExchanges.split(",").compact();
 
-    let schedule = { };
-    tradingHours.forEach(arr => {
-        let date = Date.create(arr.first()).format("{Mon}-{dd}");
-        if (!schedule[date]) schedule[date] = { tz: timeZoneId };
-        schedule[date].trading = arr[1];
-    });
+        let timeZoneId = this.timeZoneId,
+            tradingHours = (this.tradingHours || "").split(';').map(d => d.split(':')),
+            liquidHours = (this.liquidHours || "").split(';').map(d => d.split(':'));
 
-    liquidHours.forEach(arr => {
-        let date = Date.create(arr.first()).format("{Mon}-{dd}");
-        if (!schedule[date]) schedule[date] = { tz: timeZoneId };
-        schedule[date].liquid = arr[1];
-    });
+        let schedule = { };
+        tradingHours.forEach(arr => {
+            if (arr[1] == "CLOSED") return;
+            
+            let date = Date.create(arr[0], { future: true }),
+                times = arr[1].split('-').map(t => t.to(2) + ":" + t.from(2));
 
-    contract.tradingHours = schedule;
-    delete contract.liquidHours;
-    delete contract.timeZoneId;
+            let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[0] + ":00 " + timeZoneId, { future: true }),
+                end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[1] + ":00 " + timeZoneId, { future: true });
+
+            if (end.isBefore(start)) start.addDays(-1);
+
+            let label = date.format("{Mon}{dd}");
+            if (!schedule[label]) schedule[label] = { };
+            schedule[label].start = start;
+            schedule[label].end = end;
+        });
+
+        liquidHours.forEach(arr => {
+            if (arr[1] == "CLOSED") return;
+            
+            let date = Date.create(arr[0], { future: true }),
+                times = arr[1].split('-').map(t => t.to(2) + ":" + t.from(2));
+
+            let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[0] + ":00 " + timeZoneId, { future: true }),
+                end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[1] + ":00 " + timeZoneId, { future: true });
+
+            if (end.isBefore(start)) start.addDays(-1);
+
+            let label = date.format("{Mon}{dd}");
+            if (!schedule[label]) schedule[label] = { };
+            schedule[label].open = start;
+            schedule[label].close = end;
+        });
+
+        Object.defineProperty(schedule, 'today', {
+            get: function() {
+                let now = Date.create();
+                return schedule[now.format("{Mon}{dd}")];
+            }
+        });
+        
+        Object.defineProperty(schedule, 'tomorrow', {
+            get: function() {
+                let now = Date.create("tomorrow");
+                return schedule[now.format("{Mon}{dd}")];
+            }
+        });
+        
+        Object.defineProperty(this, 'schedule', { value: schedule });
+        
+        delete this.tradingHours;
+        delete this.liquidHours;
+    }
     
-    return contract;
+    get marketsOpen() {
+        let now = Date.create(), hours = this.schedule.today;
+        return (hours && hours.start && hours.end) && now.isBetween(hours.start, hours.end);
+    }
+    
+    get marketsLiquid() {
+        let now = Date.create(), hours = this.schedule.today;
+        return (hours && hours.start && hours.end) && now.isBetween(hours.open, hours.close);
+    }
+    
+    refresh(cb) {
+        this.session.service.contractDetails(this.summary)
+            .once("data", contract => merge(data))
+            .once("error", err => cb(err, list))
+            .once("end", () => cb(null, list))
+            .send();
+    } 
+    
 }
 
 exports.details = details;
