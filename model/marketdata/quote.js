@@ -97,7 +97,7 @@ class Quote extends MarketData {
     }
     
     realTimeVolumeBuffer(duration) {
-        return new RealTimeVolume(this, duration || 5000);
+        return new RealTimeVolumeBuffer(this, duration || 5000);
     }
     
 }
@@ -137,13 +137,13 @@ class RealTimeVolumeBuffer extends MarketData {
             
             this.prune();
             setInterval(() => this.prune(), duration);
-            this.emit("update");
+            this.emit("update", data);
         });
     }
     
     prune() {
         let now = (new Date()).getTime();
-        while (now - this.history.first().time.getTime() > duration) {
+        while (this.history.length && now - this.history.first().time.getTime() > duration) {
             this.history.shift();
         }
     }

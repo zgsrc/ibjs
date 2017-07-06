@@ -22,14 +22,17 @@ class Bars extends MarketData {
             let bd = barDate(barSize.text, data.date);
             if (this.series.length && this.series.last().date == bd) {
                 merge(this.series.last(), data);
+                this.emit("update", this.series.last());
             }
             else {
-                data.data = bd;
+                data.date = bd;
                 data.timestamp = bd.getTime();
+                
+                this.emit("old", this.series.last());
                 this.series.push(data);
+                this.emit("update", this.series.last());
+                this.emit("new", this.series.last());
             }
-            
-            this.emit("update", this.series.last());
         });
     }
     
@@ -73,8 +76,8 @@ class Bars extends MarketData {
             this.series = this.series.unique().sortBy("timestamp");
             this.options.cursor = this.series.first().date;
             
-            if (cb) cb();
             this.emit("load", range);
+            if (cb) cb();
         }).send();
         
         return this;
