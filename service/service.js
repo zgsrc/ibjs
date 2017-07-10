@@ -51,11 +51,13 @@ class Service {
         
         this.headTimestamp = instance("reqHeadTimestamp", null, 5000, ib, dispatch);
         
-        this.realTimeBars = instance("reqRealTimeBars", "cancelRealTimeBars", 5000, ib, dispatch);
+        this.realTimeBars = instance("reqRealTimeBars", "cancelRealTimeBars", 10000, ib, dispatch);
         
-        this.mktData = instance("reqMktData", "cancelMktData", 5000, ib, dispatch);
+        this.mktData = instance("reqMktData", "cancelMktData", 10000, ib, dispatch);
         
-        this.mktDepth = instance("reqMktDepth", "cancelMktDepth", 5000, ib, dispatch);
+        this.mktDataType = ib.reqMarketDataType;
+        
+        this.mktDepth = instance("reqMktDepth", "cancelMktDepth", 10000, ib, dispatch);
 
         this.scannerParameters = singleton("scannerParameters", "reqScannerParameters", null, 5000, ib, dispatch);
         
@@ -106,8 +108,6 @@ class Service {
         this.subscribeToGroupEvents = instance("subscribeToGroupEvents", "unsubscribeFromGroupEvents", 5000, ib, dispatch);
         
         this.updateDisplayGroup = ib.updateDisplayGroup;
-        
-        this.matchingSymbols = instance("matchingSymbols", "reqMatchingSymbols", null, ib, dispatch);
         
     }
     
@@ -273,6 +273,10 @@ function attach(ib, dispatch) {
             }
         });
     });
+    
+    ib.on("marketDataType", function(id, type) {
+        dispatch.data(id, type);
+    });
 
     ib.on('updateMktDepth', function(id, position, operation, side, price, size) {
         dispatch.data(id, {
@@ -434,10 +438,6 @@ function attach(ib, dispatch) {
     
     ib.on('displayGroupUpdated', function(reqId, contractInfo) {
         dispatch.data(reqId, contractInfo);
-    });
-    
-    ib.on('sampleSymbols', function(reqId, data) {
-        dispatch.data(reqId, data);
     });
 
 }

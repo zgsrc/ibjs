@@ -21,24 +21,29 @@ class Quote extends MarketData {
         
         return this;
     }
+
+    ticks() {
+        this._fieldTypes.add([ TICKS.realTimeVolume ]);
+        return this;
+    }
     
-    pricing() {
-        this._fieldTypes.add([ TICKS.markPrice, TICKS.auctionValues, TICKS.realTimeVolume ]);
+    stats() {
+        this._fieldTypes.add([ TICKS.tradeCount, TICKS.tradeRate, TICKS.volumeRate, TICKS.priceRange ]);
         return this;
     }
     
     fundamentals() {
-        this._fieldTypes.add([ TICKS.dividends, TICKS.fundamentalValues, TICKS.fundamentalRatios, TICKS.miscellaneousStats ]);
+        this._fieldTypes.add([ TICKS.fundamentalRatios ]);
         return this;
     }
     
     volatility() {
-        this._fieldTypes.add([ TICKS.historicalVolatility, TICKS.optionImpliedVolatility, TICKS.realtimeHistoricalVolatility ]);
+        this._fieldTypes.add([ TICKS.historicalVolatility ]);
         return this;
     }
     
     options() {
-        this._fieldTypes.add([ TICKS.optionVolume, TICKS.optionOpenInterest ]);
+        this._fieldTypes.add([ TICKS.optionImpliedVolatility, TICKS.optionVolume, TICKS.optionOpenInterest ]);
         return this;
     }
     
@@ -48,7 +53,7 @@ class Quote extends MarketData {
     }
     
     short() {
-        this._fieldTypes.add([ TICKS.shortable, TICKS.inventory ]);
+        this._fieldTypes.add([ TICKS.shortable ]);
         return this;
     }
     
@@ -96,7 +101,7 @@ class Quote extends MarketData {
         return this;
     }
     
-    realTimeVolumeBuffer(duration) {
+    tickBuffer(duration) {
         return new RealTimeVolumeBuffer(this, duration || 5000);
     }
     
@@ -133,11 +138,10 @@ class RealTimeVolumeBuffer extends MarketData {
         quote.on("update", data => {
             if (data.key == "rtVolume") {
                 this.history.push(data.newValue);
+                this.prune();
+                setInterval(() => this.prune(), duration);
+                this.emit("update", data);
             }
-            
-            this.prune();
-            setInterval(() => this.prune(), duration);
-            this.emit("update", data);
         });
     }
     

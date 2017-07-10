@@ -152,7 +152,7 @@ class Charts extends MarketData {
         return this;
     }
     
-    stream() {
+    stream(retry) {
         this.service.headTimestamp(this.contract.summary, this.field, 0, 1).once("data", data => {
             this.earliestDataTimestamp = Date.create(data);
         }).send();
@@ -165,7 +165,13 @@ class Charts extends MarketData {
         }).on("error", (err, cancel) => {
             if (err.timeout) {
                 cancel();
-                this.emit("error", `Real time streaming bars request for ${this.contract.summary.localSymbol} timed out.`);
+                
+                if (retry) {
+                    this.emit("error", `Real time streaming bars request for ${this.contract.summary.localSymbol} timed out.`);    
+                }
+                else {
+                    stream(true);
+                }
             }
             else this.emit("error", err);
         }).send();

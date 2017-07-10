@@ -50,22 +50,23 @@ const TAGS = {
 
 exports.ACCOUNT_TAGS = TAGS;
 
-const TICKS = {
-    fundamentalValues: 47,
+const TICKS = {  
     optionVolume: 100,
     optionOpenInterest: 101,
     futuresOpenInterest: 588,
     historicalVolatility: 104,
     optionImpliedVolatility: 106,
     indexFuturePremium: 162,
-    miscellaneousStats: 165,
+    priceRange: 165,
     markPrice: 221,
     auctionValues: 225,
     realTimeVolume: 233,
     shortable: 236,
-    inventory: 256,
     fundamentalRatios: 258,
     news: 292,
+    tradeCount: 293,
+    tradeRate: 294,
+    volumeRate: 295,
     realtimeHistoricalVolatility: 411,
     dividends: 456
 };
