@@ -38,12 +38,12 @@ class Quote extends MarketData {
     }
     
     volatility() {
-        this._fieldTypes.append([ TICKS.historicalVolatility ]);
+        this._fieldTypes.append([ TICKS.historicalVolatility, TICKS.optionImpliedVolatility ]);
         return this;
     }
     
     options() {
-        this._fieldTypes.append([ TICKS.optionImpliedVolatility, TICKS.optionVolume, TICKS.optionOpenInterest ]);
+        this._fieldTypes.append([ TICKS.optionVolume, TICKS.optionOpenInterest ]);
         return this;
     }
     

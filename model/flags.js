@@ -53,7 +53,6 @@ exports.ACCOUNT_TAGS = TAGS;
 const TICKS = {  
     optionVolume: 100,
     optionOpenInterest: 101,
-    futuresOpenInterest: 588,
     historicalVolatility: 104,
     optionImpliedVolatility: 106,
     indexFuturePremium: 162,
@@ -68,7 +67,8 @@ const TICKS = {
     tradeRate: 294,
     volumeRate: 295,
     realtimeHistoricalVolatility: 411,
-    dividends: 456
+    dividends: 456,
+    futuresOpenInterest: 588
 };
 
 exports.QUOTE_TICK_TYPES = TICKS;
