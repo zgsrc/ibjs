@@ -42,7 +42,7 @@ class Session extends Events {
                     this.emit("connectivity", this.connectivity[name]);
                 }
                 else {
-                    this.emit("connectivity", data);    
+                    this.emit("error", data);    
                 }
             });
             

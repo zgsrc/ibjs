@@ -63,7 +63,8 @@ class Bars extends MarketData {
             this.barSize.text, 
             this.charts.field, 
             this.options.regularTradingHours ? 1 : 0,
-            this.options.dateFormat
+            this.options.dateFormat,
+            false
         );
         
         let length = this.series.length;

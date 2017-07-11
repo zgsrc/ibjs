@@ -55,7 +55,9 @@ class Service {
         
         this.mktData = instance("reqMktData", "cancelMktData", 10000, ib, dispatch);
         
-        this.mktDataType = ib.reqMarketDataType;
+        this.mktDataType = (type) => {
+            ib.reqMarketDataType(type);
+        };
         
         this.mktDepth = instance("reqMktDepth", "cancelMktDepth", 10000, ib, dispatch);
 
@@ -107,7 +109,9 @@ class Service {
         
         this.subscribeToGroupEvents = instance("subscribeToGroupEvents", "unsubscribeFromGroupEvents", 5000, ib, dispatch);
         
-        this.updateDisplayGroup = ib.updateDisplayGroup;
+        this.updateDisplayGroup = (reqId, contract) => {
+            ib.updateDisplayGroup(reqId, contract);
+        };
         
     }
     

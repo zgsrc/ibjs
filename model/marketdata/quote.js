@@ -16,55 +16,55 @@ class Quote extends MarketData {
     
     addFieldTypes(fieldTypes) {
         if (fieldTypes) {
-            this._fieldTypes.add(fieldTypes);
+            this._fieldTypes.append(fieldTypes);
         }
         
         return this;
     }
 
     ticks() {
-        this._fieldTypes.add([ TICKS.realTimeVolume ]);
+        this._fieldTypes.append([ TICKS.realTimeVolume ]);
         return this;
     }
     
     stats() {
-        this._fieldTypes.add([ TICKS.tradeCount, TICKS.tradeRate, TICKS.volumeRate, TICKS.priceRange ]);
+        this._fieldTypes.append([ TICKS.tradeCount, TICKS.tradeRate, TICKS.volumeRate, TICKS.priceRange ]);
         return this;
     }
     
     fundamentals() {
-        this._fieldTypes.add([ TICKS.fundamentalRatios ]);
+        this._fieldTypes.append([ TICKS.fundamentalRatios ]);
         return this;
     }
     
     volatility() {
-        this._fieldTypes.add([ TICKS.historicalVolatility ]);
+        this._fieldTypes.append([ TICKS.historicalVolatility ]);
         return this;
     }
     
     options() {
-        this._fieldTypes.add([ TICKS.optionImpliedVolatility, TICKS.optionVolume, TICKS.optionOpenInterest ]);
+        this._fieldTypes.append([ TICKS.optionImpliedVolatility, TICKS.optionVolume, TICKS.optionOpenInterest ]);
         return this;
     }
     
     futures() {
-        this._fieldTypes.add([ TICKS.futuresOpenInterest ]);
+        this._fieldTypes.append([ TICKS.futuresOpenInterest ]);
         return this;
     }
     
     short() {
-        this._fieldTypes.add([ TICKS.shortable ]);
+        this._fieldTypes.append([ TICKS.shortable ]);
         return this;
     }
     
     news() {
-        this._fieldTypes.add([ TICKS.news ]);
+        this._fieldTypes.append([ TICKS.news ]);
         return this;
     }
     
     snapshot(cb) {
         let state = { };
-        this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true)
+        this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true, false)
             .on("data", datum => {
                 datum = parseQuotePart(datum);
                 state[datum.key] = datum.value;
@@ -82,7 +82,7 @@ class Quote extends MarketData {
     }
     
     stream() {
-        let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false);
+        let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false, false);
         
         this.cancel = () => req.cancel();
         

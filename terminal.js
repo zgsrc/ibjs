@@ -30,6 +30,8 @@ const terminal = exports.terminal = configuration => {
     ib.open(configuration, (err, session) => {
         if (err) printError(err);
         else {
+            session.on("error", err => console.log(err));
+            
             console.log('SDK entry point is "session".'.gray);
             console.log('Load securities with the $("AAPL stock") function.'.gray);
             console.log('Loaded securities are directly addressable (like AAPL.quote).'.gray);
