@@ -104,11 +104,11 @@ class Quote extends MarketData {
     }
     
     tickBuffer(duration) {
-        return new RealTimeVolumeBuffer(this, duration || 5000);
+        return new FieldBuffer(this, duration || 5000, "rtVolume");
     }
     
     newsBuffer(duration) {
-        return new NewsBuffer(this, duration || 60000 * 60);
+        return new FieldBuffer(this, duration || 60000 * 60, "newsTick");
     }
     
 }
@@ -157,51 +157,20 @@ function parseQuotePart(datum) {
     return { key: key.camelize(false), value: value };
 }
 
-class RealTimeVolumeBuffer extends MarketData {
+class FieldBuffer extends MarketData {
     
-    constructor(quote, duration) {
+    constructor(quote, duration, field) {
         super(quote.session, quote.contract);
         
         this.duration = duration;
         this.history = [ ];
         
-        if (quote.rtVolume) {
-            this.history.push(quote.rtVolume);
+        if (quote[field]) {
+            this.history.push(quote[field]);
         }
         
         quote.on("update", data => {
-            if (data.key == "rtVolume") {
-                this.history.push(data.newValue);
-                this.prune();
-                setInterval(() => this.prune(), duration);
-                this.emit("update", data);
-            }
-        });
-    }
-    
-    prune() {
-        let now = (new Date()).getTime();
-        while (this.history.length && now - this.history.first().time.getTime() > this.duration) {
-            this.history.shift();
-        }
-    }
-    
-}
-
-class NewsBuffer extends MarketData {
-    
-    constructor(quote, duration) {
-        super(quote.session, quote.contract);
-        
-        this.duration = duration;
-        this.history = [ ];
-        
-        if (quote.newsTick) {
-            this.history.push(quote.newsTick);
-        }
-        
-        quote.on("update", data => {
-            if (data.key == "newsTick") {
+            if (data.key == field) {
                 this.history.push(data.newValue);
                 this.prune();
                 setInterval(() => this.prune(), duration);
