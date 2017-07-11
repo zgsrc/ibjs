@@ -38,13 +38,14 @@ class Contract extends RealTime {
             let date = Date.create(arr[0], { future: true }),
                 times = arr[1].split('-').map(t => t.to(2) + ":" + t.from(2));
 
+            let label = date.format("{Mon}{dd}");
+            if (!schedule[label]) schedule[label] = { };
+            
             let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[0] + ":00 " + timeZoneId, { future: true }),
                 end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[1] + ":00 " + timeZoneId, { future: true });
 
             if (end.isBefore(start)) start.addDays(-1);
-
-            let label = date.format("{Mon}{dd}");
-            if (!schedule[label]) schedule[label] = { };
+            
             schedule[label].start = start;
             schedule[label].end = end;
         });
@@ -55,27 +56,35 @@ class Contract extends RealTime {
             let date = Date.create(arr[0], { future: true }),
                 times = arr[1].split('-').map(t => t.to(2) + ":" + t.from(2));
 
+            let label = date.format("{Mon}{dd}");
+            if (!schedule[label]) schedule[label] = { };
+            
             let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[0] + ":00 " + timeZoneId, { future: true }),
                 end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[1] + ":00 " + timeZoneId, { future: true });
 
             if (end.isBefore(start)) start.addDays(-1);
-
-            let label = date.format("{Mon}{dd}");
-            if (!schedule[label]) schedule[label] = { };
+            
             schedule[label].open = start;
             schedule[label].close = end;
         });
 
         Object.defineProperty(schedule, 'today', {
             get: function() {
-                let now = Date.create();
-                return schedule[now.format("{Mon}{dd}")];
+                let now = Date.create(),
+                    today = schedule[now.format("{Mon}{dd}")];
+                
+                if (today.end.isBefore(now)) {
+                    now.addDays(1);
+                    today = schedule[now.format("{Mon}{dd}")];
+                }
+                
+                return today;
             }
         });
         
         Object.defineProperty(schedule, 'tomorrow', {
             get: function() {
-                let now = Date.create("tomorrow");
+                let now = this.today.addDays(1);
                 return schedule[now.format("{Mon}{dd}")];
             }
         });
@@ -93,7 +102,7 @@ class Contract extends RealTime {
     
     get marketsLiquid() {
         let now = Date.create(), hours = this.schedule.today;
-        return (hours && hours.start && hours.end) && now.isBetween(hours.open, hours.close);
+        return (hours && hours.open && hours.close) && now.isBetween(hours.open, hours.close);
     }
     
     refresh(cb) {
