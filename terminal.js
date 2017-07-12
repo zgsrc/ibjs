@@ -46,10 +46,10 @@ const terminal = exports.terminal = configuration => {
                 session.securities(text, (err, list) => {
                     if (err) printError(err);
                     else {
-                        cmd.context.symbols.append(list.map(l => l.contract.summary.localSymbol)).unique().sort();
+                        cmd.context.symbols.append(list.map(l => l.contract.symbol)).unique().sort();
                         list.forEach(l => {
-                            if (cmd.context[l.contract.summary.localSymbol] == null) {
-                                cmd.context[l.contract.summary.localSymbol] = l;
+                            if (cmd.context[l.contract.symbol] == null) {
+                                cmd.context[l.contract.symbol] = l;
                             }
                         });
                     }

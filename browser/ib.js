@@ -847,56 +847,77 @@ class Contract extends RealTime {
     merge(data) {
         Object.merge(this, data);
         
+        this.symbol = this.summary.localSymbol.compact().underscore().toUpperCase();
         this.orderTypes = this.orderTypes.split(",").compact();
         this.validExchanges = this.validExchanges.split(",").compact();
 
         let timeZoneId = this.timeZoneId,
             tradingHours = (this.tradingHours || "").split(';').map(d => d.split(':')),
             liquidHours = (this.liquidHours || "").split(';').map(d => d.split(':'));
-
+        
         let schedule = { };
         tradingHours.forEach(arr => {
             if (arr[1] == "CLOSED") return;
             
-            let date = Date.create(arr[0], { future: true }),
-                times = arr[1].split('-').map(t => t.to(2) + ":" + t.from(2));
-
+            let date = Date.create(arr[0], { future: true });
+            
             let label = date.format("{Mon}{dd}");
             if (!schedule[label]) schedule[label] = { };
             
-            let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[0] + ":00 " + timeZoneId, { future: true }),
-                end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[1] + ":00 " + timeZoneId, { future: true });
-
-            if (end.isBefore(start)) start.addDays(-1);
+            let times = arr[1].split(',').map(d => d.split('-').map(t => t.to(2) + ":" + t.from(2)));
             
-            schedule[label].start = start;
-            schedule[label].end = end;
+            schedule[label].start = [ ];
+            schedule[label].end = [ ];
+            
+            times.forEach(time => {
+                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
+                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
+
+                if (end.isBefore(start)) start.addDays(-1);
+
+                schedule[label].start.push(start);
+                schedule[label].end.push(end);
+            });
+            
+            if (schedule[label].start.length != schedule[label].end.length) {
+                throw new Error("Bad trading hours.");
+            }
         });
 
         liquidHours.forEach(arr => {
             if (arr[1] == "CLOSED") return;
             
-            let date = Date.create(arr[0], { future: true }),
-                times = arr[1].split('-').map(t => t.to(2) + ":" + t.from(2));
-
+            let date = Date.create(arr[0], { future: true });
+            
             let label = date.format("{Mon}{dd}");
             if (!schedule[label]) schedule[label] = { };
             
-            let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[0] + ":00 " + timeZoneId, { future: true }),
-                end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + times[1] + ":00 " + timeZoneId, { future: true });
-
-            if (end.isBefore(start)) start.addDays(-1);
+            let times = arr[1].split(',').map(d => d.split('-').map(t => t.to(2) + ":" + t.from(2)));
             
-            schedule[label].open = start;
-            schedule[label].close = end;
-        });
+            schedule[label].open = [ ];
+            schedule[label].close = [ ];
+            
+            times.forEach(time => {
+                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
+                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
 
+                if (end.isBefore(start)) start.addDays(-1);
+
+                schedule[label].open.push(start);
+                schedule[label].close.push(end);
+            });
+            
+            if (schedule[label].open.length != schedule[label].close.length) {
+                throw new Error("Bad liquid hours.");
+            }
+        });
+        
         Object.defineProperty(schedule, 'today', {
             get: function() {
                 let now = Date.create(),
                     today = schedule[now.format("{Mon}{dd}")];
                 
-                if (today.end.isBefore(now)) {
+                if (today.end.every(end => end.isBefore(now))) {
                     now.addDays(1);
                     today = schedule[now.format("{Mon}{dd}")];
                 }
@@ -920,12 +941,24 @@ class Contract extends RealTime {
     
     get marketsOpen() {
         let now = Date.create(), hours = this.schedule.today;
-        return (hours && hours.start && hours.end) && now.isBetween(hours.start, hours.end);
+        if (hours && hours.start && hours.end) {
+            for (let i = 0; i < hours.start.length; i++) {
+                if (now.isBetween(hours.start[i], hours.end[i])) return true;
+            }
+        }
+        
+        return false;
     }
     
     get marketsLiquid() {
         let now = Date.create(), hours = this.schedule.today;
-        return (hours && hours.open && hours.close) && now.isBetween(hours.open, hours.close);
+        if (hours && hours.open && hours.close) {
+            for (let i = 0; i < hours.open.length; i++) {
+                if (now.isBetween(hours.open[i], hours.close[i])) return true;
+            }
+        }
+        
+        return false;
     }
     
     refresh(cb) {
@@ -1310,6 +1343,8 @@ module.exports = Order;
 
 require("sugar").extend();
 
+Date.getLocale('en').addFormat('{yyyy}{MM}{dd}-{hh}:{mm}:{ss}');
+
 const MarketData = require("./marketdata"),
       flags = require("../flags"),
       TICKS = flags.QUOTE_TICK_TYPES;
@@ -1410,7 +1445,11 @@ class Quote extends MarketData {
     }
     
     tickBuffer(duration) {
-        return new RealTimeVolumeBuffer(this, duration || 5000);
+        return new FieldBuffer(this, duration || 5000, "rtVolume");
+    }
+    
+    newsBuffer(duration) {
+        return new FieldBuffer(this, duration || 60000 * 60, "newsTick");
     }
     
 }
@@ -1420,8 +1459,11 @@ function parseQuotePart(datum) {
     
     if (!key || key == "") throw new Error("Tick key not found.");
     if (value === null || value === "") throw new Error("No tick data value found.");
-    if (key == "LAST_TIMESTAMP") value = new Date(parseInt(value) * 1000);
-    if (key == "RT_VOLUME") {
+    
+    if (key == "LAST_TIMESTAMP") {
+        value = new Date(parseInt(value) * 1000);
+    }
+    else if (key == "RT_VOLUME") {
         value = value.split(";");
         value = {
             price: parseFloat(value[0]),
@@ -1432,19 +1474,44 @@ function parseQuotePart(datum) {
             marketMaker: new Boolean(value[5])
         };
     }
+    else if (key == "FUNDAMENTAL_RATIOS") {
+        let ratios = { };
+        value.split(";").forEach(r => {
+            let parts = r.split("=");
+            if (parts[0].trim().length > 0) {
+                ratios[parts[0]] = parseFloat(parts[1]);
+            }
+        });
+        
+        value = ratios;
+    }
+    else if (key == "NEWS_TICK") {
+        value = value.split(" ");
+        value = {
+            id: value[0],
+            time: value[1],
+            source: value[2],
+            text: value.from(3).join(' ')
+        };
+    }
     
     return { key: key.camelize(false), value: value };
 }
 
-class RealTimeVolumeBuffer extends MarketData {
+class FieldBuffer extends MarketData {
     
-    constructor(quote, duration) {
+    constructor(quote, duration, field) {
         super(quote.session, quote.contract);
         
+        this.duration = duration;
         this.history = [ ];
         
+        if (quote[field]) {
+            this.history.push(quote[field]);
+        }
+        
         quote.on("update", data => {
-            if (data.key == "rtVolume") {
+            if (data.key == field) {
                 this.history.push(data.newValue);
                 this.prune();
                 setInterval(() => this.prune(), duration);
@@ -1455,7 +1522,7 @@ class RealTimeVolumeBuffer extends MarketData {
     
     prune() {
         let now = (new Date()).getTime();
-        while (this.history.length && now - this.history.first().time.getTime() > duration) {
+        while (this.history.length && now - this.history.first().time.getTime() > this.duration) {
             this.history.shift();
         }
     }
