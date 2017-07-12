@@ -8,7 +8,8 @@ const fs = require("fs"),
       Session = exports.Session = require("./model/session"),
       flags = exports.flags = require("./model/flags"),
       studies = exports.studies = require("./model/marketdata/studies"),
-      id = exports.id = 0;
+      id = exports.id = 0,
+      Environment = exports.Environment = require("./model/environment");
 
 exports.open = (options, cb) => {
     if (Object.isFunction(options) && cb == null) {
