@@ -11,6 +11,17 @@ const fs = require("fs"),
       id = exports.id = 0,
       Environment = exports.Environment = require("./model/environment");
 
+exports.frontMonth = function(cutOffDay, offset) {
+    let date = Date.create();
+    if (date.getDate() >= cutOffDay) {
+        date.addMonths(1);
+    }
+    
+    date.addMonths(1 + (offset ? 1 : 0));
+    date.toContractString = () => (date.format("{Mon}").to(3) + date.format("{yy}")).toUpperCase();
+    return date;
+};
+
 exports.open = (options, cb) => {
     if (Object.isFunction(options) && cb == null) {
         cb = options;

@@ -4,9 +4,10 @@ var Session = require("../model/session"),
 
 window.ib = {
     session: () => new Session(new Proxy(socket)),
-    flags: require("../model/flags")
+    flags: require("../model/flags"),
+    Environment: require("../model/environment")
 };
-},{"../model/flags":7,"../model/session":18,"../service/proxy":811}],2:[function(require,module,exports){
+},{"../model/environment":7,"../model/flags":8,"../model/session":19,"../service/proxy":812}],2:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -86,7 +87,7 @@ class Account extends RealTime {
 }
 
 module.exports = Account;
-},{"../realtime":17}],3:[function(require,module,exports){
+},{"../realtime":18}],3:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime"),
@@ -155,7 +156,7 @@ class Accounts extends RealTime {
 }
 
 module.exports = Accounts;
-},{"../flags":7,"../realtime":17}],4:[function(require,module,exports){
+},{"../flags":8,"../realtime":18}],4:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -192,7 +193,7 @@ class Orders extends RealTime {
 }
 
 module.exports = Orders;
-},{"../realtime":17}],5:[function(require,module,exports){
+},{"../realtime":18}],5:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -221,7 +222,7 @@ class Positions extends RealTime {
 }
 
 module.exports = Positions;
-},{"../realtime":17}],6:[function(require,module,exports){
+},{"../realtime":18}],6:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -263,7 +264,83 @@ class Trades extends RealTime {
 }
 
 module.exports = Trades;
-},{"../realtime":17}],7:[function(require,module,exports){
+},{"../realtime":18}],7:[function(require,module,exports){
+"use strict";
+
+let Events = require("events");
+
+class Environment extends Events {
+    
+    constructor(session) {
+        super();
+        
+        Object.defineProperty(this, "session", { value: session });
+        
+        this.workspace = { };
+    }
+    
+    assign(name, value) {
+        if (this.workspace[name] == null) {
+            this.workspace[name] = value;
+            this.workspace.symbols.append(name).sort();
+        }
+    }
+    
+    free(name) {
+        if (this.workspace[name]) {
+            this.workspace[name].cancel();
+        }
+        
+        delete this.workspace[name];
+        this.symbols.remove(name);
+    }
+    
+    load(symbol, cb) {
+        this.session.securities(symbol, (err, securities) => {
+            if (err && cb) cb(err);
+            else {
+                securities.forEach(s => {
+                    this.assign(s.contract.symbol, s);
+                });
+                
+                if (cb) cb(null, s);
+            }
+        });
+    }
+    
+    setup(cb) {
+        this.workspace.session = this.session;
+        
+        this.workspace.account = this.session.account().on("load", err => {
+            if (cb) cb(err);
+        });
+        
+        this.workspace.$ = text => {
+            this.session.securities(text, (err, list) => {
+                if (err) this.emit("error", err);
+                else list.forEach(l => assign(l.contract.symbol, l));
+            });
+        };
+        
+        this.workspace.symbols = [ ];
+        
+        return this;
+    }
+    
+    terminal(repl) {
+        for (let key in this.workspace) {
+            repl.context[key] = this.workspace[key];
+        }
+        
+        this.workspace = repl.context;
+        repl.on("exit", () => this.session.close());
+        return repl;
+    }
+    
+}
+
+module.exports = Environment;
+},{"events":817}],8:[function(require,module,exports){
 const HISTORICAL = {
     trades: "TRADES",
     midpoint: "MIDPOINT",
@@ -443,7 +520,7 @@ const TIME_IN_FORCE = {
 };
 
 exports.TIME_IN_FORCE = TIME_IN_FORCE;
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -633,7 +710,7 @@ function merge(oldBar, newBar) {
 }
 
 module.exports = Bars;
-},{"../flags":7,"./marketdata":12,"./studies":16,"fs":814}],9:[function(require,module,exports){
+},{"../flags":8,"./marketdata":13,"./studies":17,"fs":815}],10:[function(require,module,exports){
 "use strict";
 
 require("sugar").extend();
@@ -820,7 +897,7 @@ class Charts extends MarketData {
 }
 
 module.exports = Charts;
-},{"../flags":7,"./bars":8,"./marketdata":12,"sugar":455}],10:[function(require,module,exports){
+},{"../flags":8,"./bars":9,"./marketdata":13,"sugar":456}],11:[function(require,module,exports){
 "use strict";
 
 require("sugar").extend();
@@ -1066,7 +1143,7 @@ function lookup(session, description, cb) {
 }
 
 exports.lookup = lookup;
-},{"../flags":7,"../realtime":17,"sugar":455}],11:[function(require,module,exports){
+},{"../flags":8,"../realtime":18,"sugar":456}],12:[function(require,module,exports){
 "use strict";
 
 require("sugar").extend();
@@ -1157,7 +1234,7 @@ class Depth extends MarketData {
 }
 
 module.exports = Depth;
-},{"./marketdata":12,"sugar":455}],12:[function(require,module,exports){
+},{"./marketdata":13,"sugar":456}],13:[function(require,module,exports){
 "use strict";
 
 require("sugar").extend();
@@ -1174,7 +1251,7 @@ class MarketData extends RealTime {
 }
 
 module.exports = MarketData;
-},{"../realtime":17,"sugar":455}],13:[function(require,module,exports){
+},{"../realtime":18,"sugar":456}],14:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -1338,7 +1415,7 @@ class Order extends MarketData {
 }
 
 module.exports = Order;
-},{"../flags":7,"./marketdata":12}],14:[function(require,module,exports){
+},{"../flags":8,"./marketdata":13}],15:[function(require,module,exports){
 "use strict";
 
 require("sugar").extend();
@@ -1530,7 +1607,7 @@ class FieldBuffer extends MarketData {
 }
 
 module.exports = Quote;
-},{"../flags":7,"./marketdata":12,"sugar":455}],15:[function(require,module,exports){
+},{"../flags":8,"./marketdata":13,"sugar":456}],16:[function(require,module,exports){
 "use strict";
 
 require("sugar").extend();
@@ -1580,7 +1657,7 @@ function securities(session, description, cb) {
 }
 
 module.exports = securities;
-},{"../flags":7,"./charts":9,"./depth":11,"./marketdata":12,"./order":13,"./quote":14,"sugar":455}],16:[function(require,module,exports){
+},{"../flags":8,"./charts":10,"./depth":12,"./marketdata":13,"./order":14,"./quote":15,"sugar":456}],17:[function(require,module,exports){
 require("sugar").extend();
 
 const studies = module.exports = { };
@@ -1628,7 +1705,7 @@ studies.AR = window => {
     ar.oscillator = ar.up - ar.down;
     return ar;
 };
-},{"sugar":455}],17:[function(require,module,exports){
+},{"sugar":456}],18:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -1657,7 +1734,7 @@ class RealTime extends Events {
 }
 
 module.exports = RealTime;
-},{"events":816}],18:[function(require,module,exports){
+},{"events":817}],19:[function(require,module,exports){
 (function (process){
 "use strict";
 
@@ -1783,7 +1860,7 @@ class Session extends Events {
 
 module.exports = Session;
 }).call(this,require('_process'))
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/contract":10,"./marketdata/security":15,"_process":817,"events":816,"sugar":455}],19:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/contract":11,"./marketdata/security":16,"_process":818,"events":817,"sugar":456}],20:[function(require,module,exports){
 (function (global){
 /*
  *  Sugar v2.0.4
@@ -2662,7 +2739,7 @@ module.exports = Session;
 
 }).call(this);
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],20:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2678,7 +2755,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.add;
-},{"./internal/arrayAppend":49,"./internal/arrayClone":50,"sugar-core":19}],21:[function(require,module,exports){
+},{"./internal/arrayAppend":50,"./internal/arrayClone":51,"sugar-core":20}],22:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2693,7 +2770,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.append;
-},{"./internal/arrayAppend":49,"sugar-core":19}],22:[function(require,module,exports){
+},{"./internal/arrayAppend":50,"sugar-core":20}],23:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2708,7 +2785,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.at;
-},{"../common/internal/getEntriesForIndexes":134,"sugar-core":19}],23:[function(require,module,exports){
+},{"../common/internal/getEntriesForIndexes":135,"sugar-core":20}],24:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2723,13 +2800,13 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.average;
-},{"../enumerable/internal/average":409,"sugar-core":19}],24:[function(require,module,exports){
+},{"../enumerable/internal/average":410,"sugar-core":20}],25:[function(require,module,exports){
 'use strict';
 
 var setArrayChainableConstructor = require('../internal/setArrayChainableConstructor');
 
 setArrayChainableConstructor();
-},{"../internal/setArrayChainableConstructor":71}],25:[function(require,module,exports){
+},{"../internal/setArrayChainableConstructor":72}],26:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2744,7 +2821,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.clone;
-},{"./internal/arrayClone":50,"sugar-core":19}],26:[function(require,module,exports){
+},{"./internal/arrayClone":51,"sugar-core":20}],27:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2759,7 +2836,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.compact;
-},{"./internal/arrayCompact":51,"sugar-core":19}],27:[function(require,module,exports){
+},{"./internal/arrayCompact":52,"sugar-core":20}],28:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2777,7 +2854,7 @@ Sugar.Array.defineStatic({
 });
 
 module.exports = Sugar.Array.construct;
-},{"../common/internal/coercePositiveInteger":111,"sugar-core":19}],28:[function(require,module,exports){
+},{"../common/internal/coercePositiveInteger":112,"sugar-core":20}],29:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2791,7 +2868,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.count;
-},{"../common/internal/fixArgumentLength":129,"../enumerable/internal/arrayCount":407,"sugar-core":19}],29:[function(require,module,exports){
+},{"../common/internal/fixArgumentLength":130,"../enumerable/internal/arrayCount":408,"sugar-core":20}],30:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2808,7 +2885,7 @@ Sugar.Array.defineStatic({
 });
 
 module.exports = Sugar.Array.create;
-},{"./build/setArrayChainableConstructorCall":24,"./internal/arrayCreate":53,"sugar-core":19}],30:[function(require,module,exports){
+},{"./build/setArrayChainableConstructorCall":25,"./internal/arrayCreate":54,"sugar-core":20}],31:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2826,7 +2903,7 @@ Sugar.Array.defineInstance({
 }, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
 
 module.exports = Sugar.Array.every;
-},{"../common/internal/fixArgumentLength":129,"../common/var/ENHANCEMENTS_FLAG":182,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":429,"../enumerable/var/enhancedMatcherMethods":431,"sugar-core":19}],31:[function(require,module,exports){
+},{"../common/internal/fixArgumentLength":130,"../common/var/ENHANCEMENTS_FLAG":183,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":430,"../enumerable/var/enhancedMatcherMethods":432,"sugar-core":20}],32:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -2834,7 +2911,7 @@ var Sugar = require('sugar-core');
 require('../enumerable/build/buildFromIndexMethodsCall');
 
 module.exports = Sugar.Array.everyFromIndex;
-},{"../enumerable/build/buildFromIndexMethodsCall":405,"sugar-core":19}],32:[function(require,module,exports){
+},{"../enumerable/build/buildFromIndexMethodsCall":406,"sugar-core":20}],33:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2849,7 +2926,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.exclude;
-},{"./internal/arrayExclude":54,"sugar-core":19}],33:[function(require,module,exports){
+},{"./internal/arrayExclude":55,"sugar-core":20}],34:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2867,7 +2944,7 @@ Sugar.Array.defineInstance({
 }, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
 
 module.exports = Sugar.Array.filter;
-},{"../common/internal/fixArgumentLength":129,"../common/var/ENHANCEMENTS_FLAG":182,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":429,"../enumerable/var/enhancedMatcherMethods":431,"sugar-core":19}],34:[function(require,module,exports){
+},{"../common/internal/fixArgumentLength":130,"../common/var/ENHANCEMENTS_FLAG":183,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":430,"../enumerable/var/enhancedMatcherMethods":432,"sugar-core":20}],35:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -2875,7 +2952,7 @@ var Sugar = require('sugar-core');
 require('../enumerable/build/buildFromIndexMethodsCall');
 
 module.exports = Sugar.Array.filterFromIndex;
-},{"../enumerable/build/buildFromIndexMethodsCall":405,"sugar-core":19}],35:[function(require,module,exports){
+},{"../enumerable/build/buildFromIndexMethodsCall":406,"sugar-core":20}],36:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2893,7 +2970,7 @@ Sugar.Array.defineInstance({
 }, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
 
 module.exports = Sugar.Array.find;
-},{"../common/internal/fixArgumentLength":129,"../common/var/ENHANCEMENTS_FLAG":182,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":429,"../enumerable/var/enhancedMatcherMethods":431,"sugar-core":19}],36:[function(require,module,exports){
+},{"../common/internal/fixArgumentLength":130,"../common/var/ENHANCEMENTS_FLAG":183,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":430,"../enumerable/var/enhancedMatcherMethods":432,"sugar-core":20}],37:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -2901,7 +2978,7 @@ var Sugar = require('sugar-core');
 require('../enumerable/build/buildFromIndexMethodsCall');
 
 module.exports = Sugar.Array.findFromIndex;
-},{"../enumerable/build/buildFromIndexMethodsCall":405,"sugar-core":19}],37:[function(require,module,exports){
+},{"../enumerable/build/buildFromIndexMethodsCall":406,"sugar-core":20}],38:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2919,7 +2996,7 @@ Sugar.Array.defineInstance({
 }, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
 
 module.exports = Sugar.Array.findIndex;
-},{"../common/internal/fixArgumentLength":129,"../common/var/ENHANCEMENTS_FLAG":182,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":429,"../enumerable/var/enhancedMatcherMethods":431,"sugar-core":19}],38:[function(require,module,exports){
+},{"../common/internal/fixArgumentLength":130,"../common/var/ENHANCEMENTS_FLAG":183,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":430,"../enumerable/var/enhancedMatcherMethods":432,"sugar-core":20}],39:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -2927,7 +3004,7 @@ var Sugar = require('sugar-core');
 require('../enumerable/build/buildFromIndexMethodsCall');
 
 module.exports = Sugar.Array.findIndexFromIndex;
-},{"../enumerable/build/buildFromIndexMethodsCall":405,"sugar-core":19}],39:[function(require,module,exports){
+},{"../enumerable/build/buildFromIndexMethodsCall":406,"sugar-core":20}],40:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2944,7 +3021,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.first;
-},{"../common/internal/isUndefined":156,"sugar-core":19}],40:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"sugar-core":20}],41:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2959,7 +3036,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.flatten;
-},{"./internal/arrayFlatten":55,"sugar-core":19}],41:[function(require,module,exports){
+},{"./internal/arrayFlatten":56,"sugar-core":20}],42:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -2967,7 +3044,7 @@ var Sugar = require('sugar-core');
 require('../enumerable/build/buildFromIndexMethodsCall');
 
 module.exports = Sugar.Array.forEachFromIndex;
-},{"../enumerable/build/buildFromIndexMethodsCall":405,"sugar-core":19}],42:[function(require,module,exports){
+},{"../enumerable/build/buildFromIndexMethodsCall":406,"sugar-core":20}],43:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -2981,7 +3058,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.from;
-},{"sugar-core":19}],43:[function(require,module,exports){
+},{"sugar-core":20}],44:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -2990,7 +3067,7 @@ var Sugar = require('sugar-core'),
 var _arrayOptions = ARRAY_OPTIONS._arrayOptions;
 
 module.exports = Sugar.Array.getOption;
-},{"./var/ARRAY_OPTIONS":99,"sugar-core":19}],44:[function(require,module,exports){
+},{"./var/ARRAY_OPTIONS":100,"sugar-core":20}],45:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3005,7 +3082,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.groupBy;
-},{"./internal/arrayGroupBy":56,"sugar-core":19}],45:[function(require,module,exports){
+},{"./internal/arrayGroupBy":57,"sugar-core":20}],46:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3037,7 +3114,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.inGroups;
-},{"../common/internal/isDefined":150,"../common/internal/simpleRepeat":175,"../common/var/mathAliases":196,"sugar-core":19}],46:[function(require,module,exports){
+},{"../common/internal/isDefined":151,"../common/internal/simpleRepeat":176,"../common/var/mathAliases":197,"sugar-core":20}],47:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3067,7 +3144,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.inGroupsOf;
-},{"../common/internal/isUndefined":156,"../common/internal/simpleRepeat":175,"../common/var/mathAliases":196,"sugar-core":19}],47:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"../common/internal/simpleRepeat":176,"../common/var/mathAliases":197,"sugar-core":20}],48:[function(require,module,exports){
 'use strict';
 
 // Static Methods
@@ -3110,7 +3187,7 @@ require('./getOption');
 require('./setOption');
 
 module.exports = require('sugar-core');
-},{"./add":20,"./append":21,"./at":22,"./clone":25,"./compact":26,"./construct":27,"./create":29,"./exclude":32,"./first":39,"./flatten":40,"./from":42,"./getOption":43,"./groupBy":44,"./inGroups":45,"./inGroupsOf":46,"./insert":48,"./intersect":72,"./isEmpty":73,"./isEqual":74,"./last":75,"./remove":86,"./removeAt":87,"./sample":88,"./setOption":89,"./shuffle":90,"./sortBy":93,"./subtract":94,"./to":96,"./union":97,"./unique":98,"./zip":103,"sugar-core":19}],48:[function(require,module,exports){
+},{"./add":21,"./append":22,"./at":23,"./clone":26,"./compact":27,"./construct":28,"./create":30,"./exclude":33,"./first":40,"./flatten":41,"./from":43,"./getOption":44,"./groupBy":45,"./inGroups":46,"./inGroupsOf":47,"./insert":49,"./intersect":73,"./isEmpty":74,"./isEqual":75,"./last":76,"./remove":87,"./removeAt":88,"./sample":89,"./setOption":90,"./shuffle":91,"./sortBy":94,"./subtract":95,"./to":97,"./union":98,"./unique":99,"./zip":104,"sugar-core":20}],49:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3119,7 +3196,7 @@ var Sugar = require('sugar-core'),
 Sugar.Array.alias('insert', 'append');
 
 module.exports = Sugar.Array.insert;
-},{"./append":21,"sugar-core":19}],49:[function(require,module,exports){
+},{"./append":22,"sugar-core":20}],50:[function(require,module,exports){
 'use strict';
 
 var isDefined = require('../../common/internal/isDefined');
@@ -3139,7 +3216,7 @@ function arrayAppend(arr, el, index) {
 }
 
 module.exports = arrayAppend;
-},{"../../common/internal/isDefined":150}],50:[function(require,module,exports){
+},{"../../common/internal/isDefined":151}],51:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach');
@@ -3153,7 +3230,7 @@ function arrayClone(arr) {
 }
 
 module.exports = arrayClone;
-},{"../../common/internal/forEach":130}],51:[function(require,module,exports){
+},{"../../common/internal/forEach":131}],52:[function(require,module,exports){
 'use strict';
 
 var filter = require('../../common/internal/filter');
@@ -3165,7 +3242,7 @@ function arrayCompact(arr, all) {
 }
 
 module.exports = arrayCompact;
-},{"../../common/internal/filter":128}],52:[function(require,module,exports){
+},{"../../common/internal/filter":129}],53:[function(require,module,exports){
 'use strict';
 
 var HAS_CONCAT_BUG = require('../var/HAS_CONCAT_BUG'),
@@ -3179,7 +3256,7 @@ function arrayConcat(arr1, arr2) {
 }
 
 module.exports = arrayConcat;
-},{"../var/HAS_CONCAT_BUG":102,"./arraySafeConcat":59}],53:[function(require,module,exports){
+},{"../var/HAS_CONCAT_BUG":103,"./arraySafeConcat":60}],54:[function(require,module,exports){
 'use strict';
 
 var isDefined = require('../../common/internal/isDefined'),
@@ -3203,7 +3280,7 @@ function arrayCreate(obj, clone) {
 }
 
 module.exports = arrayCreate;
-},{"../../common/internal/isDefined":150,"../../common/internal/isObjectType":152,"../../common/var/classChecks":193,"./arrayClone":50,"./isArrayOrInherited":70}],54:[function(require,module,exports){
+},{"../../common/internal/isDefined":151,"../../common/internal/isObjectType":153,"../../common/var/classChecks":194,"./arrayClone":51,"./isArrayOrInherited":71}],55:[function(require,module,exports){
 'use strict';
 
 var getMatcher = require('../../common/internal/getMatcher');
@@ -3219,7 +3296,7 @@ function arrayExclude(arr, f) {
 }
 
 module.exports = arrayExclude;
-},{"../../common/internal/getMatcher":137}],55:[function(require,module,exports){
+},{"../../common/internal/getMatcher":138}],56:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -3242,7 +3319,7 @@ function arrayFlatten(arr, level, current) {
 }
 
 module.exports = arrayFlatten;
-},{"../../common/internal/forEach":130,"../../common/var/classChecks":193}],56:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"../../common/var/classChecks":194}],57:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -3268,7 +3345,7 @@ function arrayGroupBy(arr, map, fn) {
 }
 
 module.exports = arrayGroupBy;
-},{"../../common/internal/forEach":130,"../../common/internal/mapWithShortcuts":161,"../../common/var/coreUtilityAliases":194}],57:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"../../common/internal/mapWithShortcuts":162,"../../common/var/coreUtilityAliases":195}],58:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -3299,7 +3376,7 @@ function arrayIntersectOrSubtract(arr1, arr2, subtract) {
 }
 
 module.exports = arrayIntersectOrSubtract;
-},{"../../common/internal/forEach":130,"../../common/internal/serializeInternal":169,"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194,"./arrayWrap":62}],58:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"../../common/internal/serializeInternal":170,"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195,"./arrayWrap":63}],59:[function(require,module,exports){
 'use strict';
 
 var getMatcher = require('../../common/internal/getMatcher');
@@ -3317,7 +3394,7 @@ function arrayRemove(arr, f) {
 }
 
 module.exports = arrayRemove;
-},{"../../common/internal/getMatcher":137}],59:[function(require,module,exports){
+},{"../../common/internal/getMatcher":138}],60:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -3337,7 +3414,7 @@ function arraySafeConcat(arr, arg) {
 }
 
 module.exports = arraySafeConcat;
-},{"../../common/internal/forEach":130,"../../common/var/classChecks":193,"./arrayClone":50}],60:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"../../common/var/classChecks":194,"./arrayClone":51}],61:[function(require,module,exports){
 'use strict';
 
 var arrayClone = require('./arrayClone');
@@ -3355,7 +3432,7 @@ function arrayShuffle(arr) {
 }
 
 module.exports = arrayShuffle;
-},{"./arrayClone":50}],61:[function(require,module,exports){
+},{"./arrayClone":51}],62:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -3379,7 +3456,7 @@ function arrayUnique(arr, map) {
 }
 
 module.exports = arrayUnique;
-},{"../../common/internal/forEach":130,"../../common/internal/mapWithShortcuts":161,"../../common/internal/serializeInternal":169,"../../common/var/coreUtilityAliases":194}],62:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"../../common/internal/mapWithShortcuts":162,"../../common/internal/serializeInternal":170,"../../common/var/coreUtilityAliases":195}],63:[function(require,module,exports){
 'use strict';
 
 function arrayWrap(obj) {
@@ -3389,7 +3466,7 @@ function arrayWrap(obj) {
 }
 
 module.exports = arrayWrap;
-},{}],63:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 'use strict';
 
 var HALF_WIDTH_NINE = require('../var/HALF_WIDTH_NINE'),
@@ -3405,7 +3482,7 @@ function codeIsNumeral(code) {
 }
 
 module.exports = codeIsNumeral;
-},{"../../common/var/CommonChars":181,"../var/FULL_WIDTH_NINE":100,"../var/HALF_WIDTH_NINE":101}],64:[function(require,module,exports){
+},{"../../common/var/CommonChars":182,"../var/FULL_WIDTH_NINE":101,"../var/HALF_WIDTH_NINE":102}],65:[function(require,module,exports){
 'use strict';
 
 var ARRAY_OPTIONS = require('../var/ARRAY_OPTIONS'),
@@ -3439,7 +3516,7 @@ function compareValue(aVal, bVal) {
 }
 
 module.exports = compareValue;
-},{"../../common/var/classChecks":193,"../var/ARRAY_OPTIONS":99}],65:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"../var/ARRAY_OPTIONS":100}],66:[function(require,module,exports){
 'use strict';
 
 var coreUtilityAliases = require('../../common/var/coreUtilityAliases');
@@ -3452,7 +3529,7 @@ function getCollationCharacter(str, index, sortEquivalents) {
 }
 
 module.exports = getCollationCharacter;
-},{"../../common/var/coreUtilityAliases":194}],66:[function(require,module,exports){
+},{"../../common/var/coreUtilityAliases":195}],67:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks');
@@ -3471,7 +3548,7 @@ function getCollationReadyString(str, sortIgnore, sortIgnoreCase) {
 }
 
 module.exports = getCollationReadyString;
-},{"../../common/var/classChecks":193}],67:[function(require,module,exports){
+},{"../../common/var/classChecks":194}],68:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -3490,7 +3567,7 @@ function getSortEquivalents() {
 }
 
 module.exports = getSortEquivalents;
-},{"../../common/internal/forEach":130,"../../common/internal/spaceSplit":176}],68:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"../../common/internal/spaceSplit":177}],69:[function(require,module,exports){
 'use strict';
 
 var map = require('../../common/internal/map');
@@ -3503,7 +3580,7 @@ function getSortOrder() {
 }
 
 module.exports = getSortOrder;
-},{"../../common/internal/map":159}],69:[function(require,module,exports){
+},{"../../common/internal/map":160}],70:[function(require,module,exports){
 'use strict';
 
 function getSortOrderIndex(chr, sortOrder) {
@@ -3515,7 +3592,7 @@ function getSortOrderIndex(chr, sortOrder) {
 }
 
 module.exports = getSortOrderIndex;
-},{}],70:[function(require,module,exports){
+},{}],71:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks');
@@ -3527,7 +3604,7 @@ function isArrayOrInherited(obj) {
 }
 
 module.exports = isArrayOrInherited;
-},{"../../common/var/classChecks":193}],71:[function(require,module,exports){
+},{"../../common/var/classChecks":194}],72:[function(require,module,exports){
 'use strict';
 
 var arrayCreate = require('./arrayCreate'),
@@ -3541,7 +3618,7 @@ function setArrayChainableConstructor() {
 }
 
 module.exports = setArrayChainableConstructor;
-},{"../../common/internal/setChainableConstructor":170,"../../common/var/namespaceAliases":198,"./arrayCreate":53}],72:[function(require,module,exports){
+},{"../../common/internal/setChainableConstructor":171,"../../common/var/namespaceAliases":199,"./arrayCreate":54}],73:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3556,7 +3633,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.intersect;
-},{"./internal/arrayIntersectOrSubtract":57,"sugar-core":19}],73:[function(require,module,exports){
+},{"./internal/arrayIntersectOrSubtract":58,"sugar-core":20}],74:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -3570,7 +3647,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.isEmpty;
-},{"sugar-core":19}],74:[function(require,module,exports){
+},{"sugar-core":20}],75:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3585,7 +3662,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.isEqual;
-},{"../common/internal/isEqual":151,"sugar-core":19}],75:[function(require,module,exports){
+},{"../common/internal/isEqual":152,"sugar-core":20}],76:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3602,7 +3679,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.last;
-},{"../common/internal/isUndefined":156,"sugar-core":19}],76:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"sugar-core":20}],77:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3617,7 +3694,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.least;
-},{"../enumerable/internal/getLeastOrMost":416,"sugar-core":19}],77:[function(require,module,exports){
+},{"../enumerable/internal/getLeastOrMost":417,"sugar-core":20}],78:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3633,7 +3710,7 @@ Sugar.Array.defineInstance({
 }, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
 
 module.exports = Sugar.Array.map;
-},{"../common/internal/fixArgumentLength":129,"../common/var/ENHANCEMENTS_FLAG":182,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":429,"../enumerable/var/enhancedMap":430,"sugar-core":19}],78:[function(require,module,exports){
+},{"../common/internal/fixArgumentLength":130,"../common/var/ENHANCEMENTS_FLAG":183,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":430,"../enumerable/var/enhancedMap":431,"sugar-core":20}],79:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -3641,7 +3718,7 @@ var Sugar = require('sugar-core');
 require('../enumerable/build/buildFromIndexMethodsCall');
 
 module.exports = Sugar.Array.mapFromIndex;
-},{"../enumerable/build/buildFromIndexMethodsCall":405,"sugar-core":19}],79:[function(require,module,exports){
+},{"../enumerable/build/buildFromIndexMethodsCall":406,"sugar-core":20}],80:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3656,7 +3733,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.max;
-},{"../enumerable/internal/getMinOrMax":417,"sugar-core":19}],80:[function(require,module,exports){
+},{"../enumerable/internal/getMinOrMax":418,"sugar-core":20}],81:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3671,7 +3748,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.median;
-},{"../enumerable/internal/median":419,"sugar-core":19}],81:[function(require,module,exports){
+},{"../enumerable/internal/median":420,"sugar-core":20}],82:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3686,7 +3763,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.min;
-},{"../enumerable/internal/getMinOrMax":417,"sugar-core":19}],82:[function(require,module,exports){
+},{"../enumerable/internal/getMinOrMax":418,"sugar-core":20}],83:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3701,7 +3778,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.most;
-},{"../enumerable/internal/getLeastOrMost":416,"sugar-core":19}],83:[function(require,module,exports){
+},{"../enumerable/internal/getLeastOrMost":417,"sugar-core":20}],84:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3715,7 +3792,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.none;
-},{"../common/internal/fixArgumentLength":129,"../enumerable/internal/arrayNone":408,"sugar-core":19}],84:[function(require,module,exports){
+},{"../common/internal/fixArgumentLength":130,"../enumerable/internal/arrayNone":409,"sugar-core":20}],85:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -3723,7 +3800,7 @@ var Sugar = require('sugar-core');
 require('../enumerable/build/buildFromIndexMethodsCall');
 
 module.exports = Sugar.Array.reduceFromIndex;
-},{"../enumerable/build/buildFromIndexMethodsCall":405,"sugar-core":19}],85:[function(require,module,exports){
+},{"../enumerable/build/buildFromIndexMethodsCall":406,"sugar-core":20}],86:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -3731,7 +3808,7 @@ var Sugar = require('sugar-core');
 require('../enumerable/build/buildFromIndexMethodsCall');
 
 module.exports = Sugar.Array.reduceRightFromIndex;
-},{"../enumerable/build/buildFromIndexMethodsCall":405,"sugar-core":19}],86:[function(require,module,exports){
+},{"../enumerable/build/buildFromIndexMethodsCall":406,"sugar-core":20}],87:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3746,7 +3823,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.remove;
-},{"./internal/arrayRemove":58,"sugar-core":19}],87:[function(require,module,exports){
+},{"./internal/arrayRemove":59,"sugar-core":20}],88:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3764,7 +3841,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.removeAt;
-},{"../common/internal/isUndefined":156,"sugar-core":19}],88:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"sugar-core":20}],89:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3806,7 +3883,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.sample;
-},{"../common/internal/isUndefined":156,"../common/var/classChecks":193,"../common/var/mathAliases":196,"../common/var/trunc":199,"./internal/arrayClone":50,"sugar-core":19}],89:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"../common/var/classChecks":194,"../common/var/mathAliases":197,"../common/var/trunc":200,"./internal/arrayClone":51,"sugar-core":20}],90:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3815,7 +3892,7 @@ var Sugar = require('sugar-core'),
 var _arrayOptions = ARRAY_OPTIONS._arrayOptions;
 
 module.exports = Sugar.Array.setOption;
-},{"./var/ARRAY_OPTIONS":99,"sugar-core":19}],90:[function(require,module,exports){
+},{"./var/ARRAY_OPTIONS":100,"sugar-core":20}],91:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3830,7 +3907,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.shuffle;
-},{"./internal/arrayShuffle":60,"sugar-core":19}],91:[function(require,module,exports){
+},{"./internal/arrayShuffle":61,"sugar-core":20}],92:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3848,7 +3925,7 @@ Sugar.Array.defineInstance({
 }, [ENHANCEMENTS_FLAG, ARRAY_ENHANCEMENTS_FLAG]);
 
 module.exports = Sugar.Array.some;
-},{"../common/internal/fixArgumentLength":129,"../common/var/ENHANCEMENTS_FLAG":182,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":429,"../enumerable/var/enhancedMatcherMethods":431,"sugar-core":19}],92:[function(require,module,exports){
+},{"../common/internal/fixArgumentLength":130,"../common/var/ENHANCEMENTS_FLAG":183,"../enumerable/var/ARRAY_ENHANCEMENTS_FLAG":430,"../enumerable/var/enhancedMatcherMethods":432,"sugar-core":20}],93:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -3856,7 +3933,7 @@ var Sugar = require('sugar-core');
 require('../enumerable/build/buildFromIndexMethodsCall');
 
 module.exports = Sugar.Array.someFromIndex;
-},{"../enumerable/build/buildFromIndexMethodsCall":405,"sugar-core":19}],93:[function(require,module,exports){
+},{"../enumerable/build/buildFromIndexMethodsCall":406,"sugar-core":20}],94:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3877,7 +3954,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.sortBy;
-},{"../common/internal/mapWithShortcuts":161,"./internal/compareValue":64,"sugar-core":19}],94:[function(require,module,exports){
+},{"../common/internal/mapWithShortcuts":162,"./internal/compareValue":65,"sugar-core":20}],95:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3892,7 +3969,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.subtract;
-},{"./internal/arrayIntersectOrSubtract":57,"sugar-core":19}],95:[function(require,module,exports){
+},{"./internal/arrayIntersectOrSubtract":58,"sugar-core":20}],96:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3907,7 +3984,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.sum;
-},{"../enumerable/internal/sum":426,"sugar-core":19}],96:[function(require,module,exports){
+},{"../enumerable/internal/sum":427,"sugar-core":20}],97:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3923,7 +4000,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.to;
-},{"../common/internal/isUndefined":156,"sugar-core":19}],97:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"sugar-core":20}],98:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3939,7 +4016,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.union;
-},{"./internal/arrayConcat":52,"./internal/arrayUnique":61,"sugar-core":19}],98:[function(require,module,exports){
+},{"./internal/arrayConcat":53,"./internal/arrayUnique":62,"sugar-core":20}],99:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -3954,7 +4031,7 @@ Sugar.Array.defineInstance({
 });
 
 module.exports = Sugar.Array.unique;
-},{"./internal/arrayUnique":61,"sugar-core":19}],99:[function(require,module,exports){
+},{"./internal/arrayUnique":62,"sugar-core":20}],100:[function(require,module,exports){
 'use strict';
 
 var getSortOrder = require('../internal/getSortOrder'),
@@ -4023,19 +4100,19 @@ module.exports = {
   ARRAY_OPTIONS: ARRAY_OPTIONS,
   _arrayOptions: _arrayOptions
 };
-},{"../../common/internal/defineOptionsAccessor":125,"../../common/internal/stringToNumber":177,"../../common/var/namespaceAliases":198,"../internal/codeIsNumeral":63,"../internal/getCollationCharacter":65,"../internal/getCollationReadyString":66,"../internal/getSortEquivalents":67,"../internal/getSortOrder":68,"../internal/getSortOrderIndex":69}],100:[function(require,module,exports){
+},{"../../common/internal/defineOptionsAccessor":126,"../../common/internal/stringToNumber":178,"../../common/var/namespaceAliases":199,"../internal/codeIsNumeral":64,"../internal/getCollationCharacter":66,"../internal/getCollationReadyString":67,"../internal/getSortEquivalents":68,"../internal/getSortOrder":69,"../internal/getSortOrderIndex":70}],101:[function(require,module,exports){
 'use strict';
 
 module.exports = 0xff19;
-},{}],101:[function(require,module,exports){
-'use strict';
-
-module.exports = 0x39;
 },{}],102:[function(require,module,exports){
 'use strict';
 
-module.exports = !('0' in [].concat(undefined).concat());
+module.exports = 0x39;
 },{}],103:[function(require,module,exports){
+'use strict';
+
+module.exports = !('0' in [].concat(undefined).concat());
+},{}],104:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -4054,7 +4131,7 @@ Sugar.Array.defineInstanceWithArguments({
 });
 
 module.exports = Sugar.Array.zip;
-},{"../common/internal/map":159,"sugar-core":19}],104:[function(require,module,exports){
+},{"../common/internal/map":160,"sugar-core":20}],105:[function(require,module,exports){
 'use strict';
 
 function allCharsReg(src) {
@@ -4062,7 +4139,7 @@ function allCharsReg(src) {
 }
 
 module.exports = allCharsReg;
-},{}],105:[function(require,module,exports){
+},{}],106:[function(require,module,exports){
 'use strict';
 
 function assertArgument(exists) {
@@ -4072,7 +4149,7 @@ function assertArgument(exists) {
 }
 
 module.exports = assertArgument;
-},{}],106:[function(require,module,exports){
+},{}],107:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../var/classChecks');
@@ -4086,7 +4163,7 @@ function assertArray(obj) {
 }
 
 module.exports = assertArray;
-},{"../var/classChecks":193}],107:[function(require,module,exports){
+},{"../var/classChecks":194}],108:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../var/classChecks');
@@ -4100,7 +4177,7 @@ function assertCallable(obj) {
 }
 
 module.exports = assertCallable;
-},{"../var/classChecks":193}],108:[function(require,module,exports){
+},{"../var/classChecks":194}],109:[function(require,module,exports){
 'use strict';
 
 var isPrimitive = require('./isPrimitive');
@@ -4116,7 +4193,7 @@ function assertWritable(obj) {
 }
 
 module.exports = assertWritable;
-},{"./isPrimitive":154}],109:[function(require,module,exports){
+},{"./isPrimitive":155}],110:[function(require,module,exports){
 'use strict';
 
 var _utc = require('../var/_utc');
@@ -4126,7 +4203,7 @@ function callDateGet(d, method) {
 }
 
 module.exports = callDateGet;
-},{"../var/_utc":191}],110:[function(require,module,exports){
+},{"../var/_utc":192}],111:[function(require,module,exports){
 'use strict';
 
 var _utc = require('../var/_utc'),
@@ -4147,7 +4224,7 @@ function callDateSet(d, method, value, safe) {
 }
 
 module.exports = callDateSet;
-},{"../var/_utc":191,"./callDateGet":109}],111:[function(require,module,exports){
+},{"../var/_utc":192,"./callDateGet":110}],112:[function(require,module,exports){
 'use strict';
 
 var trunc = require('../var/trunc'),
@@ -4164,7 +4241,7 @@ function coercePositiveInteger(n) {
 }
 
 module.exports = coercePositiveInteger;
-},{"../var/classChecks":193,"../var/trunc":199}],112:[function(require,module,exports){
+},{"../var/classChecks":194,"../var/trunc":200}],113:[function(require,module,exports){
 'use strict';
 
 var NO_KEYS_IN_STRING_OBJECTS = require('../var/NO_KEYS_IN_STRING_OBJECTS'),
@@ -4185,7 +4262,7 @@ function coercePrimitiveToObject(obj) {
 }
 
 module.exports = coercePrimitiveToObject;
-},{"../var/NO_KEYS_IN_STRING_OBJECTS":186,"../var/classChecks":193,"./forceStringCoercion":131,"./isPrimitive":154}],113:[function(require,module,exports){
+},{"../var/NO_KEYS_IN_STRING_OBJECTS":187,"../var/classChecks":194,"./forceStringCoercion":132,"./isPrimitive":155}],114:[function(require,module,exports){
 'use strict';
 
 var forEach = require('./forEach'),
@@ -4206,7 +4283,7 @@ function collectSimilarMethods(set, fn) {
 }
 
 module.exports = collectSimilarMethods;
-},{"../var/classChecks":193,"./forEach":130,"./spaceSplit":176}],114:[function(require,module,exports){
+},{"../var/classChecks":194,"./forEach":131,"./spaceSplit":177}],115:[function(require,module,exports){
 'use strict';
 
 var CommonChars = require('../var/CommonChars');
@@ -4218,7 +4295,7 @@ function commaSplit(str) {
 }
 
 module.exports = commaSplit;
-},{"../var/CommonChars":181}],115:[function(require,module,exports){
+},{"../var/CommonChars":182}],116:[function(require,module,exports){
 'use strict';
 
 var STRING_FORMAT_REG = require('../var/STRING_FORMAT_REG'),
@@ -4309,7 +4386,7 @@ function createFormatMatcher(bracketMatcher, percentMatcher, precheck) {
 }
 
 module.exports = createFormatMatcher;
-},{"../var/CommonChars":181,"../var/STRING_FORMAT_REG":189,"./memoizeFunction":162}],116:[function(require,module,exports){
+},{"../var/CommonChars":182,"../var/STRING_FORMAT_REG":190,"./memoizeFunction":163}],117:[function(require,module,exports){
 'use strict';
 
 function dateMatcher(d) {
@@ -4320,7 +4397,7 @@ function dateMatcher(d) {
 }
 
 module.exports = dateMatcher;
-},{}],117:[function(require,module,exports){
+},{}],118:[function(require,module,exports){
 'use strict';
 
 var handleDeepProperty = require('./handleDeepProperty');
@@ -4330,7 +4407,7 @@ function deepGetProperty(obj, key, any) {
 }
 
 module.exports = deepGetProperty;
-},{"./handleDeepProperty":143}],118:[function(require,module,exports){
+},{"./handleDeepProperty":144}],119:[function(require,module,exports){
 'use strict';
 
 var handleDeepProperty = require('./handleDeepProperty');
@@ -4340,7 +4417,7 @@ function deepHasProperty(obj, key, any) {
 }
 
 module.exports = deepHasProperty;
-},{"./handleDeepProperty":143}],119:[function(require,module,exports){
+},{"./handleDeepProperty":144}],120:[function(require,module,exports){
 'use strict';
 
 var handleDeepProperty = require('./handleDeepProperty');
@@ -4351,7 +4428,7 @@ function deepSetProperty(obj, key, val) {
 }
 
 module.exports = deepSetProperty;
-},{"./handleDeepProperty":143}],120:[function(require,module,exports){
+},{"./handleDeepProperty":144}],121:[function(require,module,exports){
 'use strict';
 
 var isEqual = require('./isEqual');
@@ -4363,7 +4440,7 @@ function defaultMatcher(f) {
 }
 
 module.exports = defaultMatcher;
-},{"./isEqual":151}],121:[function(require,module,exports){
+},{"./isEqual":152}],122:[function(require,module,exports){
 'use strict';
 
 var coreUtilityAliases = require('../var/coreUtilityAliases');
@@ -4375,7 +4452,7 @@ function defineAccessor(namespace, name, fn) {
 }
 
 module.exports = defineAccessor;
-},{"../var/coreUtilityAliases":194}],122:[function(require,module,exports){
+},{"../var/coreUtilityAliases":195}],123:[function(require,module,exports){
 'use strict';
 
 var methodDefineAliases = require('../var/methodDefineAliases'),
@@ -4388,7 +4465,7 @@ function defineInstanceAndStaticSimilar(sugarNamespace, set, fn, flags) {
 }
 
 module.exports = defineInstanceAndStaticSimilar;
-},{"../var/methodDefineAliases":197,"./collectSimilarMethods":113}],123:[function(require,module,exports){
+},{"../var/methodDefineAliases":198,"./collectSimilarMethods":114}],124:[function(require,module,exports){
 'use strict';
 
 var methodDefineAliases = require('../var/methodDefineAliases'),
@@ -4401,7 +4478,7 @@ function defineInstanceSimilar(sugarNamespace, set, fn, flags) {
 }
 
 module.exports = defineInstanceSimilar;
-},{"../var/methodDefineAliases":197,"./collectSimilarMethods":113}],124:[function(require,module,exports){
+},{"../var/methodDefineAliases":198,"./collectSimilarMethods":114}],125:[function(require,module,exports){
 'use strict';
 
 var coreUtilityAliases = require('../var/coreUtilityAliases');
@@ -4416,7 +4493,7 @@ function defineOnPrototype(ctor, methods) {
 }
 
 module.exports = defineOnPrototype;
-},{"../var/coreUtilityAliases":194}],125:[function(require,module,exports){
+},{"../var/coreUtilityAliases":195}],126:[function(require,module,exports){
 'use strict';
 
 var simpleClone = require('./simpleClone'),
@@ -4454,7 +4531,7 @@ function defineOptionsAccessor(namespace, defaults) {
 }
 
 module.exports = defineOptionsAccessor;
-},{"../var/coreUtilityAliases":194,"./defineAccessor":121,"./simpleClone":173}],126:[function(require,module,exports){
+},{"../var/coreUtilityAliases":195,"./defineAccessor":122,"./simpleClone":174}],127:[function(require,module,exports){
 'use strict';
 
 var getNormalizedIndex = require('./getNormalizedIndex');
@@ -4465,7 +4542,7 @@ function entryAtIndex(obj, index, length, loop, isString) {
 }
 
 module.exports = entryAtIndex;
-},{"./getNormalizedIndex":138}],127:[function(require,module,exports){
+},{"./getNormalizedIndex":139}],128:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../var/classChecks');
@@ -4478,7 +4555,7 @@ function escapeRegExp(str) {
 }
 
 module.exports = escapeRegExp;
-},{"../var/classChecks":193}],128:[function(require,module,exports){
+},{"../var/classChecks":194}],129:[function(require,module,exports){
 'use strict';
 
 function filter(arr, fn) {
@@ -4493,7 +4570,7 @@ function filter(arr, fn) {
 }
 
 module.exports = filter;
-},{}],129:[function(require,module,exports){
+},{}],130:[function(require,module,exports){
 'use strict';
 
 function fixArgumentLength(fn) {
@@ -4509,7 +4586,7 @@ function fixArgumentLength(fn) {
 }
 
 module.exports = fixArgumentLength;
-},{}],130:[function(require,module,exports){
+},{}],131:[function(require,module,exports){
 'use strict';
 
 var iterateOverSparseArray = require('./iterateOverSparseArray');
@@ -4524,7 +4601,7 @@ function forEach(arr, fn) {
 }
 
 module.exports = forEach;
-},{"./iterateOverSparseArray":157}],131:[function(require,module,exports){
+},{"./iterateOverSparseArray":158}],132:[function(require,module,exports){
 'use strict';
 
 function forceStringCoercion(obj) {
@@ -4535,7 +4612,7 @@ function forceStringCoercion(obj) {
 }
 
 module.exports = forceStringCoercion;
-},{}],132:[function(require,module,exports){
+},{}],133:[function(require,module,exports){
 'use strict';
 
 function functionMatcher(fn) {
@@ -4546,7 +4623,7 @@ function functionMatcher(fn) {
 }
 
 module.exports = functionMatcher;
-},{}],133:[function(require,module,exports){
+},{}],134:[function(require,module,exports){
 'use strict';
 
 var Inflections = require('../var/Inflections');
@@ -4556,7 +4633,7 @@ function getAcronym(str) {
 }
 
 module.exports = getAcronym;
-},{"../var/Inflections":184}],134:[function(require,module,exports){
+},{"../var/Inflections":185}],135:[function(require,module,exports){
 'use strict';
 
 var forEach = require('./forEach'),
@@ -4578,7 +4655,7 @@ function getEntriesForIndexes(obj, find, loop, isString) {
 }
 
 module.exports = getEntriesForIndexes;
-},{"../var/classChecks":193,"./entryAtIndex":126,"./forEach":130}],135:[function(require,module,exports){
+},{"../var/classChecks":194,"./entryAtIndex":127,"./forEach":131}],136:[function(require,module,exports){
 'use strict';
 
 var Inflections = require('../var/Inflections');
@@ -4588,7 +4665,7 @@ function getHumanWord(str) {
 }
 
 module.exports = getHumanWord;
-},{"../var/Inflections":184}],136:[function(require,module,exports){
+},{"../var/Inflections":185}],137:[function(require,module,exports){
 'use strict';
 
 function getKeys(obj) {
@@ -4596,7 +4673,7 @@ function getKeys(obj) {
 }
 
 module.exports = getKeys;
-},{}],137:[function(require,module,exports){
+},{}],138:[function(require,module,exports){
 'use strict';
 
 var isPrimitive = require('./isPrimitive'),
@@ -4652,7 +4729,7 @@ function fuzzyMatcher(obj) {
 }
 
 module.exports = getMatcher;
-},{"../var/classChecks":193,"../var/coreUtilityAliases":194,"./dateMatcher":116,"./defaultMatcher":120,"./functionMatcher":132,"./isObjectType":152,"./isPlainObject":153,"./isPrimitive":154,"./regexMatcher":166}],138:[function(require,module,exports){
+},{"../var/classChecks":194,"../var/coreUtilityAliases":195,"./dateMatcher":117,"./defaultMatcher":121,"./functionMatcher":133,"./isObjectType":153,"./isPlainObject":154,"./isPrimitive":155,"./regexMatcher":167}],139:[function(require,module,exports){
 'use strict';
 
 function getNormalizedIndex(index, length, loop) {
@@ -4664,7 +4741,7 @@ function getNormalizedIndex(index, length, loop) {
 }
 
 module.exports = getNormalizedIndex;
-},{}],139:[function(require,module,exports){
+},{}],140:[function(require,module,exports){
 'use strict';
 
 function getOrdinalSuffix(num) {
@@ -4681,7 +4758,7 @@ function getOrdinalSuffix(num) {
 }
 
 module.exports = getOrdinalSuffix;
-},{}],140:[function(require,module,exports){
+},{}],141:[function(require,module,exports){
 'use strict';
 
 var coreUtilityAliases = require('../var/coreUtilityAliases');
@@ -4695,7 +4772,7 @@ function getOwnKey(obj, key) {
 }
 
 module.exports = getOwnKey;
-},{"../var/coreUtilityAliases":194}],141:[function(require,module,exports){
+},{"../var/coreUtilityAliases":195}],142:[function(require,module,exports){
 'use strict';
 
 function getRegExpFlags(reg, add) {
@@ -4714,7 +4791,7 @@ function getRegExpFlags(reg, add) {
 }
 
 module.exports = getRegExpFlags;
-},{}],142:[function(require,module,exports){
+},{}],143:[function(require,module,exports){
 'use strict';
 
 var isArrayIndex = require('./isArrayIndex');
@@ -4738,7 +4815,7 @@ function getSparseArrayIndexes(arr, fromIndex, loop, fromRight) {
 }
 
 module.exports = getSparseArrayIndexes;
-},{"./isArrayIndex":148}],143:[function(require,module,exports){
+},{"./isArrayIndex":149}],144:[function(require,module,exports){
 'use strict';
 
 var PROPERTY_RANGE_REG = require('../var/PROPERTY_RANGE_REG'),
@@ -4898,7 +4975,7 @@ function handleArrayIndexRange(obj, key, any, val) {
 }
 
 module.exports = handleDeepProperty;
-},{"../var/CommonChars":181,"../var/PROPERTY_RANGE_REG":188,"../var/classChecks":193,"../var/coreUtilityAliases":194,"./assertArray":106,"./assertWritable":108,"./isDefined":150,"./isObjectType":152,"./periodSplit":164}],144:[function(require,module,exports){
+},{"../var/CommonChars":182,"../var/PROPERTY_RANGE_REG":189,"../var/classChecks":194,"../var/coreUtilityAliases":195,"./assertArray":107,"./assertWritable":109,"./isDefined":151,"./isObjectType":153,"./periodSplit":165}],145:[function(require,module,exports){
 'use strict';
 
 var coreUtilityAliases = require('../var/coreUtilityAliases');
@@ -4921,7 +4998,7 @@ function hasOwnEnumeratedProperties(obj) {
 }
 
 module.exports = hasOwnEnumeratedProperties;
-},{"../var/coreUtilityAliases":194}],145:[function(require,module,exports){
+},{"../var/coreUtilityAliases":195}],146:[function(require,module,exports){
 'use strict';
 
 var isPrimitive = require('./isPrimitive');
@@ -4931,7 +5008,7 @@ function hasProperty(obj, prop) {
 }
 
 module.exports = hasProperty;
-},{"./isPrimitive":154}],146:[function(require,module,exports){
+},{"./isPrimitive":155}],147:[function(require,module,exports){
 'use strict';
 
 var coreUtilityAliases = require('../var/coreUtilityAliases');
@@ -4955,7 +5032,7 @@ function hasValidPlainObjectPrototype(obj) {
 }
 
 module.exports = hasValidPlainObjectPrototype;
-},{"../var/coreUtilityAliases":194}],147:[function(require,module,exports){
+},{"../var/coreUtilityAliases":195}],148:[function(require,module,exports){
 'use strict';
 
 function indexOf(arr, el) {
@@ -4966,7 +5043,7 @@ function indexOf(arr, el) {
 }
 
 module.exports = indexOf;
-},{}],148:[function(require,module,exports){
+},{}],149:[function(require,module,exports){
 'use strict';
 
 function isArrayIndex(n) {
@@ -4974,7 +5051,7 @@ function isArrayIndex(n) {
 }
 
 module.exports = isArrayIndex;
-},{}],149:[function(require,module,exports){
+},{}],150:[function(require,module,exports){
 'use strict';
 
 var coreUtilityAliases = require('../var/coreUtilityAliases');
@@ -4989,7 +5066,7 @@ function isClass(obj, className, str) {
 }
 
 module.exports = isClass;
-},{"../var/coreUtilityAliases":194}],150:[function(require,module,exports){
+},{"../var/coreUtilityAliases":195}],151:[function(require,module,exports){
 'use strict';
 
 function isDefined(o) {
@@ -4997,7 +5074,7 @@ function isDefined(o) {
 }
 
 module.exports = isDefined;
-},{}],151:[function(require,module,exports){
+},{}],152:[function(require,module,exports){
 'use strict';
 
 var getKeys = require('./getKeys'),
@@ -5068,7 +5145,7 @@ function objectIsEqual(a, b, aClass, stack) {
 }
 
 module.exports = isEqual;
-},{"../var/classChecks":193,"../var/coreUtilityAliases":194,"./getKeys":136,"./isObjectType":152,"./iterateWithCyclicCheck":158,"./mapToArray":160,"./setToArray":171}],152:[function(require,module,exports){
+},{"../var/classChecks":194,"../var/coreUtilityAliases":195,"./getKeys":137,"./isObjectType":153,"./iterateWithCyclicCheck":159,"./mapToArray":161,"./setToArray":172}],153:[function(require,module,exports){
 'use strict';
 
 function isObjectType(obj, type) {
@@ -5076,7 +5153,7 @@ function isObjectType(obj, type) {
 }
 
 module.exports = isObjectType;
-},{}],153:[function(require,module,exports){
+},{}],154:[function(require,module,exports){
 'use strict';
 
 var isClass = require('./isClass'),
@@ -5092,7 +5169,7 @@ function isPlainObject(obj, className) {
 }
 
 module.exports = isPlainObject;
-},{"./hasOwnEnumeratedProperties":144,"./hasValidPlainObjectPrototype":146,"./isClass":149,"./isObjectType":152}],154:[function(require,module,exports){
+},{"./hasOwnEnumeratedProperties":145,"./hasValidPlainObjectPrototype":147,"./isClass":150,"./isObjectType":153}],155:[function(require,module,exports){
 'use strict';
 
 function isPrimitive(obj, type) {
@@ -5101,7 +5178,7 @@ function isPrimitive(obj, type) {
 }
 
 module.exports = isPrimitive;
-},{}],155:[function(require,module,exports){
+},{}],156:[function(require,module,exports){
 'use strict';
 
 function isRealNaN(obj) {
@@ -5110,7 +5187,7 @@ function isRealNaN(obj) {
 }
 
 module.exports = isRealNaN;
-},{}],156:[function(require,module,exports){
+},{}],157:[function(require,module,exports){
 'use strict';
 
 function isUndefined(o) {
@@ -5118,7 +5195,7 @@ function isUndefined(o) {
 }
 
 module.exports = isUndefined;
-},{}],157:[function(require,module,exports){
+},{}],158:[function(require,module,exports){
 'use strict';
 
 var getSparseArrayIndexes = require('./getSparseArrayIndexes');
@@ -5133,7 +5210,7 @@ function iterateOverSparseArray(arr, fn, fromIndex, loop) {
 }
 
 module.exports = iterateOverSparseArray;
-},{"./getSparseArrayIndexes":142}],158:[function(require,module,exports){
+},{"./getSparseArrayIndexes":143}],159:[function(require,module,exports){
 'use strict';
 
 var getKeys = require('./getKeys'),
@@ -5188,7 +5265,7 @@ function iterateWithCyclicCheck(obj, sortedKeys, stack, fn) {
 }
 
 module.exports = iterateWithCyclicCheck;
-},{"../var/coreUtilityAliases":194,"./getKeys":136}],159:[function(require,module,exports){
+},{"../var/coreUtilityAliases":195,"./getKeys":137}],160:[function(require,module,exports){
 'use strict';
 
 function map(arr, fn) {
@@ -5203,7 +5280,7 @@ function map(arr, fn) {
 }
 
 module.exports = map;
-},{}],160:[function(require,module,exports){
+},{}],161:[function(require,module,exports){
 'use strict';
 
 function mapToArray(map) {
@@ -5215,7 +5292,7 @@ function mapToArray(map) {
 }
 
 module.exports = mapToArray;
-},{}],161:[function(require,module,exports){
+},{}],162:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../var/classChecks'),
@@ -5241,7 +5318,7 @@ function mapWithShortcuts(el, f, context, mapArgs) {
 }
 
 module.exports = mapWithShortcuts;
-},{"../var/classChecks":193,"./deepGetProperty":117}],162:[function(require,module,exports){
+},{"../var/classChecks":194,"./deepGetProperty":118}],163:[function(require,module,exports){
 'use strict';
 
 var INTERNAL_MEMOIZE_LIMIT = require('../var/INTERNAL_MEMOIZE_LIMIT'),
@@ -5266,7 +5343,7 @@ function memoizeFunction(fn) {
 }
 
 module.exports = memoizeFunction;
-},{"../var/INTERNAL_MEMOIZE_LIMIT":183,"../var/coreUtilityAliases":194}],163:[function(require,module,exports){
+},{"../var/INTERNAL_MEMOIZE_LIMIT":184,"../var/coreUtilityAliases":195}],164:[function(require,module,exports){
 'use strict';
 
 var mathAliases = require('../var/mathAliases'),
@@ -5284,7 +5361,7 @@ function padNumber(num, place, sign, base, replacement) {
 }
 
 module.exports = padNumber;
-},{"../var/mathAliases":196,"./repeatString":167}],164:[function(require,module,exports){
+},{"../var/mathAliases":197,"./repeatString":168}],165:[function(require,module,exports){
 'use strict';
 
 var CommonChars = require('../var/CommonChars');
@@ -5296,7 +5373,7 @@ function periodSplit(str) {
 }
 
 module.exports = periodSplit;
-},{"../var/CommonChars":181}],165:[function(require,module,exports){
+},{"../var/CommonChars":182}],166:[function(require,module,exports){
 'use strict';
 
 var PRIVATE_PROP_PREFIX = require('../var/PRIVATE_PROP_PREFIX'),
@@ -5316,7 +5393,7 @@ function privatePropertyAccessor(key) {
 }
 
 module.exports = privatePropertyAccessor;
-},{"../var/PRIVATE_PROP_PREFIX":187,"../var/coreUtilityAliases":194}],166:[function(require,module,exports){
+},{"../var/PRIVATE_PROP_PREFIX":188,"../var/coreUtilityAliases":195}],167:[function(require,module,exports){
 'use strict';
 
 function regexMatcher(reg) {
@@ -5327,7 +5404,7 @@ function regexMatcher(reg) {
 }
 
 module.exports = regexMatcher;
-},{}],167:[function(require,module,exports){
+},{}],168:[function(require,module,exports){
 'use strict';
 
 function repeatString(str, num) {
@@ -5345,7 +5422,7 @@ function repeatString(str, num) {
 }
 
 module.exports = repeatString;
-},{}],168:[function(require,module,exports){
+},{}],169:[function(require,module,exports){
 'use strict';
 
 var Inflections = require('../var/Inflections');
@@ -5355,7 +5432,7 @@ function runHumanRules(str) {
 }
 
 module.exports = runHumanRules;
-},{"../var/Inflections":184}],169:[function(require,module,exports){
+},{"../var/Inflections":185}],170:[function(require,module,exports){
 'use strict';
 
 var indexOf = require('./indexOf'),
@@ -5405,7 +5482,7 @@ function serializeDeep(obj, refs, stack) {
 }
 
 module.exports = serializeInternal;
-},{"../var/classChecks":193,"../var/coreUtilityAliases":194,"./indexOf":147,"./isObjectType":152,"./isPrimitive":154,"./isRealNaN":155,"./iterateWithCyclicCheck":158}],170:[function(require,module,exports){
+},{"../var/classChecks":194,"../var/coreUtilityAliases":195,"./indexOf":148,"./isObjectType":153,"./isPrimitive":155,"./isRealNaN":156,"./iterateWithCyclicCheck":159}],171:[function(require,module,exports){
 'use strict';
 
 function setChainableConstructor(sugarNamespace, createFn) {
@@ -5415,7 +5492,7 @@ function setChainableConstructor(sugarNamespace, createFn) {
 }
 
 module.exports = setChainableConstructor;
-},{}],171:[function(require,module,exports){
+},{}],172:[function(require,module,exports){
 'use strict';
 
 function setToArray(set) {
@@ -5427,7 +5504,7 @@ function setToArray(set) {
 }
 
 module.exports = setToArray;
-},{}],172:[function(require,module,exports){
+},{}],173:[function(require,module,exports){
 'use strict';
 
 function simpleCapitalize(str) {
@@ -5435,7 +5512,7 @@ function simpleCapitalize(str) {
 }
 
 module.exports = simpleCapitalize;
-},{}],173:[function(require,module,exports){
+},{}],174:[function(require,module,exports){
 'use strict';
 
 var simpleMerge = require('./simpleMerge');
@@ -5445,7 +5522,7 @@ function simpleClone(obj) {
 }
 
 module.exports = simpleClone;
-},{"./simpleMerge":174}],174:[function(require,module,exports){
+},{"./simpleMerge":175}],175:[function(require,module,exports){
 'use strict';
 
 var coreUtilityAliases = require('../var/coreUtilityAliases');
@@ -5460,7 +5537,7 @@ function simpleMerge(target, source) {
 }
 
 module.exports = simpleMerge;
-},{"../var/coreUtilityAliases":194}],175:[function(require,module,exports){
+},{"../var/coreUtilityAliases":195}],176:[function(require,module,exports){
 'use strict';
 
 function simpleRepeat(n, fn) {
@@ -5470,7 +5547,7 @@ function simpleRepeat(n, fn) {
 }
 
 module.exports = simpleRepeat;
-},{}],176:[function(require,module,exports){
+},{}],177:[function(require,module,exports){
 'use strict';
 
 function spaceSplit(str) {
@@ -5478,7 +5555,7 @@ function spaceSplit(str) {
 }
 
 module.exports = spaceSplit;
-},{}],177:[function(require,module,exports){
+},{}],178:[function(require,module,exports){
 'use strict';
 
 var CommonChars = require('../var/CommonChars'),
@@ -5503,7 +5580,7 @@ function stringToNumber(str, base) {
 }
 
 module.exports = stringToNumber;
-},{"../var/CommonChars":181,"../var/coreUtilityAliases":194,"../var/fullwidthNumberHelpers":195}],178:[function(require,module,exports){
+},{"../var/CommonChars":182,"../var/coreUtilityAliases":195,"../var/fullwidthNumberHelpers":196}],179:[function(require,module,exports){
 'use strict';
 
 function trim(str) {
@@ -5511,7 +5588,7 @@ function trim(str) {
 }
 
 module.exports = trim;
-},{}],179:[function(require,module,exports){
+},{}],180:[function(require,module,exports){
 'use strict';
 
 var mathAliases = require('../var/mathAliases');
@@ -5528,7 +5605,7 @@ function withPrecision(val, precision, fn) {
 }
 
 module.exports = withPrecision;
-},{"../var/mathAliases":196}],180:[function(require,module,exports){
+},{"../var/mathAliases":197}],181:[function(require,module,exports){
 'use strict';
 
 function wrapNamespace(method) {
@@ -5538,7 +5615,7 @@ function wrapNamespace(method) {
 }
 
 module.exports = wrapNamespace;
-},{}],181:[function(require,module,exports){
+},{}],182:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -5550,53 +5627,53 @@ module.exports = {
   OPEN_BRACE: '{',
   CLOSE_BRACE: '}'
 };
-},{}],182:[function(require,module,exports){
-'use strict';
-
-module.exports = 'enhance';
 },{}],183:[function(require,module,exports){
 'use strict';
 
-module.exports = 1000;
+module.exports = 'enhance';
 },{}],184:[function(require,module,exports){
 'use strict';
 
-module.exports = {};
+module.exports = 1000;
 },{}],185:[function(require,module,exports){
 'use strict';
 
-module.exports = 'Boolean Number String Date RegExp Function Array Error Set Map';
+module.exports = {};
 },{}],186:[function(require,module,exports){
 'use strict';
 
-module.exports = !('0' in Object('a'));
+module.exports = 'Boolean Number String Date RegExp Function Array Error Set Map';
 },{}],187:[function(require,module,exports){
 'use strict';
 
-module.exports = '_sugar_';
+module.exports = !('0' in Object('a'));
 },{}],188:[function(require,module,exports){
 'use strict';
 
-module.exports = /^(.*?)\[([-\d]*)\.\.([-\d]*)\](.*)$/;
+module.exports = '_sugar_';
 },{}],189:[function(require,module,exports){
 'use strict';
 
-module.exports = /([{}])\1|\{([^}]*)\}|(%)%|(%(\w*))/g;
+module.exports = /^(.*?)\[([-\d]*)\.\.([-\d]*)\](.*)$/;
 },{}],190:[function(require,module,exports){
 'use strict';
 
-module.exports = '\u0009\u000A\u000B\u000C\u000D\u0020\u00A0\u1680\u180E\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u2028\u2029\u3000\uFEFF';
+module.exports = /([{}])\1|\{([^}]*)\}|(%)%|(%(\w*))/g;
 },{}],191:[function(require,module,exports){
+'use strict';
+
+module.exports = '\u0009\u000A\u000B\u000C\u000D\u0020\u00A0\u1680\u180E\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u2028\u2029\u3000\uFEFF';
+},{}],192:[function(require,module,exports){
 'use strict';
 
 var privatePropertyAccessor = require('../internal/privatePropertyAccessor');
 
 module.exports = privatePropertyAccessor('utc');
-},{"../internal/privatePropertyAccessor":165}],192:[function(require,module,exports){
+},{"../internal/privatePropertyAccessor":166}],193:[function(require,module,exports){
 'use strict';
 
 module.exports = String.fromCharCode;
-},{}],193:[function(require,module,exports){
+},{}],194:[function(require,module,exports){
 'use strict';
 
 var NATIVE_TYPES = require('./NATIVE_TYPES'),
@@ -5734,7 +5811,7 @@ module.exports = {
   isMap: isMap,
   isError: isError
 };
-},{"../internal/forEach":130,"../internal/isClass":149,"../internal/isPlainObject":153,"../internal/spaceSplit":176,"./NATIVE_TYPES":185,"./coreUtilityAliases":194}],194:[function(require,module,exports){
+},{"../internal/forEach":131,"../internal/isClass":150,"../internal/isPlainObject":154,"../internal/spaceSplit":177,"./NATIVE_TYPES":186,"./coreUtilityAliases":195}],195:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5748,7 +5825,7 @@ module.exports = {
   forEachProperty: Sugar.util.forEachProperty,
   mapNativeToChainable: Sugar.util.mapNativeToChainable
 };
-},{"sugar-core":19}],195:[function(require,module,exports){
+},{"sugar-core":20}],196:[function(require,module,exports){
 'use strict';
 
 var CommonChars = require('./CommonChars'),
@@ -5787,7 +5864,7 @@ module.exports = {
   fullWidthNumberMap: fullWidthNumberMap,
   fullWidthNumbers: fullWidthNumbers
 };
-},{"../internal/allCharsReg":104,"./CommonChars":181,"./chr":192}],196:[function(require,module,exports){
+},{"../internal/allCharsReg":105,"./CommonChars":182,"./chr":193}],197:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -5799,7 +5876,7 @@ module.exports = {
   floor: Math.floor,
   round: Math.round
 };
-},{}],197:[function(require,module,exports){
+},{}],198:[function(require,module,exports){
 'use strict';
 
 var wrapNamespace = require('../internal/wrapNamespace');
@@ -5813,7 +5890,7 @@ module.exports = {
   defineInstanceAndStatic: wrapNamespace('defineInstanceAndStatic'),
   defineInstanceWithArguments: wrapNamespace('defineInstanceWithArguments')
 };
-},{"../internal/wrapNamespace":180}],198:[function(require,module,exports){
+},{"../internal/wrapNamespace":181}],199:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5827,7 +5904,7 @@ module.exports = {
   sugarFunction: Sugar.Function,
   sugarRegExp: Sugar.RegExp
 };
-},{"sugar-core":19}],199:[function(require,module,exports){
+},{"sugar-core":20}],200:[function(require,module,exports){
 'use strict';
 
 var mathAliases = require('./mathAliases');
@@ -5841,7 +5918,7 @@ var trunc = Math.trunc || function(n) {
 };
 
 module.exports = trunc;
-},{"./mathAliases":196}],200:[function(require,module,exports){
+},{"./mathAliases":197}],201:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5849,7 +5926,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.addDays;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],201:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],202:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5857,7 +5934,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.addHours;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],202:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],203:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -5874,7 +5951,7 @@ Sugar.Date.defineStatic({
 });
 
 module.exports = Sugar.Date.addLocale;
-},{"./var/LocaleHelpers":390,"sugar-core":19}],203:[function(require,module,exports){
+},{"./var/LocaleHelpers":391,"sugar-core":20}],204:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5882,7 +5959,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.addMilliseconds;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],204:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],205:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5890,7 +5967,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.addMinutes;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],205:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],206:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5898,7 +5975,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.addMonths;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],206:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],207:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5906,7 +5983,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.addSeconds;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],207:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],208:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5914,7 +5991,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.addWeeks;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],208:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],209:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5922,7 +5999,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.addYears;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],209:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],210:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -5937,7 +6014,7 @@ Sugar.Date.defineInstanceWithArguments({
 });
 
 module.exports = Sugar.Date.advance;
-},{"./internal/advanceDateWithArgs":247,"sugar-core":19}],210:[function(require,module,exports){
+},{"./internal/advanceDateWithArgs":248,"sugar-core":20}],211:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5945,7 +6022,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.beginningOfDay;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],211:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],212:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -5969,7 +6046,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.beginningOfISOWeek;
-},{"./internal/getWeekday":294,"./internal/resetTime":307,"./internal/setWeekday":313,"sugar-core":19}],212:[function(require,module,exports){
+},{"./internal/getWeekday":295,"./internal/resetTime":308,"./internal/setWeekday":314,"sugar-core":20}],213:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5977,7 +6054,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.beginningOfMonth;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],213:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],214:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5985,7 +6062,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.beginningOfWeek;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],214:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],215:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -5993,31 +6070,31 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.beginningOfYear;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],215:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],216:[function(require,module,exports){
 'use strict';
 
 var buildDateUnitMethods = require('../internal/buildDateUnitMethods');
 
 buildDateUnitMethods();
-},{"../internal/buildDateUnitMethods":250}],216:[function(require,module,exports){
+},{"../internal/buildDateUnitMethods":251}],217:[function(require,module,exports){
 'use strict';
 
 var buildNumberUnitMethods = require('../internal/buildNumberUnitMethods');
 
 buildNumberUnitMethods();
-},{"../internal/buildNumberUnitMethods":251}],217:[function(require,module,exports){
+},{"../internal/buildNumberUnitMethods":252}],218:[function(require,module,exports){
 'use strict';
 
 var buildRelativeAliases = require('../internal/buildRelativeAliases');
 
 buildRelativeAliases();
-},{"../internal/buildRelativeAliases":252}],218:[function(require,module,exports){
+},{"../internal/buildRelativeAliases":253}],219:[function(require,module,exports){
 'use strict';
 
 var setDateChainableConstructor = require('../internal/setDateChainableConstructor');
 
 setDateChainableConstructor();
-},{"../internal/setDateChainableConstructor":309}],219:[function(require,module,exports){
+},{"../internal/setDateChainableConstructor":310}],220:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6032,7 +6109,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.clone;
-},{"./internal/cloneDate":254,"sugar-core":19}],220:[function(require,module,exports){
+},{"./internal/cloneDate":255,"sugar-core":20}],221:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6049,7 +6126,7 @@ Sugar.Date.defineStatic({
 });
 
 module.exports = Sugar.Date.create;
-},{"./build/setDateChainableConstructorCall":218,"./internal/createDate":259,"sugar-core":19}],221:[function(require,module,exports){
+},{"./build/setDateChainableConstructorCall":219,"./internal/createDate":260,"sugar-core":20}],222:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6057,7 +6134,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.daysAgo;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],222:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],223:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6065,7 +6142,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.daysFromNow;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],223:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],224:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6080,7 +6157,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.daysInMonth;
-},{"./internal/getDaysInMonth":275,"sugar-core":19}],224:[function(require,module,exports){
+},{"./internal/getDaysInMonth":276,"sugar-core":20}],225:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6088,7 +6165,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.daysSince;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],225:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],226:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6096,7 +6173,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.daysUntil;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],226:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],227:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6104,7 +6181,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.endOfDay;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],227:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],228:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6127,7 +6204,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.endOfISOWeek;
-},{"./internal/getWeekday":294,"./internal/moveToEndOfUnit":303,"./internal/setWeekday":313,"./var/DateUnitIndexes":383,"sugar-core":19}],228:[function(require,module,exports){
+},{"./internal/getWeekday":295,"./internal/moveToEndOfUnit":304,"./internal/setWeekday":314,"./var/DateUnitIndexes":384,"sugar-core":20}],229:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6135,7 +6212,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.endOfMonth;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],229:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],230:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6143,7 +6220,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.endOfWeek;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],230:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],231:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6151,7 +6228,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.endOfYear;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],231:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],232:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6166,7 +6243,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.format;
-},{"./internal/dateFormat":261,"sugar-core":19}],232:[function(require,module,exports){
+},{"./internal/dateFormat":262,"sugar-core":20}],233:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6181,7 +6258,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.get;
-},{"./internal/createDateWithContext":260,"sugar-core":19}],233:[function(require,module,exports){
+},{"./internal/createDateWithContext":261,"sugar-core":20}],234:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6199,7 +6276,7 @@ Sugar.Date.defineStatic({
 });
 
 module.exports = Sugar.Date.getAllLocaleCodes;
-},{"../common/internal/getKeys":136,"./var/LocaleHelpers":390,"sugar-core":19}],234:[function(require,module,exports){
+},{"../common/internal/getKeys":137,"./var/LocaleHelpers":391,"sugar-core":20}],235:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6216,7 +6293,7 @@ Sugar.Date.defineStatic({
 });
 
 module.exports = Sugar.Date.getAllLocales;
-},{"./var/LocaleHelpers":390,"sugar-core":19}],235:[function(require,module,exports){
+},{"./var/LocaleHelpers":391,"sugar-core":20}],236:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6231,7 +6308,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.getISOWeek;
-},{"./internal/getWeekNumber":292,"sugar-core":19}],236:[function(require,module,exports){
+},{"./internal/getWeekNumber":293,"sugar-core":20}],237:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6248,14 +6325,14 @@ Sugar.Date.defineStatic({
 });
 
 module.exports = Sugar.Date.getLocale;
-},{"./var/LocaleHelpers":390,"sugar-core":19}],237:[function(require,module,exports){
+},{"./var/LocaleHelpers":391,"sugar-core":20}],238:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
     _dateOptions = require('./var/_dateOptions');
 
 module.exports = Sugar.Date.getOption;
-},{"./var/_dateOptions":395,"sugar-core":19}],238:[function(require,module,exports){
+},{"./var/_dateOptions":396,"sugar-core":20}],239:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6270,7 +6347,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.getUTCOffset;
-},{"./internal/getUTCOffset":290,"sugar-core":19}],239:[function(require,module,exports){
+},{"./internal/getUTCOffset":291,"sugar-core":20}],240:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6284,7 +6361,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.getUTCWeekday;
-},{"sugar-core":19}],240:[function(require,module,exports){
+},{"sugar-core":20}],241:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -6299,7 +6376,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.getWeekday;
-},{"./internal/getWeekday":294,"sugar-core":19}],241:[function(require,module,exports){
+},{"./internal/getWeekday":295,"sugar-core":20}],242:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6307,7 +6384,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.hoursAgo;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],242:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],243:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6315,7 +6392,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.hoursFromNow;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],243:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],244:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6323,7 +6400,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.hoursSince;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],244:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],245:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -6331,7 +6408,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.hoursUntil;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],245:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],246:[function(require,module,exports){
 'use strict';
 
 // Static Methods
@@ -6529,7 +6606,7 @@ require('./getOption');
 require('./setOption');
 
 module.exports = require('sugar-core');
-},{"../number/day":468,"../number/dayAfter":469,"../number/dayAgo":470,"../number/dayBefore":471,"../number/dayFromNow":472,"../number/days":473,"../number/daysAfter":474,"../number/daysAgo":475,"../number/daysBefore":476,"../number/daysFromNow":477,"../number/duration":479,"../number/hour":485,"../number/hourAfter":486,"../number/hourAgo":487,"../number/hourBefore":488,"../number/hourFromNow":489,"../number/hours":490,"../number/hoursAfter":491,"../number/hoursAgo":492,"../number/hoursBefore":493,"../number/hoursFromNow":494,"../number/millisecond":508,"../number/millisecondAfter":509,"../number/millisecondAgo":510,"../number/millisecondBefore":511,"../number/millisecondFromNow":512,"../number/milliseconds":513,"../number/millisecondsAfter":514,"../number/millisecondsAgo":515,"../number/millisecondsBefore":516,"../number/millisecondsFromNow":517,"../number/minute":518,"../number/minuteAfter":519,"../number/minuteAgo":520,"../number/minuteBefore":521,"../number/minuteFromNow":522,"../number/minutes":523,"../number/minutesAfter":524,"../number/minutesAgo":525,"../number/minutesBefore":526,"../number/minutesFromNow":527,"../number/month":528,"../number/monthAfter":529,"../number/monthAgo":530,"../number/monthBefore":531,"../number/monthFromNow":532,"../number/months":533,"../number/monthsAfter":534,"../number/monthsAgo":535,"../number/monthsBefore":536,"../number/monthsFromNow":537,"../number/second":544,"../number/secondAfter":545,"../number/secondAgo":546,"../number/secondBefore":547,"../number/secondFromNow":548,"../number/seconds":549,"../number/secondsAfter":550,"../number/secondsAgo":551,"../number/secondsBefore":552,"../number/secondsFromNow":553,"../number/week":564,"../number/weekAfter":565,"../number/weekAgo":566,"../number/weekBefore":567,"../number/weekFromNow":568,"../number/weeks":569,"../number/weeksAfter":570,"../number/weeksAgo":571,"../number/weeksBefore":572,"../number/weeksFromNow":573,"../number/year":574,"../number/yearAfter":575,"../number/yearAgo":576,"../number/yearBefore":577,"../number/yearFromNow":578,"../number/years":579,"../number/yearsAfter":580,"../number/yearsAgo":581,"../number/yearsBefore":582,"../number/yearsFromNow":583,"./addDays":200,"./addHours":201,"./addLocale":202,"./addMilliseconds":203,"./addMinutes":204,"./addMonths":205,"./addSeconds":206,"./addWeeks":207,"./addYears":208,"./advance":209,"./beginningOfDay":210,"./beginningOfISOWeek":211,"./beginningOfMonth":212,"./beginningOfWeek":213,"./beginningOfYear":214,"./clone":219,"./create":220,"./daysAgo":221,"./daysFromNow":222,"./daysInMonth":223,"./daysSince":224,"./daysUntil":225,"./endOfDay":226,"./endOfISOWeek":227,"./endOfMonth":228,"./endOfWeek":229,"./endOfYear":230,"./format":231,"./get":232,"./getAllLocaleCodes":233,"./getAllLocales":234,"./getISOWeek":235,"./getLocale":236,"./getOption":237,"./getUTCOffset":238,"./getUTCWeekday":239,"./getWeekday":240,"./hoursAgo":241,"./hoursFromNow":242,"./hoursSince":243,"./hoursUntil":244,"./is":318,"./isAfter":319,"./isBefore":320,"./isBetween":321,"./isFriday":322,"./isFuture":323,"./isLastMonth":324,"./isLastWeek":325,"./isLastYear":326,"./isLeapYear":327,"./isMonday":328,"./isNextMonth":329,"./isNextWeek":330,"./isNextYear":331,"./isPast":332,"./isSaturday":333,"./isSunday":334,"./isThisMonth":335,"./isThisWeek":336,"./isThisYear":337,"./isThursday":338,"./isToday":339,"./isTomorrow":340,"./isTuesday":341,"./isUTC":342,"./isValid":343,"./isWednesday":344,"./isWeekday":345,"./isWeekend":346,"./isYesterday":347,"./iso":348,"./millisecondsAgo":349,"./millisecondsFromNow":350,"./millisecondsSince":351,"./millisecondsUntil":352,"./minutesAgo":353,"./minutesFromNow":354,"./minutesSince":355,"./minutesUntil":356,"./monthsAgo":357,"./monthsFromNow":358,"./monthsSince":359,"./monthsUntil":360,"./relative":362,"./relativeTo":363,"./removeLocale":364,"./reset":365,"./rewind":366,"./secondsAgo":367,"./secondsFromNow":368,"./secondsSince":369,"./secondsUntil":370,"./set":371,"./setISOWeek":372,"./setLocale":373,"./setOption":374,"./setUTC":375,"./setWeekday":376,"./weeksAgo":397,"./weeksFromNow":398,"./weeksSince":399,"./weeksUntil":400,"./yearsAgo":401,"./yearsFromNow":402,"./yearsSince":403,"./yearsUntil":404,"sugar-core":19}],246:[function(require,module,exports){
+},{"../number/day":469,"../number/dayAfter":470,"../number/dayAgo":471,"../number/dayBefore":472,"../number/dayFromNow":473,"../number/days":474,"../number/daysAfter":475,"../number/daysAgo":476,"../number/daysBefore":477,"../number/daysFromNow":478,"../number/duration":480,"../number/hour":486,"../number/hourAfter":487,"../number/hourAgo":488,"../number/hourBefore":489,"../number/hourFromNow":490,"../number/hours":491,"../number/hoursAfter":492,"../number/hoursAgo":493,"../number/hoursBefore":494,"../number/hoursFromNow":495,"../number/millisecond":509,"../number/millisecondAfter":510,"../number/millisecondAgo":511,"../number/millisecondBefore":512,"../number/millisecondFromNow":513,"../number/milliseconds":514,"../number/millisecondsAfter":515,"../number/millisecondsAgo":516,"../number/millisecondsBefore":517,"../number/millisecondsFromNow":518,"../number/minute":519,"../number/minuteAfter":520,"../number/minuteAgo":521,"../number/minuteBefore":522,"../number/minuteFromNow":523,"../number/minutes":524,"../number/minutesAfter":525,"../number/minutesAgo":526,"../number/minutesBefore":527,"../number/minutesFromNow":528,"../number/month":529,"../number/monthAfter":530,"../number/monthAgo":531,"../number/monthBefore":532,"../number/monthFromNow":533,"../number/months":534,"../number/monthsAfter":535,"../number/monthsAgo":536,"../number/monthsBefore":537,"../number/monthsFromNow":538,"../number/second":545,"../number/secondAfter":546,"../number/secondAgo":547,"../number/secondBefore":548,"../number/secondFromNow":549,"../number/seconds":550,"../number/secondsAfter":551,"../number/secondsAgo":552,"../number/secondsBefore":553,"../number/secondsFromNow":554,"../number/week":565,"../number/weekAfter":566,"../number/weekAgo":567,"../number/weekBefore":568,"../number/weekFromNow":569,"../number/weeks":570,"../number/weeksAfter":571,"../number/weeksAgo":572,"../number/weeksBefore":573,"../number/weeksFromNow":574,"../number/year":575,"../number/yearAfter":576,"../number/yearAgo":577,"../number/yearBefore":578,"../number/yearFromNow":579,"../number/years":580,"../number/yearsAfter":581,"../number/yearsAgo":582,"../number/yearsBefore":583,"../number/yearsFromNow":584,"./addDays":201,"./addHours":202,"./addLocale":203,"./addMilliseconds":204,"./addMinutes":205,"./addMonths":206,"./addSeconds":207,"./addWeeks":208,"./addYears":209,"./advance":210,"./beginningOfDay":211,"./beginningOfISOWeek":212,"./beginningOfMonth":213,"./beginningOfWeek":214,"./beginningOfYear":215,"./clone":220,"./create":221,"./daysAgo":222,"./daysFromNow":223,"./daysInMonth":224,"./daysSince":225,"./daysUntil":226,"./endOfDay":227,"./endOfISOWeek":228,"./endOfMonth":229,"./endOfWeek":230,"./endOfYear":231,"./format":232,"./get":233,"./getAllLocaleCodes":234,"./getAllLocales":235,"./getISOWeek":236,"./getLocale":237,"./getOption":238,"./getUTCOffset":239,"./getUTCWeekday":240,"./getWeekday":241,"./hoursAgo":242,"./hoursFromNow":243,"./hoursSince":244,"./hoursUntil":245,"./is":319,"./isAfter":320,"./isBefore":321,"./isBetween":322,"./isFriday":323,"./isFuture":324,"./isLastMonth":325,"./isLastWeek":326,"./isLastYear":327,"./isLeapYear":328,"./isMonday":329,"./isNextMonth":330,"./isNextWeek":331,"./isNextYear":332,"./isPast":333,"./isSaturday":334,"./isSunday":335,"./isThisMonth":336,"./isThisWeek":337,"./isThisYear":338,"./isThursday":339,"./isToday":340,"./isTomorrow":341,"./isTuesday":342,"./isUTC":343,"./isValid":344,"./isWednesday":345,"./isWeekday":346,"./isWeekend":347,"./isYesterday":348,"./iso":349,"./millisecondsAgo":350,"./millisecondsFromNow":351,"./millisecondsSince":352,"./millisecondsUntil":353,"./minutesAgo":354,"./minutesFromNow":355,"./minutesSince":356,"./minutesUntil":357,"./monthsAgo":358,"./monthsFromNow":359,"./monthsSince":360,"./monthsUntil":361,"./relative":363,"./relativeTo":364,"./removeLocale":365,"./reset":366,"./rewind":367,"./secondsAgo":368,"./secondsFromNow":369,"./secondsSince":370,"./secondsUntil":371,"./set":372,"./setISOWeek":373,"./setLocale":374,"./setOption":375,"./setUTC":376,"./setWeekday":377,"./weeksAgo":398,"./weeksFromNow":399,"./weeksSince":400,"./weeksUntil":401,"./yearsAgo":402,"./yearsFromNow":403,"./yearsSince":404,"./yearsUntil":405,"sugar-core":20}],247:[function(require,module,exports){
 'use strict';
 
 var updateDate = require('./updateDate');
@@ -6541,7 +6618,7 @@ function advanceDate(d, unit, num, reset) {
 }
 
 module.exports = advanceDate;
-},{"./updateDate":316}],247:[function(require,module,exports){
+},{"./updateDate":317}],248:[function(require,module,exports){
 'use strict';
 
 var updateDate = require('./updateDate'),
@@ -6553,7 +6630,7 @@ function advanceDateWithArgs(d, args, dir) {
 }
 
 module.exports = advanceDateWithArgs;
-},{"./collectDateArguments":255,"./updateDate":316}],248:[function(require,module,exports){
+},{"./collectDateArguments":256,"./updateDate":317}],249:[function(require,module,exports){
 'use strict';
 
 var map = require('../../common/internal/map'),
@@ -6572,7 +6649,7 @@ function arrayToRegAlternates(arr) {
 }
 
 module.exports = arrayToRegAlternates;
-},{"../../common/internal/escapeRegExp":127,"../../common/internal/map":159}],249:[function(require,module,exports){
+},{"../../common/internal/escapeRegExp":128,"../../common/internal/map":160}],250:[function(require,module,exports){
 'use strict';
 
 var dateIsValid = require('./dateIsValid');
@@ -6584,7 +6661,7 @@ function assertDateIsValid(d) {
 }
 
 module.exports = assertDateIsValid;
-},{"./dateIsValid":262}],250:[function(require,module,exports){
+},{"./dateIsValid":263}],251:[function(require,module,exports){
 'use strict';
 
 var DateUnits = require('../var/DateUnits'),
@@ -6644,7 +6721,7 @@ function buildDateUnitMethods() {
 }
 
 module.exports = buildDateUnitMethods;
-},{"../../common/internal/defineInstanceSimilar":123,"../../common/internal/forEach":130,"../../common/internal/simpleCapitalize":172,"../../common/var/namespaceAliases":198,"../var/DateUnitIndexes":383,"../var/DateUnits":384,"./advanceDate":246,"./compareDate":257,"./createDateWithContext":260,"./getTimeDistanceForUnit":289,"./moveToBeginningOfUnit":301,"./moveToEndOfUnit":303}],251:[function(require,module,exports){
+},{"../../common/internal/defineInstanceSimilar":124,"../../common/internal/forEach":131,"../../common/internal/simpleCapitalize":173,"../../common/var/namespaceAliases":199,"../var/DateUnitIndexes":384,"../var/DateUnits":385,"./advanceDate":247,"./compareDate":258,"./createDateWithContext":261,"./getTimeDistanceForUnit":290,"./moveToBeginningOfUnit":302,"./moveToEndOfUnit":304}],252:[function(require,module,exports){
 'use strict';
 
 var DateUnits = require('../var/DateUnits'),
@@ -6683,7 +6760,7 @@ function buildNumberUnitMethods() {
 }
 
 module.exports = buildNumberUnitMethods;
-},{"../../common/internal/defineInstanceSimilar":123,"../../common/var/mathAliases":196,"../../common/var/namespaceAliases":198,"../var/DateUnits":384,"./advanceDate":246,"./createDate":259}],252:[function(require,module,exports){
+},{"../../common/internal/defineInstanceSimilar":124,"../../common/var/mathAliases":197,"../../common/var/namespaceAliases":199,"../var/DateUnits":385,"./advanceDate":247,"./createDate":260}],253:[function(require,module,exports){
 'use strict';
 
 var LocaleHelpers = require('../var/LocaleHelpers'),
@@ -6708,7 +6785,7 @@ function buildRelativeAliases() {
 }
 
 module.exports = buildRelativeAliases;
-},{"../../common/internal/defineInstanceSimilar":123,"../../common/internal/spaceSplit":176,"../../common/var/namespaceAliases":198,"../var/LocaleHelpers":390,"./fullCompareDate":266}],253:[function(require,module,exports){
+},{"../../common/internal/defineInstanceSimilar":124,"../../common/internal/spaceSplit":177,"../../common/var/namespaceAliases":199,"../var/LocaleHelpers":391,"./fullCompareDate":267}],254:[function(require,module,exports){
 'use strict';
 
 var callDateSet = require('../../common/internal/callDateSet'),
@@ -6723,7 +6800,7 @@ function callDateSetWithWeek(d, method, value, safe) {
 }
 
 module.exports = callDateSetWithWeek;
-},{"../../common/internal/callDateSet":110,"./setISOWeekNumber":310}],254:[function(require,module,exports){
+},{"../../common/internal/callDateSet":111,"./setISOWeekNumber":311}],255:[function(require,module,exports){
 'use strict';
 
 var _utc = require('../../common/var/_utc');
@@ -6737,7 +6814,7 @@ function cloneDate(d) {
 }
 
 module.exports = cloneDate;
-},{"../../common/var/_utc":191}],255:[function(require,module,exports){
+},{"../../common/var/_utc":192}],256:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -6765,7 +6842,7 @@ function collectDateArguments(args, allowDuration) {
 }
 
 module.exports = collectDateArguments;
-},{"../../common/internal/isObjectType":152,"../../common/internal/simpleClone":173,"../../common/var/classChecks":193,"./collectDateParamsFromArguments":256,"./getDateParamsFromString":274}],256:[function(require,module,exports){
+},{"../../common/internal/isObjectType":153,"../../common/internal/simpleClone":174,"../../common/var/classChecks":194,"./collectDateParamsFromArguments":257,"./getDateParamsFromString":275}],257:[function(require,module,exports){
 'use strict';
 
 var DateUnitIndexes = require('../var/DateUnitIndexes'),
@@ -6786,7 +6863,7 @@ function collectDateParamsFromArguments(args) {
 }
 
 module.exports = collectDateParamsFromArguments;
-},{"../../common/internal/isDefined":150,"../var/DateUnitIndexes":383,"./walkUnitDown":317}],257:[function(require,module,exports){
+},{"../../common/internal/isDefined":151,"../var/DateUnitIndexes":384,"./walkUnitDown":318}],258:[function(require,module,exports){
 'use strict';
 
 var MINUTES = require('../var/MINUTES'),
@@ -6864,7 +6941,7 @@ function compareDate(date, d, margin, localeCode, options) {
 }
 
 module.exports = compareDate;
-},{"../../common/internal/isDefined":150,"../../common/var/_utc":191,"../var/DateUnitIndexes":383,"../var/DateUnits":384,"../var/MINUTES":392,"./advanceDate":246,"./cloneDate":254,"./dateIsValid":262,"./getExtendedDate":278,"./moveToBeginningOfUnit":301,"./moveToEndOfUnit":303,"./tzOffset":315}],258:[function(require,module,exports){
+},{"../../common/internal/isDefined":151,"../../common/var/_utc":192,"../var/DateUnitIndexes":384,"../var/DateUnits":385,"../var/MINUTES":393,"./advanceDate":247,"./cloneDate":255,"./dateIsValid":263,"./getExtendedDate":279,"./moveToBeginningOfUnit":302,"./moveToEndOfUnit":304,"./tzOffset":316}],259:[function(require,module,exports){
 'use strict';
 
 var setDate = require('./setDate'),
@@ -6884,7 +6961,7 @@ function compareDay(d, shift) {
 }
 
 module.exports = compareDay;
-},{"./getDate":271,"./getMonth":283,"./getNewDate":284,"./getYear":295,"./setDate":308}],259:[function(require,module,exports){
+},{"./getDate":272,"./getMonth":284,"./getNewDate":285,"./getYear":296,"./setDate":309}],260:[function(require,module,exports){
 'use strict';
 
 var getExtendedDate = require('./getExtendedDate');
@@ -6894,7 +6971,7 @@ function createDate(d, options, forceClone) {
 }
 
 module.exports = createDate;
-},{"./getExtendedDate":278}],260:[function(require,module,exports){
+},{"./getExtendedDate":279}],261:[function(require,module,exports){
 'use strict';
 
 var getExtendedDate = require('./getExtendedDate');
@@ -6904,7 +6981,7 @@ function createDateWithContext(contextDate, d, options, forceClone) {
 }
 
 module.exports = createDateWithContext;
-},{"./getExtendedDate":278}],261:[function(require,module,exports){
+},{"./getExtendedDate":279}],262:[function(require,module,exports){
 'use strict';
 
 var CoreOutputFormats = require('../var/CoreOutputFormats'),
@@ -6920,7 +6997,7 @@ function dateFormat(d, format, localeCode) {
 }
 
 module.exports = dateFormat;
-},{"../var/CoreOutputFormats":380,"../var/formattingTokens":396,"./assertDateIsValid":249}],262:[function(require,module,exports){
+},{"../var/CoreOutputFormats":381,"../var/formattingTokens":397,"./assertDateIsValid":250}],263:[function(require,module,exports){
 'use strict';
 
 function dateIsValid(d) {
@@ -6928,7 +7005,7 @@ function dateIsValid(d) {
 }
 
 module.exports = dateIsValid;
-},{}],263:[function(require,module,exports){
+},{}],264:[function(require,module,exports){
 'use strict';
 
 var LocaleHelpers = require('../var/LocaleHelpers'),
@@ -6973,7 +7050,7 @@ function dateRelative(d, dRelative, arg1, arg2) {
 }
 
 module.exports = dateRelative;
-},{"../../common/var/classChecks":193,"../var/LocaleHelpers":390,"./assertDateIsValid":249,"./dateFormat":261,"./getAdjustedUnitForDate":268}],264:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"../var/LocaleHelpers":391,"./assertDateIsValid":250,"./dateFormat":262,"./getAdjustedUnitForDate":269}],265:[function(require,module,exports){
 'use strict';
 
 function defaultNewDate() {
@@ -6981,7 +7058,7 @@ function defaultNewDate() {
 }
 
 module.exports = defaultNewDate;
-},{}],265:[function(require,module,exports){
+},{}],266:[function(require,module,exports){
 'use strict';
 
 var getDateParamKey = require('./getDateParamKey');
@@ -6991,7 +7068,7 @@ function deleteDateParam(params, key) {
 }
 
 module.exports = deleteDateParam;
-},{"./getDateParamKey":273}],266:[function(require,module,exports){
+},{"./getDateParamKey":274}],267:[function(require,module,exports){
 'use strict';
 
 var LocaleHelpers = require('../var/LocaleHelpers'),
@@ -7032,7 +7109,7 @@ function fullCompareDate(date, d, margin) {
 }
 
 module.exports = fullCompareDate;
-},{"../../common/internal/isDefined":150,"../../common/internal/trim":178,"../../common/var/classChecks":193,"../var/LocaleHelpers":390,"./compareDate":257,"./compareDay":258,"./dateIsValid":262,"./getMonth":283,"./getNewDate":284,"./getWeekday":294}],267:[function(require,module,exports){
+},{"../../common/internal/isDefined":151,"../../common/internal/trim":179,"../../common/var/classChecks":194,"../var/LocaleHelpers":391,"./compareDate":258,"./compareDay":259,"./dateIsValid":263,"./getMonth":284,"./getNewDate":285,"./getWeekday":295}],268:[function(require,module,exports){
 'use strict';
 
 var mathAliases = require('../../common/var/mathAliases'),
@@ -7053,7 +7130,7 @@ function getAdjustedUnit(ms, fn) {
 }
 
 module.exports = getAdjustedUnit;
-},{"../../common/var/mathAliases":196,"./iterateOverDateUnits":299}],268:[function(require,module,exports){
+},{"../../common/var/mathAliases":197,"./iterateOverDateUnits":300}],269:[function(require,module,exports){
 'use strict';
 
 var getNewDate = require('./getNewDate'),
@@ -7085,7 +7162,7 @@ function getAdjustedUnitForDate(d, dRelative) {
 }
 
 module.exports = getAdjustedUnitForDate;
-},{"../../common/var/mathAliases":196,"./getAdjustedUnit":267,"./getNewDate":284,"./getTimeDistanceForUnit":289}],269:[function(require,module,exports){
+},{"../../common/var/mathAliases":197,"./getAdjustedUnit":268,"./getNewDate":285,"./getTimeDistanceForUnit":290}],270:[function(require,module,exports){
 'use strict';
 
 var trunc = require('../../common/var/trunc'),
@@ -7099,7 +7176,7 @@ function getAdjustedUnitForNumber(ms) {
 }
 
 module.exports = getAdjustedUnitForNumber;
-},{"../../common/internal/withPrecision":179,"../../common/var/trunc":199,"./getAdjustedUnit":267}],270:[function(require,module,exports){
+},{"../../common/internal/withPrecision":180,"../../common/var/trunc":200,"./getAdjustedUnit":268}],271:[function(require,module,exports){
 'use strict';
 
 function getArrayWithOffset(arr, n, alternate, offset) {
@@ -7111,7 +7188,7 @@ function getArrayWithOffset(arr, n, alternate, offset) {
 }
 
 module.exports = getArrayWithOffset;
-},{}],271:[function(require,module,exports){
+},{}],272:[function(require,module,exports){
 'use strict';
 
 var callDateGet = require('../../common/internal/callDateGet');
@@ -7121,7 +7198,7 @@ function getDate(d) {
 }
 
 module.exports = getDate;
-},{"../../common/internal/callDateGet":109}],272:[function(require,module,exports){
+},{"../../common/internal/callDateGet":110}],273:[function(require,module,exports){
 'use strict';
 
 var getDateParamKey = require('./getDateParamKey'),
@@ -7134,7 +7211,7 @@ function getDateParam(params, key) {
 }
 
 module.exports = getDateParam;
-},{"../../common/var/coreUtilityAliases":194,"./getDateParamKey":273}],273:[function(require,module,exports){
+},{"../../common/var/coreUtilityAliases":195,"./getDateParamKey":274}],274:[function(require,module,exports){
 'use strict';
 
 var getOwnKey = require('../../common/internal/getOwnKey');
@@ -7146,7 +7223,7 @@ function getDateParamKey(params, key) {
 }
 
 module.exports = getDateParamKey;
-},{"../../common/internal/getOwnKey":140}],274:[function(require,module,exports){
+},{"../../common/internal/getOwnKey":141}],275:[function(require,module,exports){
 'use strict';
 
 var isUndefined = require('../../common/internal/isUndefined');
@@ -7167,7 +7244,7 @@ function getDateParamsFromString(str) {
 }
 
 module.exports = getDateParamsFromString;
-},{"../../common/internal/isUndefined":156}],275:[function(require,module,exports){
+},{"../../common/internal/isUndefined":157}],276:[function(require,module,exports){
 'use strict';
 
 var getYear = require('./getYear'),
@@ -7179,7 +7256,7 @@ function getDaysInMonth(d) {
 }
 
 module.exports = getDaysInMonth;
-},{"../../common/internal/callDateGet":109,"./getMonth":283,"./getYear":295}],276:[function(require,module,exports){
+},{"../../common/internal/callDateGet":110,"./getMonth":284,"./getYear":296}],277:[function(require,module,exports){
 'use strict';
 
 var DateUnits = require('../var/DateUnits'),
@@ -7193,7 +7270,7 @@ function getDaysSince(d1, d2) {
 }
 
 module.exports = getDaysSince;
-},{"../var/DateUnitIndexes":383,"../var/DateUnits":384,"./getTimeDistanceForUnit":289}],277:[function(require,module,exports){
+},{"../var/DateUnitIndexes":384,"../var/DateUnits":385,"./getTimeDistanceForUnit":290}],278:[function(require,module,exports){
 'use strict';
 
 var EnglishLocaleBaseDefinition = require('../var/EnglishLocaleBaseDefinition'),
@@ -7205,7 +7282,7 @@ function getEnglishVariant(v) {
 }
 
 module.exports = getEnglishVariant;
-},{"../../common/internal/simpleClone":173,"../../common/internal/simpleMerge":174,"../var/EnglishLocaleBaseDefinition":385}],278:[function(require,module,exports){
+},{"../../common/internal/simpleClone":174,"../../common/internal/simpleMerge":175,"../var/EnglishLocaleBaseDefinition":386}],279:[function(require,module,exports){
 'use strict';
 
 var MINUTES = require('../var/MINUTES'),
@@ -7638,7 +7715,7 @@ function getExtendedDate(contextDate, d, opt, forceClone) {
 }
 
 module.exports = getExtendedDate;
-},{"../../common/internal/forEach":130,"../../common/internal/isDefined":150,"../../common/internal/isObjectType":152,"../../common/internal/isUndefined":156,"../../common/internal/simpleClone":173,"../../common/var/_utc":191,"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194,"../../common/var/trunc":199,"../var/DateUnitIndexes":383,"../var/LocaleHelpers":390,"../var/MINUTES":392,"../var/ParsingTokens":393,"./advanceDate":246,"./deleteDateParam":265,"./getNewDate":284,"./getParsingTokenValue":286,"./getYearFromAbbreviation":296,"./iterateOverDateParams":298,"./iterateOverHigherDateParams":300,"./moveToBeginningOfUnit":301,"./moveToEndOfUnit":303,"./resetTime":307,"./setWeekday":313,"./tzOffset":315,"./updateDate":316}],279:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"../../common/internal/isDefined":151,"../../common/internal/isObjectType":153,"../../common/internal/isUndefined":157,"../../common/internal/simpleClone":174,"../../common/var/_utc":192,"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195,"../../common/var/trunc":200,"../var/DateUnitIndexes":384,"../var/LocaleHelpers":391,"../var/MINUTES":393,"../var/ParsingTokens":394,"./advanceDate":247,"./deleteDateParam":266,"./getNewDate":285,"./getParsingTokenValue":287,"./getYearFromAbbreviation":297,"./iterateOverDateParams":299,"./iterateOverHigherDateParams":301,"./moveToBeginningOfUnit":302,"./moveToEndOfUnit":304,"./resetTime":308,"./setWeekday":314,"./tzOffset":316,"./updateDate":317}],280:[function(require,module,exports){
 'use strict';
 
 var DateUnitIndexes = require('../var/DateUnitIndexes');
@@ -7651,7 +7728,7 @@ function getHigherUnitIndex(index) {
 }
 
 module.exports = getHigherUnitIndex;
-},{"../var/DateUnitIndexes":383}],280:[function(require,module,exports){
+},{"../var/DateUnitIndexes":384}],281:[function(require,module,exports){
 'use strict';
 
 var callDateGet = require('../../common/internal/callDateGet');
@@ -7661,7 +7738,7 @@ function getHours(d) {
 }
 
 module.exports = getHours;
-},{"../../common/internal/callDateGet":109}],281:[function(require,module,exports){
+},{"../../common/internal/callDateGet":110}],282:[function(require,module,exports){
 'use strict';
 
 var DateUnitIndexes = require('../var/DateUnitIndexes');
@@ -7681,7 +7758,7 @@ function getLowerUnitIndex(index) {
 }
 
 module.exports = getLowerUnitIndex;
-},{"../var/DateUnitIndexes":383}],282:[function(require,module,exports){
+},{"../var/DateUnitIndexes":384}],283:[function(require,module,exports){
 'use strict';
 
 var LocaleHelpers = require('../var/LocaleHelpers'),
@@ -7696,7 +7773,7 @@ function getMeridiemToken(d, localeCode) {
 }
 
 module.exports = getMeridiemToken;
-},{"../../common/var/trunc":199,"../var/LocaleHelpers":390,"./getHours":280}],283:[function(require,module,exports){
+},{"../../common/var/trunc":200,"../var/LocaleHelpers":391,"./getHours":281}],284:[function(require,module,exports){
 'use strict';
 
 var callDateGet = require('../../common/internal/callDateGet');
@@ -7706,7 +7783,7 @@ function getMonth(d) {
 }
 
 module.exports = getMonth;
-},{"../../common/internal/callDateGet":109}],284:[function(require,module,exports){
+},{"../../common/internal/callDateGet":110}],285:[function(require,module,exports){
 'use strict';
 
 var _dateOptions = require('../var/_dateOptions');
@@ -7716,7 +7793,7 @@ function getNewDate() {
 }
 
 module.exports = getNewDate;
-},{"../var/_dateOptions":395}],285:[function(require,module,exports){
+},{"../var/_dateOptions":396}],286:[function(require,module,exports){
 'use strict';
 
 var LOCALE_ARRAY_FIELDS = require('../var/LOCALE_ARRAY_FIELDS'),
@@ -8236,7 +8313,7 @@ function getNewLocale(def) {
 }
 
 module.exports = getNewLocale;
-},{"../../common/internal/commaSplit":114,"../../common/internal/filter":128,"../../common/internal/forEach":130,"../../common/internal/getOrdinalSuffix":139,"../../common/internal/isDefined":150,"../../common/internal/isUndefined":156,"../../common/internal/map":159,"../../common/internal/simpleMerge":174,"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194,"../../common/var/fullwidthNumberHelpers":195,"../../common/var/mathAliases":196,"../var/CoreParsingFormats":381,"../var/ISODefaults":387,"../var/LOCALE_ARRAY_FIELDS":388,"../var/LocalizedParsingTokens":391,"../var/ParsingTokens":393,"./arrayToRegAlternates":248,"./getAdjustedUnitForNumber":269,"./getArrayWithOffset":270,"./getParsingTokenWithSuffix":287,"./getRegNonCapturing":288,"./iterateOverDateUnits":299}],286:[function(require,module,exports){
+},{"../../common/internal/commaSplit":115,"../../common/internal/filter":129,"../../common/internal/forEach":131,"../../common/internal/getOrdinalSuffix":140,"../../common/internal/isDefined":151,"../../common/internal/isUndefined":157,"../../common/internal/map":160,"../../common/internal/simpleMerge":175,"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195,"../../common/var/fullwidthNumberHelpers":196,"../../common/var/mathAliases":197,"../var/CoreParsingFormats":382,"../var/ISODefaults":388,"../var/LOCALE_ARRAY_FIELDS":389,"../var/LocalizedParsingTokens":392,"../var/ParsingTokens":394,"./arrayToRegAlternates":249,"./getAdjustedUnitForNumber":270,"./getArrayWithOffset":271,"./getParsingTokenWithSuffix":288,"./getRegNonCapturing":289,"./iterateOverDateUnits":300}],287:[function(require,module,exports){
 'use strict';
 
 function getParsingTokenValue(token, str) {
@@ -8257,7 +8334,7 @@ function getParsingTokenValue(token, str) {
 }
 
 module.exports = getParsingTokenValue;
-},{}],287:[function(require,module,exports){
+},{}],288:[function(require,module,exports){
 'use strict';
 
 var LocalizedParsingTokens = require('../var/LocalizedParsingTokens'),
@@ -8276,7 +8353,7 @@ function getParsingTokenWithSuffix(field, src, suffix) {
 }
 
 module.exports = getParsingTokenWithSuffix;
-},{"../var/LocalizedParsingTokens":391,"./getRegNonCapturing":288}],288:[function(require,module,exports){
+},{"../var/LocalizedParsingTokens":392,"./getRegNonCapturing":289}],289:[function(require,module,exports){
 'use strict';
 
 function getRegNonCapturing(src, opt) {
@@ -8290,7 +8367,7 @@ function getRegNonCapturing(src, opt) {
 }
 
 module.exports = getRegNonCapturing;
-},{}],289:[function(require,module,exports){
+},{}],290:[function(require,module,exports){
 'use strict';
 
 var trunc = require('../../common/var/trunc'),
@@ -8327,7 +8404,7 @@ function getTimeDistanceForUnit(d1, d2, unit) {
 }
 
 module.exports = getTimeDistanceForUnit;
-},{"../../common/var/trunc":199,"./advanceDate":246,"./cloneDate":254}],290:[function(require,module,exports){
+},{"../../common/var/trunc":200,"./advanceDate":247,"./cloneDate":255}],291:[function(require,module,exports){
 'use strict';
 
 var _utc = require('../../common/var/_utc'),
@@ -8348,7 +8425,7 @@ function getUTCOffset(d, iso) {
 }
 
 module.exports = getUTCOffset;
-},{"../../common/internal/padNumber":163,"../../common/var/_utc":191,"../../common/var/mathAliases":196,"../../common/var/trunc":199,"./tzOffset":315}],291:[function(require,module,exports){
+},{"../../common/internal/padNumber":164,"../../common/var/_utc":192,"../../common/var/mathAliases":197,"../../common/var/trunc":200,"./tzOffset":316}],292:[function(require,module,exports){
 'use strict';
 
 var iterateOverDateParams = require('./iterateOverDateParams');
@@ -8364,7 +8441,7 @@ function getUnitIndexForParamName(name) {
 }
 
 module.exports = getUnitIndexForParamName;
-},{"./iterateOverDateParams":298}],292:[function(require,module,exports){
+},{"./iterateOverDateParams":299}],293:[function(require,module,exports){
 'use strict';
 
 var ISODefaults = require('../var/ISODefaults'),
@@ -8407,7 +8484,7 @@ function getWeekNumber(d, allowPrevious, firstDayOfWeek, firstDayOfWeekYear) {
 }
 
 module.exports = getWeekNumber;
-},{"../../common/internal/isUndefined":156,"../var/ISODefaults":387,"./cloneDate":254,"./getDate":271,"./moveToBeginningOfWeek":302,"./moveToEndOfWeek":304,"./moveToFirstDayOfWeekYear":305,"./setDate":308}],293:[function(require,module,exports){
+},{"../../common/internal/isUndefined":157,"../var/ISODefaults":388,"./cloneDate":255,"./getDate":272,"./moveToBeginningOfWeek":303,"./moveToEndOfWeek":305,"./moveToFirstDayOfWeekYear":306,"./setDate":309}],294:[function(require,module,exports){
 'use strict';
 
 var LocaleHelpers = require('../var/LocaleHelpers'),
@@ -8438,7 +8515,7 @@ function getWeekYear(d, localeCode, iso) {
 }
 
 module.exports = getWeekYear;
-},{"../var/LocaleHelpers":390,"./getMonth":283,"./getWeekNumber":292,"./getYear":295}],294:[function(require,module,exports){
+},{"../var/LocaleHelpers":391,"./getMonth":284,"./getWeekNumber":293,"./getYear":296}],295:[function(require,module,exports){
 'use strict';
 
 var callDateGet = require('../../common/internal/callDateGet');
@@ -8448,7 +8525,7 @@ function getWeekday(d) {
 }
 
 module.exports = getWeekday;
-},{"../../common/internal/callDateGet":109}],295:[function(require,module,exports){
+},{"../../common/internal/callDateGet":110}],296:[function(require,module,exports){
 'use strict';
 
 var callDateGet = require('../../common/internal/callDateGet');
@@ -8458,7 +8535,7 @@ function getYear(d) {
 }
 
 module.exports = getYear;
-},{"../../common/internal/callDateGet":109}],296:[function(require,module,exports){
+},{"../../common/internal/callDateGet":110}],297:[function(require,module,exports){
 'use strict';
 
 var getYear = require('./getYear'),
@@ -8482,7 +8559,7 @@ function getYearFromAbbreviation(str, d, prefer) {
 }
 
 module.exports = getYearFromAbbreviation;
-},{"../../common/var/mathAliases":196,"./getYear":295}],297:[function(require,module,exports){
+},{"../../common/var/mathAliases":197,"./getYear":296}],298:[function(require,module,exports){
 'use strict';
 
 var _utc = require('../../common/var/_utc'),
@@ -8493,7 +8570,7 @@ function isUTC(d) {
 }
 
 module.exports = isUTC;
-},{"../../common/var/_utc":191,"./tzOffset":315}],298:[function(require,module,exports){
+},{"../../common/var/_utc":192,"./tzOffset":316}],299:[function(require,module,exports){
 'use strict';
 
 var DateUnitIndexes = require('../var/DateUnitIndexes'),
@@ -8526,7 +8603,7 @@ function iterateOverDateParams(params, fn, startIndex, endIndex) {
 }
 
 module.exports = iterateOverDateParams;
-},{"../../common/internal/isDefined":150,"../var/DateUnitIndexes":383,"./getDateParam":272,"./iterateOverDateUnits":299}],299:[function(require,module,exports){
+},{"../../common/internal/isDefined":151,"../var/DateUnitIndexes":384,"./getDateParam":273,"./iterateOverDateUnits":300}],300:[function(require,module,exports){
 'use strict';
 
 var DateUnits = require('../var/DateUnits'),
@@ -8548,7 +8625,7 @@ function iterateOverDateUnits(fn, startIndex, endIndex) {
 }
 
 module.exports = iterateOverDateUnits;
-},{"../../common/internal/isUndefined":156,"../var/DateUnitIndexes":383,"../var/DateUnits":384}],300:[function(require,module,exports){
+},{"../../common/internal/isUndefined":157,"../var/DateUnitIndexes":384,"../var/DateUnits":385}],301:[function(require,module,exports){
 'use strict';
 
 var DateUnitIndexes = require('../var/DateUnitIndexes'),
@@ -8562,7 +8639,7 @@ function iterateOverHigherDateParams(params, fn) {
 }
 
 module.exports = iterateOverHigherDateParams;
-},{"../var/DateUnitIndexes":383,"./iterateOverDateParams":298}],301:[function(require,module,exports){
+},{"../var/DateUnitIndexes":384,"./iterateOverDateParams":299}],302:[function(require,module,exports){
 'use strict';
 
 var LocaleHelpers = require('../var/LocaleHelpers'),
@@ -8582,7 +8659,7 @@ function moveToBeginningOfUnit(d, unitIndex, localeCode) {
 }
 
 module.exports = moveToBeginningOfUnit;
-},{"../var/DateUnitIndexes":383,"../var/LocaleHelpers":390,"./getLowerUnitIndex":281,"./moveToBeginningOfWeek":302,"./setUnitAndLowerToEdge":312}],302:[function(require,module,exports){
+},{"../var/DateUnitIndexes":384,"../var/LocaleHelpers":391,"./getLowerUnitIndex":282,"./moveToBeginningOfWeek":303,"./setUnitAndLowerToEdge":313}],303:[function(require,module,exports){
 'use strict';
 
 var setWeekday = require('./setWeekday'),
@@ -8597,7 +8674,7 @@ function moveToBeginningOfWeek(d, firstDayOfWeek) {
 }
 
 module.exports = moveToBeginningOfWeek;
-},{"../../common/var/mathAliases":196,"./getWeekday":294,"./setWeekday":313}],303:[function(require,module,exports){
+},{"../../common/var/mathAliases":197,"./getWeekday":295,"./setWeekday":314}],304:[function(require,module,exports){
 'use strict';
 
 var LocaleHelpers = require('../var/LocaleHelpers'),
@@ -8617,7 +8694,7 @@ function moveToEndOfUnit(d, unitIndex, localeCode, stopIndex) {
 }
 
 module.exports = moveToEndOfUnit;
-},{"../var/DateUnitIndexes":383,"../var/LocaleHelpers":390,"./getLowerUnitIndex":281,"./moveToEndOfWeek":304,"./setUnitAndLowerToEdge":312}],304:[function(require,module,exports){
+},{"../var/DateUnitIndexes":384,"../var/LocaleHelpers":391,"./getLowerUnitIndex":282,"./moveToEndOfWeek":305,"./setUnitAndLowerToEdge":313}],305:[function(require,module,exports){
 'use strict';
 
 var setWeekday = require('./setWeekday'),
@@ -8633,7 +8710,7 @@ function moveToEndOfWeek(d, firstDayOfWeek) {
 }
 
 module.exports = moveToEndOfWeek;
-},{"../../common/var/mathAliases":196,"./getWeekday":294,"./setWeekday":313}],305:[function(require,module,exports){
+},{"../../common/var/mathAliases":197,"./getWeekday":295,"./setWeekday":314}],306:[function(require,module,exports){
 'use strict';
 
 var DateUnitIndexes = require('../var/DateUnitIndexes'),
@@ -8650,7 +8727,7 @@ function moveToFirstDayOfWeekYear(d, firstDayOfWeek, firstDayOfWeekYear) {
 }
 
 module.exports = moveToFirstDayOfWeekYear;
-},{"../var/DateUnitIndexes":383,"./moveToBeginningOfWeek":302,"./setDate":308,"./setUnitAndLowerToEdge":312}],306:[function(require,module,exports){
+},{"../var/DateUnitIndexes":384,"./moveToBeginningOfWeek":303,"./setDate":309,"./setUnitAndLowerToEdge":313}],307:[function(require,module,exports){
 'use strict';
 
 var getLowerUnitIndex = require('./getLowerUnitIndex'),
@@ -8661,7 +8738,7 @@ function resetLowerUnits(d, unitIndex) {
 }
 
 module.exports = resetLowerUnits;
-},{"./getLowerUnitIndex":281,"./setUnitAndLowerToEdge":312}],307:[function(require,module,exports){
+},{"./getLowerUnitIndex":282,"./setUnitAndLowerToEdge":313}],308:[function(require,module,exports){
 'use strict';
 
 var DateUnitIndexes = require('../var/DateUnitIndexes'),
@@ -8674,7 +8751,7 @@ function resetTime(d) {
 }
 
 module.exports = resetTime;
-},{"../var/DateUnitIndexes":383,"./setUnitAndLowerToEdge":312}],308:[function(require,module,exports){
+},{"../var/DateUnitIndexes":384,"./setUnitAndLowerToEdge":313}],309:[function(require,module,exports){
 'use strict';
 
 var callDateSet = require('../../common/internal/callDateSet');
@@ -8684,7 +8761,7 @@ function setDate(d, val) {
 }
 
 module.exports = setDate;
-},{"../../common/internal/callDateSet":110}],309:[function(require,module,exports){
+},{"../../common/internal/callDateSet":111}],310:[function(require,module,exports){
 'use strict';
 
 var createDate = require('./createDate'),
@@ -8698,7 +8775,7 @@ function setDateChainableConstructor() {
 }
 
 module.exports = setDateChainableConstructor;
-},{"../../common/internal/setChainableConstructor":170,"../../common/var/namespaceAliases":198,"./createDate":259}],310:[function(require,module,exports){
+},{"../../common/internal/setChainableConstructor":171,"../../common/var/namespaceAliases":199,"./createDate":260}],311:[function(require,module,exports){
 'use strict';
 
 var ISODefaults = require('../var/ISODefaults'),
@@ -8733,7 +8810,7 @@ function setISOWeekNumber(d, num) {
 }
 
 module.exports = setISOWeekNumber;
-},{"../../common/var/classChecks":193,"../var/ISODefaults":387,"./cloneDate":254,"./getDate":271,"./getMonth":283,"./getWeekday":294,"./getYear":295,"./moveToFirstDayOfWeekYear":305,"./setDate":308,"./setMonth":311,"./setWeekday":313,"./setYear":314}],311:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"../var/ISODefaults":388,"./cloneDate":255,"./getDate":272,"./getMonth":284,"./getWeekday":295,"./getYear":296,"./moveToFirstDayOfWeekYear":306,"./setDate":309,"./setMonth":312,"./setWeekday":314,"./setYear":315}],312:[function(require,module,exports){
 'use strict';
 
 var callDateSet = require('../../common/internal/callDateSet');
@@ -8743,7 +8820,7 @@ function setMonth(d, val) {
 }
 
 module.exports = setMonth;
-},{"../../common/internal/callDateSet":110}],312:[function(require,module,exports){
+},{"../../common/internal/callDateSet":111}],313:[function(require,module,exports){
 'use strict';
 
 var isDefined = require('../../common/internal/isDefined'),
@@ -8766,7 +8843,7 @@ function setUnitAndLowerToEdge(d, startIndex, stopIndex, end) {
 }
 
 module.exports = setUnitAndLowerToEdge;
-},{"../../common/internal/callDateSet":110,"../../common/internal/isDefined":150,"../../common/var/classChecks":193,"./walkUnitDown":317}],313:[function(require,module,exports){
+},{"../../common/internal/callDateSet":111,"../../common/internal/isDefined":151,"../../common/var/classChecks":194,"./walkUnitDown":318}],314:[function(require,module,exports){
 'use strict';
 
 var setDate = require('./setDate'),
@@ -8795,7 +8872,7 @@ function setWeekday(d, dow, dir) {
 }
 
 module.exports = setWeekday;
-},{"../../common/var/classChecks":193,"../../common/var/mathAliases":196,"./getDate":271,"./getWeekday":294,"./setDate":308}],314:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"../../common/var/mathAliases":197,"./getDate":272,"./getWeekday":295,"./setDate":309}],315:[function(require,module,exports){
 'use strict';
 
 var callDateSet = require('../../common/internal/callDateSet');
@@ -8805,7 +8882,7 @@ function setYear(d, val) {
 }
 
 module.exports = setYear;
-},{"../../common/internal/callDateSet":110}],315:[function(require,module,exports){
+},{"../../common/internal/callDateSet":111}],316:[function(require,module,exports){
 'use strict';
 
 function tzOffset(d) {
@@ -8813,7 +8890,7 @@ function tzOffset(d) {
 }
 
 module.exports = tzOffset;
-},{}],316:[function(require,module,exports){
+},{}],317:[function(require,module,exports){
 'use strict';
 
 var DateUnits = require('../var/DateUnits'),
@@ -8986,7 +9063,7 @@ function updateDate(d, params, reset, advance, prefer, weekdayDir) {
 }
 
 module.exports = updateDate;
-},{"../../common/internal/callDateGet":109,"../../common/var/classChecks":193,"../../common/var/mathAliases":196,"../../common/var/trunc":199,"../var/DateUnitIndexes":383,"../var/DateUnits":384,"./callDateSetWithWeek":253,"./getDate":271,"./getHigherUnitIndex":279,"./getLowerUnitIndex":281,"./getMonth":283,"./getNewDate":284,"./iterateOverDateParams":298,"./resetLowerUnits":306,"./setDate":308,"./setWeekday":313}],317:[function(require,module,exports){
+},{"../../common/internal/callDateGet":110,"../../common/var/classChecks":194,"../../common/var/mathAliases":197,"../../common/var/trunc":200,"../var/DateUnitIndexes":384,"../var/DateUnits":385,"./callDateSetWithWeek":254,"./getDate":272,"./getHigherUnitIndex":280,"./getLowerUnitIndex":282,"./getMonth":284,"./getNewDate":285,"./iterateOverDateParams":299,"./resetLowerUnits":307,"./setDate":309,"./setWeekday":314}],318:[function(require,module,exports){
 'use strict';
 
 var DateUnits = require('../var/DateUnits'),
@@ -9002,7 +9079,7 @@ function walkUnitDown(unitIndex, fn) {
 }
 
 module.exports = walkUnitDown;
-},{"../var/DateUnits":384,"./getLowerUnitIndex":281}],318:[function(require,module,exports){
+},{"../var/DateUnits":385,"./getLowerUnitIndex":282}],319:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9017,7 +9094,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.is;
-},{"./internal/fullCompareDate":266,"sugar-core":19}],319:[function(require,module,exports){
+},{"./internal/fullCompareDate":267,"sugar-core":20}],320:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9032,7 +9109,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.isAfter;
-},{"./internal/createDate":259,"sugar-core":19}],320:[function(require,module,exports){
+},{"./internal/createDate":260,"sugar-core":20}],321:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9047,7 +9124,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.isBefore;
-},{"./internal/createDate":259,"sugar-core":19}],321:[function(require,module,exports){
+},{"./internal/createDate":260,"sugar-core":20}],322:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9072,7 +9149,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.isBetween;
-},{"../common/var/mathAliases":196,"./internal/createDate":259,"sugar-core":19}],322:[function(require,module,exports){
+},{"../common/var/mathAliases":197,"./internal/createDate":260,"sugar-core":20}],323:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9080,7 +9157,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isFriday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],323:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],324:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9088,7 +9165,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isFuture;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],324:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],325:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9096,7 +9173,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.isLastMonth;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],325:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],326:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9104,7 +9181,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.isLastWeek;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],326:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],327:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9112,7 +9189,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.isLastYear;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],327:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],328:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9128,7 +9205,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.isLeapYear;
-},{"./internal/getYear":295,"sugar-core":19}],328:[function(require,module,exports){
+},{"./internal/getYear":296,"sugar-core":20}],329:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9136,7 +9213,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isMonday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],329:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],330:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9144,7 +9221,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.isNextMonth;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],330:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],331:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9152,7 +9229,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.isNextWeek;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],331:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],332:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9160,7 +9237,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.isNextYear;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],332:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],333:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9168,7 +9245,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isPast;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],333:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],334:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9176,7 +9253,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isSaturday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],334:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],335:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9184,7 +9261,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isSunday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],335:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],336:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9192,7 +9269,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.isThisMonth;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],336:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],337:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9200,7 +9277,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.isThisWeek;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],337:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],338:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9208,7 +9285,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.isThisYear;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],338:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],339:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9216,7 +9293,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isThursday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],339:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],340:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9224,7 +9301,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isToday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],340:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],341:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9232,7 +9309,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isTomorrow;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],341:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],342:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9240,7 +9317,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isTuesday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],342:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],343:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9255,7 +9332,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.isUTC;
-},{"./internal/isUTC":297,"sugar-core":19}],343:[function(require,module,exports){
+},{"./internal/isUTC":298,"sugar-core":20}],344:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9270,7 +9347,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.isValid;
-},{"./internal/dateIsValid":262,"sugar-core":19}],344:[function(require,module,exports){
+},{"./internal/dateIsValid":263,"sugar-core":20}],345:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9278,7 +9355,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isWednesday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],345:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],346:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9286,7 +9363,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isWeekday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],346:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],347:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9294,7 +9371,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isWeekend;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],347:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],348:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9302,7 +9379,7 @@ var Sugar = require('sugar-core');
 require('./build/buildRelativeAliasesCall');
 
 module.exports = Sugar.Date.isYesterday;
-},{"./build/buildRelativeAliasesCall":217,"sugar-core":19}],348:[function(require,module,exports){
+},{"./build/buildRelativeAliasesCall":218,"sugar-core":20}],349:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9316,7 +9393,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.iso;
-},{"sugar-core":19}],349:[function(require,module,exports){
+},{"sugar-core":20}],350:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9324,7 +9401,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.millisecondsAgo;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],350:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],351:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9332,7 +9409,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.millisecondsFromNow;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],351:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],352:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9340,7 +9417,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.millisecondsSince;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],352:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],353:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9348,7 +9425,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.millisecondsUntil;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],353:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],354:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9356,7 +9433,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.minutesAgo;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],354:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],355:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9364,7 +9441,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.minutesFromNow;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],355:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],356:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9372,7 +9449,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.minutesSince;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],356:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],357:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9380,7 +9457,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.minutesUntil;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],357:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],358:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9388,7 +9465,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.monthsAgo;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],358:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],359:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9396,7 +9473,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.monthsFromNow;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],359:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],360:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9404,7 +9481,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.monthsSince;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],360:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],361:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9412,7 +9489,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.monthsUntil;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],361:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],362:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9425,7 +9502,7 @@ Sugar.Date.defineStatic({
 });
 
 module.exports = Sugar.Date.range;
-},{"../range/var/DateRangeConstructor":715,"sugar-core":19}],362:[function(require,module,exports){
+},{"../range/var/DateRangeConstructor":716,"sugar-core":20}],363:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9440,7 +9517,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.relative;
-},{"./internal/dateRelative":263,"sugar-core":19}],363:[function(require,module,exports){
+},{"./internal/dateRelative":264,"sugar-core":20}],364:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9456,7 +9533,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.relativeTo;
-},{"./internal/createDate":259,"./internal/dateRelative":263,"sugar-core":19}],364:[function(require,module,exports){
+},{"./internal/createDate":260,"./internal/dateRelative":264,"sugar-core":20}],365:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9473,7 +9550,7 @@ Sugar.Date.defineStatic({
 });
 
 module.exports = Sugar.Date.removeLocale;
-},{"./var/LocaleHelpers":390,"sugar-core":19}],365:[function(require,module,exports){
+},{"./var/LocaleHelpers":391,"sugar-core":20}],366:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9494,7 +9571,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.reset;
-},{"./internal/getUnitIndexForParamName":291,"./internal/moveToBeginningOfUnit":301,"./var/DateUnitIndexes":383,"sugar-core":19}],366:[function(require,module,exports){
+},{"./internal/getUnitIndexForParamName":292,"./internal/moveToBeginningOfUnit":302,"./var/DateUnitIndexes":384,"sugar-core":20}],367:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9509,7 +9586,7 @@ Sugar.Date.defineInstanceWithArguments({
 });
 
 module.exports = Sugar.Date.rewind;
-},{"./internal/advanceDateWithArgs":247,"sugar-core":19}],367:[function(require,module,exports){
+},{"./internal/advanceDateWithArgs":248,"sugar-core":20}],368:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9517,7 +9594,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.secondsAgo;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],368:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],369:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9525,7 +9602,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.secondsFromNow;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],369:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],370:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9533,7 +9610,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.secondsSince;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],370:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],371:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -9541,7 +9618,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.secondsUntil;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],371:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],372:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9558,7 +9635,7 @@ Sugar.Date.defineInstanceWithArguments({
 });
 
 module.exports = Sugar.Date.set;
-},{"./internal/collectDateArguments":255,"./internal/updateDate":316,"sugar-core":19}],372:[function(require,module,exports){
+},{"./internal/collectDateArguments":256,"./internal/updateDate":317,"sugar-core":20}],373:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9573,7 +9650,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.setISOWeek;
-},{"./internal/setISOWeekNumber":310,"sugar-core":19}],373:[function(require,module,exports){
+},{"./internal/setISOWeekNumber":311,"sugar-core":20}],374:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9590,14 +9667,14 @@ Sugar.Date.defineStatic({
 });
 
 module.exports = Sugar.Date.setLocale;
-},{"./var/LocaleHelpers":390,"sugar-core":19}],374:[function(require,module,exports){
+},{"./var/LocaleHelpers":391,"sugar-core":20}],375:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
     _dateOptions = require('./var/_dateOptions');
 
 module.exports = Sugar.Date.setOption;
-},{"./var/_dateOptions":395,"sugar-core":19}],375:[function(require,module,exports){
+},{"./var/_dateOptions":396,"sugar-core":20}],376:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9612,7 +9689,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.setUTC;
-},{"../common/var/_utc":191,"sugar-core":19}],376:[function(require,module,exports){
+},{"../common/var/_utc":192,"sugar-core":20}],377:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -9627,7 +9704,7 @@ Sugar.Date.defineInstance({
 });
 
 module.exports = Sugar.Date.setWeekday;
-},{"./internal/setWeekday":313,"sugar-core":19}],377:[function(require,module,exports){
+},{"./internal/setWeekday":314,"sugar-core":20}],378:[function(require,module,exports){
 'use strict';
 
 var getEnglishVariant = require('../internal/getEnglishVariant');
@@ -9645,7 +9722,7 @@ var AmericanEnglishDefinition = getEnglishVariant({
 });
 
 module.exports = AmericanEnglishDefinition;
-},{"../internal/getEnglishVariant":277}],378:[function(require,module,exports){
+},{"../internal/getEnglishVariant":278}],379:[function(require,module,exports){
 'use strict';
 
 var getEnglishVariant = require('../internal/getEnglishVariant');
@@ -9659,7 +9736,7 @@ var BritishEnglishDefinition = getEnglishVariant({
 });
 
 module.exports = BritishEnglishDefinition;
-},{"../internal/getEnglishVariant":277}],379:[function(require,module,exports){
+},{"../internal/getEnglishVariant":278}],380:[function(require,module,exports){
 'use strict';
 
 var getEnglishVariant = require('../internal/getEnglishVariant');
@@ -9673,7 +9750,7 @@ var CanadianEnglishDefinition = getEnglishVariant({
 });
 
 module.exports = CanadianEnglishDefinition;
-},{"../internal/getEnglishVariant":277}],380:[function(require,module,exports){
+},{"../internal/getEnglishVariant":278}],381:[function(require,module,exports){
 'use strict';
 
 var CoreOutputFormats = {
@@ -9683,7 +9760,7 @@ var CoreOutputFormats = {
 };
 
 module.exports = CoreOutputFormats;
-},{}],381:[function(require,module,exports){
+},{}],382:[function(require,module,exports){
 'use strict';
 
 var CoreParsingFormats = [
@@ -9715,7 +9792,7 @@ var CoreParsingFormats = [
 ];
 
 module.exports = CoreParsingFormats;
-},{}],382:[function(require,module,exports){
+},{}],383:[function(require,module,exports){
 'use strict';
 
 var defaultNewDate = require('../internal/defaultNewDate');
@@ -9725,7 +9802,7 @@ var DATE_OPTIONS = {
 };
 
 module.exports = DATE_OPTIONS;
-},{"../internal/defaultNewDate":264}],383:[function(require,module,exports){
+},{"../internal/defaultNewDate":265}],384:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -9735,7 +9812,7 @@ module.exports = {
   MONTH_INDEX: 6,
   YEAR_INDEX: 7
 };
-},{}],384:[function(require,module,exports){
+},{}],385:[function(require,module,exports){
 'use strict';
 
 var getDaysInMonth = require('../internal/getDaysInMonth');
@@ -9804,7 +9881,7 @@ var DateUnits = [
 ];
 
 module.exports = DateUnits;
-},{"../internal/getDaysInMonth":275}],385:[function(require,module,exports){
+},{"../internal/getDaysInMonth":276}],386:[function(require,module,exports){
 'use strict';
 
 var EnglishLocaleBaseDefinition = {
@@ -9871,7 +9948,7 @@ var EnglishLocaleBaseDefinition = {
 };
 
 module.exports = EnglishLocaleBaseDefinition;
-},{}],386:[function(require,module,exports){
+},{}],387:[function(require,module,exports){
 'use strict';
 
 var TIMEZONE_ABBREVIATION_REG = require('./TIMEZONE_ABBREVIATION_REG'),
@@ -10199,14 +10276,14 @@ var FormatTokensBase = [
 ];
 
 module.exports = FormatTokensBase;
-},{"../../common/internal/callDateGet":109,"../../common/internal/padNumber":163,"../../common/var/mathAliases":196,"../../common/var/trunc":199,"../internal/cloneDate":254,"../internal/getDate":271,"../internal/getDaysSince":276,"../internal/getHours":280,"../internal/getMeridiemToken":282,"../internal/getMonth":283,"../internal/getUTCOffset":290,"../internal/getWeekNumber":292,"../internal/getWeekYear":293,"../internal/getWeekday":294,"../internal/getYear":295,"../internal/setUnitAndLowerToEdge":312,"./DateUnitIndexes":383,"./LocaleHelpers":390,"./TIMEZONE_ABBREVIATION_REG":394}],387:[function(require,module,exports){
+},{"../../common/internal/callDateGet":110,"../../common/internal/padNumber":164,"../../common/var/mathAliases":197,"../../common/var/trunc":200,"../internal/cloneDate":255,"../internal/getDate":272,"../internal/getDaysSince":277,"../internal/getHours":281,"../internal/getMeridiemToken":283,"../internal/getMonth":284,"../internal/getUTCOffset":291,"../internal/getWeekNumber":293,"../internal/getWeekYear":294,"../internal/getWeekday":295,"../internal/getYear":296,"../internal/setUnitAndLowerToEdge":313,"./DateUnitIndexes":384,"./LocaleHelpers":391,"./TIMEZONE_ABBREVIATION_REG":395}],388:[function(require,module,exports){
 'use strict';
 
 module.exports = {
   ISO_FIRST_DAY_OF_WEEK: 1,
   ISO_FIRST_DAY_OF_WEEK_YEAR: 4
 };
-},{}],388:[function(require,module,exports){
+},{}],389:[function(require,module,exports){
 'use strict';
 
 var LOCALE_ARRAY_FIELDS = [
@@ -10216,7 +10293,7 @@ var LOCALE_ARRAY_FIELDS = [
 ];
 
 module.exports = LOCALE_ARRAY_FIELDS;
-},{}],389:[function(require,module,exports){
+},{}],390:[function(require,module,exports){
 'use strict';
 
 var BritishEnglishDefinition = require('./BritishEnglishDefinition'),
@@ -10231,7 +10308,7 @@ var LazyLoadedLocales = {
 };
 
 module.exports = LazyLoadedLocales;
-},{"./AmericanEnglishDefinition":377,"./BritishEnglishDefinition":378,"./CanadianEnglishDefinition":379}],390:[function(require,module,exports){
+},{"./AmericanEnglishDefinition":378,"./BritishEnglishDefinition":379,"./CanadianEnglishDefinition":380}],391:[function(require,module,exports){
 'use strict';
 
 var LazyLoadedLocales = require('./LazyLoadedLocales'),
@@ -10306,7 +10383,7 @@ module.exports = {
   English: English,
   localeManager: localeManager
 };
-},{"../internal/getNewLocale":285,"./AmericanEnglishDefinition":377,"./LazyLoadedLocales":389}],391:[function(require,module,exports){
+},{"../internal/getNewLocale":286,"./AmericanEnglishDefinition":378,"./LazyLoadedLocales":390}],392:[function(require,module,exports){
 'use strict';
 
 var LocalizedParsingTokens = {
@@ -10339,11 +10416,11 @@ var LocalizedParsingTokens = {
 };
 
 module.exports = LocalizedParsingTokens;
-},{}],392:[function(require,module,exports){
+},{}],393:[function(require,module,exports){
 'use strict';
 
 module.exports = 60 * 1000;
-},{}],393:[function(require,module,exports){
+},{}],394:[function(require,module,exports){
 'use strict';
 
 var ParsingTokens = {
@@ -10417,11 +10494,11 @@ var ParsingTokens = {
 };
 
 module.exports = ParsingTokens;
-},{}],394:[function(require,module,exports){
+},{}],395:[function(require,module,exports){
 'use strict';
 
 module.exports = /(\w{3})[()\s\d]*$/;
-},{}],395:[function(require,module,exports){
+},{}],396:[function(require,module,exports){
 'use strict';
 
 var DATE_OPTIONS = require('./DATE_OPTIONS'),
@@ -10431,7 +10508,7 @@ var DATE_OPTIONS = require('./DATE_OPTIONS'),
 var sugarDate = namespaceAliases.sugarDate;
 
 module.exports = defineOptionsAccessor(sugarDate, DATE_OPTIONS);
-},{"../../common/internal/defineOptionsAccessor":125,"../../common/var/namespaceAliases":198,"./DATE_OPTIONS":382}],396:[function(require,module,exports){
+},{"../../common/internal/defineOptionsAccessor":126,"../../common/var/namespaceAliases":199,"./DATE_OPTIONS":383}],397:[function(require,module,exports){
 'use strict';
 
 var LocaleHelpers = require('./LocaleHelpers'),
@@ -10593,7 +10670,7 @@ module.exports = {
   strfTokens: strfTokens,
   dateFormatMatcher: dateFormatMatcher
 };
-},{"../../common/internal/createFormatMatcher":115,"../../common/internal/defineInstanceSimilar":123,"../../common/internal/forEach":130,"../../common/internal/padNumber":163,"../../common/internal/spaceSplit":176,"../../common/var/coreUtilityAliases":194,"../../common/var/namespaceAliases":198,"./CoreOutputFormats":380,"./FormatTokensBase":386,"./LocaleHelpers":390}],397:[function(require,module,exports){
+},{"../../common/internal/createFormatMatcher":116,"../../common/internal/defineInstanceSimilar":124,"../../common/internal/forEach":131,"../../common/internal/padNumber":164,"../../common/internal/spaceSplit":177,"../../common/var/coreUtilityAliases":195,"../../common/var/namespaceAliases":199,"./CoreOutputFormats":381,"./FormatTokensBase":387,"./LocaleHelpers":391}],398:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -10601,7 +10678,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.weeksAgo;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],398:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],399:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -10609,7 +10686,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.weeksFromNow;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],399:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],400:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -10617,7 +10694,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.weeksSince;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],400:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],401:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -10625,7 +10702,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.weeksUntil;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],401:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],402:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -10633,7 +10710,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.yearsAgo;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],402:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],403:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -10641,7 +10718,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.yearsFromNow;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],403:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],404:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -10649,7 +10726,7 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.yearsSince;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],404:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],405:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -10657,13 +10734,13 @@ var Sugar = require('sugar-core');
 require('./build/buildDateUnitMethodsCall');
 
 module.exports = Sugar.Date.yearsUntil;
-},{"./build/buildDateUnitMethodsCall":215,"sugar-core":19}],405:[function(require,module,exports){
+},{"./build/buildDateUnitMethodsCall":216,"sugar-core":20}],406:[function(require,module,exports){
 'use strict';
 
 var buildFromIndexMethods = require('../internal/buildFromIndexMethods');
 
 buildFromIndexMethods();
-},{"../internal/buildFromIndexMethods":412}],406:[function(require,module,exports){
+},{"../internal/buildFromIndexMethods":413}],407:[function(require,module,exports){
 'use strict';
 
 // Static Methods
@@ -10711,7 +10788,7 @@ require('../array/someFromIndex');
 require('../array/sum');
 
 module.exports = require('sugar-core');
-},{"../array/average":23,"../array/count":28,"../array/every":30,"../array/everyFromIndex":31,"../array/filter":33,"../array/filterFromIndex":34,"../array/find":35,"../array/findFromIndex":36,"../array/findIndex":37,"../array/findIndexFromIndex":38,"../array/forEachFromIndex":41,"../array/least":76,"../array/map":77,"../array/mapFromIndex":78,"../array/max":79,"../array/median":80,"../array/min":81,"../array/most":82,"../array/none":83,"../array/reduceFromIndex":84,"../array/reduceRightFromIndex":85,"../array/some":91,"../array/someFromIndex":92,"../array/sum":95,"../object/average":586,"../object/count":589,"../object/every":591,"../object/filter":593,"../object/find":594,"../object/forEach":595,"../object/least":650,"../object/map":651,"../object/max":652,"../object/median":653,"../object/min":656,"../object/most":657,"../object/none":658,"../object/reduce":659,"../object/some":665,"../object/sum":667,"sugar-core":19}],407:[function(require,module,exports){
+},{"../array/average":24,"../array/count":29,"../array/every":31,"../array/everyFromIndex":32,"../array/filter":34,"../array/filterFromIndex":35,"../array/find":36,"../array/findFromIndex":37,"../array/findIndex":38,"../array/findIndexFromIndex":39,"../array/forEachFromIndex":42,"../array/least":77,"../array/map":78,"../array/mapFromIndex":79,"../array/max":80,"../array/median":81,"../array/min":82,"../array/most":83,"../array/none":84,"../array/reduceFromIndex":85,"../array/reduceRightFromIndex":86,"../array/some":92,"../array/someFromIndex":93,"../array/sum":96,"../object/average":587,"../object/count":590,"../object/every":592,"../object/filter":594,"../object/find":595,"../object/forEach":596,"../object/least":651,"../object/map":652,"../object/max":653,"../object/median":654,"../object/min":657,"../object/most":658,"../object/none":659,"../object/reduce":660,"../object/some":666,"../object/sum":668,"sugar-core":20}],408:[function(require,module,exports){
 'use strict';
 
 var isUndefined = require('../../common/internal/isUndefined'),
@@ -10727,7 +10804,7 @@ function arrayCount(arr, f) {
 }
 
 module.exports = arrayCount;
-},{"../../common/internal/isUndefined":156,"../var/enhancedMatcherMethods":431}],408:[function(require,module,exports){
+},{"../../common/internal/isUndefined":157,"../var/enhancedMatcherMethods":432}],409:[function(require,module,exports){
 'use strict';
 
 var enhancedMatcherMethods = require('../var/enhancedMatcherMethods');
@@ -10739,7 +10816,7 @@ function arrayNone() {
 }
 
 module.exports = arrayNone;
-},{"../var/enhancedMatcherMethods":431}],409:[function(require,module,exports){
+},{"../var/enhancedMatcherMethods":432}],410:[function(require,module,exports){
 'use strict';
 
 var enumerateWithMapping = require('./enumerateWithMapping');
@@ -10755,7 +10832,7 @@ function average(obj, map) {
 }
 
 module.exports = average;
-},{"./enumerateWithMapping":415}],410:[function(require,module,exports){
+},{"./enumerateWithMapping":416}],411:[function(require,module,exports){
 'use strict';
 
 var enhancedMapping = require('./enhancedMapping'),
@@ -10766,7 +10843,7 @@ function buildEnhancedMapping(name) {
 }
 
 module.exports = buildEnhancedMapping;
-},{"./enhancedMapping":413,"./wrapNativeArrayMethod":427}],411:[function(require,module,exports){
+},{"./enhancedMapping":414,"./wrapNativeArrayMethod":428}],412:[function(require,module,exports){
 'use strict';
 
 var enhancedMatching = require('./enhancedMatching'),
@@ -10777,7 +10854,7 @@ function buildEnhancedMatching(name) {
 }
 
 module.exports = buildEnhancedMatching;
-},{"./enhancedMatching":414,"./wrapNativeArrayMethod":427}],412:[function(require,module,exports){
+},{"./enhancedMatching":415,"./wrapNativeArrayMethod":428}],413:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -10949,7 +11026,7 @@ function buildFromIndexMethods() {
 }
 
 module.exports = buildFromIndexMethods;
-},{"../../common/internal/assertArgument":105,"../../common/internal/forEach":130,"../../common/internal/getNormalizedIndex":138,"../../common/internal/spaceSplit":176,"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194,"../../common/var/mathAliases":196,"../../common/var/methodDefineAliases":197,"../../common/var/namespaceAliases":198,"./enhancedMapping":413,"./enhancedMatching":414}],413:[function(require,module,exports){
+},{"../../common/internal/assertArgument":106,"../../common/internal/forEach":131,"../../common/internal/getNormalizedIndex":139,"../../common/internal/spaceSplit":177,"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195,"../../common/var/mathAliases":197,"../../common/var/methodDefineAliases":198,"../../common/var/namespaceAliases":199,"./enhancedMapping":414,"./enhancedMatching":415}],414:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -10968,7 +11045,7 @@ function enhancedMapping(map, context) {
 }
 
 module.exports = enhancedMapping;
-},{"../../common/internal/mapWithShortcuts":161,"../../common/var/classChecks":193}],414:[function(require,module,exports){
+},{"../../common/internal/mapWithShortcuts":162,"../../common/var/classChecks":194}],415:[function(require,module,exports){
 'use strict';
 
 var getMatcher = require('../../common/internal/getMatcher'),
@@ -10988,7 +11065,7 @@ function enhancedMatching(f) {
 }
 
 module.exports = enhancedMatching;
-},{"../../common/internal/getMatcher":137,"../../common/var/classChecks":193}],415:[function(require,module,exports){
+},{"../../common/internal/getMatcher":138,"../../common/var/classChecks":194}],416:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -11014,7 +11091,7 @@ function enumerateWithMapping(obj, map, fn) {
 }
 
 module.exports = enumerateWithMapping;
-},{"../../common/internal/isArrayIndex":148,"../../common/internal/mapWithShortcuts":161,"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194}],416:[function(require,module,exports){
+},{"../../common/internal/isArrayIndex":149,"../../common/internal/mapWithShortcuts":162,"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195}],417:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -11056,7 +11133,7 @@ function getLeastOrMost(obj, arg1, arg2, most, asObject) {
 }
 
 module.exports = getLeastOrMost;
-},{"../../common/internal/serializeInternal":169,"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194,"./enumerateWithMapping":415,"./getMinOrMax":417,"./getReducedMinMaxResult":418}],417:[function(require,module,exports){
+},{"../../common/internal/serializeInternal":170,"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195,"./enumerateWithMapping":416,"./getMinOrMax":418,"./getReducedMinMaxResult":419}],418:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -11090,7 +11167,7 @@ function getMinOrMax(obj, arg1, arg2, max, asObject) {
 }
 
 module.exports = getMinOrMax;
-},{"../../common/internal/isUndefined":156,"../../common/var/classChecks":193,"./enumerateWithMapping":415,"./getReducedMinMaxResult":418}],418:[function(require,module,exports){
+},{"../../common/internal/isUndefined":157,"../../common/var/classChecks":194,"./enumerateWithMapping":416,"./getReducedMinMaxResult":419}],419:[function(require,module,exports){
 'use strict';
 
 function getReducedMinMaxResult(result, obj, all, asObject) {
@@ -11108,7 +11185,7 @@ function getReducedMinMaxResult(result, obj, all, asObject) {
 }
 
 module.exports = getReducedMinMaxResult;
-},{}],419:[function(require,module,exports){
+},{}],420:[function(require,module,exports){
 'use strict';
 
 var trunc = require('../../common/var/trunc'),
@@ -11130,7 +11207,7 @@ function median(obj, map) {
 }
 
 module.exports = median;
-},{"../../common/var/trunc":199,"./enumerateWithMapping":415}],420:[function(require,module,exports){
+},{"../../common/var/trunc":200,"./enumerateWithMapping":416}],421:[function(require,module,exports){
 'use strict';
 
 var getMatcher = require('../../common/internal/getMatcher'),
@@ -11149,7 +11226,7 @@ function objectCount(obj, f) {
 }
 
 module.exports = objectCount;
-},{"../../common/internal/getMatcher":137,"../../common/var/coreUtilityAliases":194}],421:[function(require,module,exports){
+},{"../../common/internal/getMatcher":138,"../../common/var/coreUtilityAliases":195}],422:[function(require,module,exports){
 'use strict';
 
 var getMatcher = require('../../common/internal/getMatcher'),
@@ -11168,7 +11245,7 @@ function objectFilter(obj, f) {
 }
 
 module.exports = objectFilter;
-},{"../../common/internal/getMatcher":137,"../../common/var/coreUtilityAliases":194}],422:[function(require,module,exports){
+},{"../../common/internal/getMatcher":138,"../../common/var/coreUtilityAliases":195}],423:[function(require,module,exports){
 'use strict';
 
 var assertCallable = require('../../common/internal/assertCallable'),
@@ -11185,7 +11262,7 @@ function objectForEach(obj, fn) {
 }
 
 module.exports = objectForEach;
-},{"../../common/internal/assertCallable":107,"../../common/var/coreUtilityAliases":194}],423:[function(require,module,exports){
+},{"../../common/internal/assertCallable":108,"../../common/var/coreUtilityAliases":195}],424:[function(require,module,exports){
 'use strict';
 
 var mapWithShortcuts = require('../../common/internal/mapWithShortcuts'),
@@ -11202,7 +11279,7 @@ function objectMap(obj, map) {
 }
 
 module.exports = objectMap;
-},{"../../common/internal/mapWithShortcuts":161,"../../common/var/coreUtilityAliases":194}],424:[function(require,module,exports){
+},{"../../common/internal/mapWithShortcuts":162,"../../common/var/coreUtilityAliases":195}],425:[function(require,module,exports){
 'use strict';
 
 var objectMatchers = require('../var/objectMatchers');
@@ -11214,7 +11291,7 @@ function objectNone(obj, f) {
 }
 
 module.exports = objectNone;
-},{"../var/objectMatchers":432}],425:[function(require,module,exports){
+},{"../var/objectMatchers":433}],426:[function(require,module,exports){
 'use strict';
 
 var isDefined = require('../../common/internal/isDefined'),
@@ -11236,7 +11313,7 @@ function objectReduce(obj, fn, acc) {
 }
 
 module.exports = objectReduce;
-},{"../../common/internal/isDefined":150,"../../common/var/coreUtilityAliases":194}],426:[function(require,module,exports){
+},{"../../common/internal/isDefined":151,"../../common/var/coreUtilityAliases":195}],427:[function(require,module,exports){
 'use strict';
 
 var enumerateWithMapping = require('./enumerateWithMapping');
@@ -11250,7 +11327,7 @@ function sum(obj, map) {
 }
 
 module.exports = sum;
-},{"./enumerateWithMapping":415}],427:[function(require,module,exports){
+},{"./enumerateWithMapping":416}],428:[function(require,module,exports){
 'use strict';
 
 var assertArgument = require('../../common/internal/assertArgument');
@@ -11267,7 +11344,7 @@ function wrapNativeArrayMethod(methodName, wrapper) {
 }
 
 module.exports = wrapNativeArrayMethod;
-},{"../../common/internal/assertArgument":105}],428:[function(require,module,exports){
+},{"../../common/internal/assertArgument":106}],429:[function(require,module,exports){
 'use strict';
 
 var getKeys = require('../../common/internal/getKeys'),
@@ -11284,17 +11361,17 @@ function wrapObjectMatcher(name) {
 }
 
 module.exports = wrapObjectMatcher;
-},{"../../common/internal/getKeys":136,"../../common/internal/getMatcher":137}],429:[function(require,module,exports){
+},{"../../common/internal/getKeys":137,"../../common/internal/getMatcher":138}],430:[function(require,module,exports){
 'use strict';
 
 module.exports = 'enhanceArray';
-},{}],430:[function(require,module,exports){
+},{}],431:[function(require,module,exports){
 'use strict';
 
 var buildEnhancedMapping = require('../internal/buildEnhancedMapping');
 
 module.exports = buildEnhancedMapping('map');
-},{"../internal/buildEnhancedMapping":410}],431:[function(require,module,exports){
+},{"../internal/buildEnhancedMapping":411}],432:[function(require,module,exports){
 'use strict';
 
 var buildEnhancedMatching = require('../internal/buildEnhancedMatching');
@@ -11306,7 +11383,7 @@ module.exports = {
   enhancedFilter: buildEnhancedMatching('filter'),
   enhancedFindIndex: buildEnhancedMatching('findIndex')
 };
-},{"../internal/buildEnhancedMatching":411}],432:[function(require,module,exports){
+},{"../internal/buildEnhancedMatching":412}],433:[function(require,module,exports){
 'use strict';
 
 var wrapObjectMatcher = require('../internal/wrapObjectMatcher');
@@ -11316,7 +11393,7 @@ module.exports = {
   objectFind: wrapObjectMatcher('find'),
   objectEvery: wrapObjectMatcher('every')
 };
-},{"../internal/wrapObjectMatcher":428}],433:[function(require,module,exports){
+},{"../internal/wrapObjectMatcher":429}],434:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11341,7 +11418,7 @@ Sugar.Function.defineInstance({
 });
 
 module.exports = Sugar.Function.after;
-},{"../common/internal/coercePositiveInteger":111,"sugar-core":19}],434:[function(require,module,exports){
+},{"../common/internal/coercePositiveInteger":112,"sugar-core":20}],435:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11356,7 +11433,7 @@ Sugar.Function.defineInstance({
 });
 
 module.exports = Sugar.Function.cancel;
-},{"./internal/cancelFunction":439,"sugar-core":19}],435:[function(require,module,exports){
+},{"./internal/cancelFunction":440,"sugar-core":20}],436:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11378,7 +11455,7 @@ Sugar.Function.defineInstance({
 });
 
 module.exports = Sugar.Function.debounce;
-},{"./internal/cancelFunction":439,"./internal/setDelay":443,"sugar-core":19}],436:[function(require,module,exports){
+},{"./internal/cancelFunction":440,"./internal/setDelay":444,"sugar-core":20}],437:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11394,7 +11471,7 @@ Sugar.Function.defineInstanceWithArguments({
 });
 
 module.exports = Sugar.Function.delay;
-},{"./internal/setDelay":443,"sugar-core":19}],437:[function(require,module,exports){
+},{"./internal/setDelay":444,"sugar-core":20}],438:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11416,7 +11493,7 @@ Sugar.Function.defineInstanceWithArguments({
 });
 
 module.exports = Sugar.Function.every;
-},{"./internal/setDelay":443,"sugar-core":19}],438:[function(require,module,exports){
+},{"./internal/setDelay":444,"sugar-core":20}],439:[function(require,module,exports){
 'use strict';
 
 // Instance Methods
@@ -11433,7 +11510,7 @@ require('./partial');
 require('./throttle');
 
 module.exports = require('sugar-core');
-},{"./after":433,"./cancel":434,"./debounce":435,"./delay":436,"./every":437,"./lazy":444,"./lock":445,"./memoize":446,"./once":447,"./partial":448,"./throttle":449,"sugar-core":19}],439:[function(require,module,exports){
+},{"./after":434,"./cancel":435,"./debounce":436,"./delay":437,"./every":438,"./lazy":445,"./lock":446,"./memoize":447,"./once":448,"./partial":449,"./throttle":450,"sugar-core":20}],440:[function(require,module,exports){
 'use strict';
 
 var _timers = require('../var/_timers'),
@@ -11454,7 +11531,7 @@ function cancelFunction(fn) {
 }
 
 module.exports = cancelFunction;
-},{"../../common/var/classChecks":193,"../var/_canceled":450,"../var/_timers":453}],440:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"../var/_canceled":451,"../var/_timers":454}],441:[function(require,module,exports){
 'use strict';
 
 function collectArguments() {
@@ -11466,7 +11543,7 @@ function collectArguments() {
 }
 
 module.exports = collectArguments;
-},{}],441:[function(require,module,exports){
+},{}],442:[function(require,module,exports){
 'use strict';
 
 var serializeInternal = require('../../common/internal/serializeInternal'),
@@ -11494,7 +11571,7 @@ function createHashedMemoizeFunction(fn, hashFn, limit) {
 }
 
 module.exports = createHashedMemoizeFunction;
-},{"../../common/internal/serializeInternal":169,"../../common/var/coreUtilityAliases":194}],442:[function(require,module,exports){
+},{"../../common/internal/serializeInternal":170,"../../common/var/coreUtilityAliases":195}],443:[function(require,module,exports){
 'use strict';
 
 var setDelay = require('./setDelay'),
@@ -11549,7 +11626,7 @@ function createLazyFunction(fn, ms, immediate, limit) {
 }
 
 module.exports = createLazyFunction;
-},{"../../common/var/mathAliases":196,"./setDelay":443}],443:[function(require,module,exports){
+},{"../../common/var/mathAliases":197,"./setDelay":444}],444:[function(require,module,exports){
 'use strict';
 
 var _timers = require('../var/_timers'),
@@ -11574,7 +11651,7 @@ function setDelay(fn, ms, after, scope, args) {
 }
 
 module.exports = setDelay;
-},{"../../common/internal/coercePositiveInteger":111,"../var/_canceled":450,"../var/_timers":453}],444:[function(require,module,exports){
+},{"../../common/internal/coercePositiveInteger":112,"../var/_canceled":451,"../var/_timers":454}],445:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11589,7 +11666,7 @@ Sugar.Function.defineInstance({
 });
 
 module.exports = Sugar.Function.lazy;
-},{"./internal/createLazyFunction":442,"sugar-core":19}],445:[function(require,module,exports){
+},{"./internal/createLazyFunction":443,"sugar-core":20}],446:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11620,7 +11697,7 @@ Sugar.Function.defineInstance({
 });
 
 module.exports = Sugar.Function.lock;
-},{"../common/var/classChecks":193,"../common/var/mathAliases":196,"./var/_lock":451,"./var/_partial":452,"sugar-core":19}],446:[function(require,module,exports){
+},{"../common/var/classChecks":194,"../common/var/mathAliases":197,"./var/_lock":452,"./var/_partial":453,"sugar-core":20}],447:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11656,7 +11733,7 @@ Sugar.Function.defineInstance({
 });
 
 module.exports = Sugar.Function.memoize;
-},{"../common/internal/deepGetProperty":117,"../common/var/classChecks":193,"./internal/collectArguments":440,"./internal/createHashedMemoizeFunction":441,"sugar-core":19}],447:[function(require,module,exports){
+},{"../common/internal/deepGetProperty":118,"../common/var/classChecks":194,"./internal/collectArguments":441,"./internal/createHashedMemoizeFunction":442,"sugar-core":20}],448:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11677,7 +11754,7 @@ Sugar.Function.defineInstance({
 });
 
 module.exports = Sugar.Function.once;
-},{"sugar-core":19}],448:[function(require,module,exports){
+},{"sugar-core":20}],449:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11735,7 +11812,7 @@ Sugar.Function.defineInstanceWithArguments({
 });
 
 module.exports = Sugar.Function.partial;
-},{"../common/internal/isDefined":150,"../common/internal/isObjectType":152,"../common/var/classChecks":193,"../common/var/mathAliases":196,"./var/_lock":451,"./var/_partial":452,"./var/createInstanceFromPrototype":454,"sugar-core":19}],449:[function(require,module,exports){
+},{"../common/internal/isDefined":151,"../common/internal/isObjectType":153,"../common/var/classChecks":194,"../common/var/mathAliases":197,"./var/_lock":452,"./var/_partial":453,"./var/createInstanceFromPrototype":455,"sugar-core":20}],450:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11750,31 +11827,31 @@ Sugar.Function.defineInstance({
 });
 
 module.exports = Sugar.Function.throttle;
-},{"./internal/createLazyFunction":442,"sugar-core":19}],450:[function(require,module,exports){
+},{"./internal/createLazyFunction":443,"sugar-core":20}],451:[function(require,module,exports){
 'use strict';
 
 var privatePropertyAccessor = require('../../common/internal/privatePropertyAccessor');
 
 module.exports = privatePropertyAccessor('canceled');
-},{"../../common/internal/privatePropertyAccessor":165}],451:[function(require,module,exports){
+},{"../../common/internal/privatePropertyAccessor":166}],452:[function(require,module,exports){
 'use strict';
 
 var privatePropertyAccessor = require('../../common/internal/privatePropertyAccessor');
 
 module.exports = privatePropertyAccessor('lock');
-},{"../../common/internal/privatePropertyAccessor":165}],452:[function(require,module,exports){
+},{"../../common/internal/privatePropertyAccessor":166}],453:[function(require,module,exports){
 'use strict';
 
 var privatePropertyAccessor = require('../../common/internal/privatePropertyAccessor');
 
 module.exports = privatePropertyAccessor('partial');
-},{"../../common/internal/privatePropertyAccessor":165}],453:[function(require,module,exports){
+},{"../../common/internal/privatePropertyAccessor":166}],454:[function(require,module,exports){
 'use strict';
 
 var privatePropertyAccessor = require('../../common/internal/privatePropertyAccessor');
 
 module.exports = privatePropertyAccessor('timers');
-},{"../../common/internal/privatePropertyAccessor":165}],454:[function(require,module,exports){
+},{"../../common/internal/privatePropertyAccessor":166}],455:[function(require,module,exports){
 'use strict';
 
 var createInstanceFromPrototype = Object.create || function(prototype) {
@@ -11784,7 +11861,7 @@ var createInstanceFromPrototype = Object.create || function(prototype) {
 };
 
 module.exports = createInstanceFromPrototype;
-},{}],455:[function(require,module,exports){
+},{}],456:[function(require,module,exports){
 'use strict';
 
 require('./string');
@@ -11798,7 +11875,7 @@ require('./function');
 require('./regexp');
 
 module.exports = require('sugar-core');
-},{"./array":47,"./date":245,"./enumerable":406,"./function":438,"./number":495,"./object":599,"./range":684,"./regexp":725,"./string":744,"sugar-core":19}],456:[function(require,module,exports){
+},{"./array":48,"./date":246,"./enumerable":407,"./function":439,"./number":496,"./object":600,"./range":685,"./regexp":726,"./string":745,"sugar-core":20}],457:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11816,7 +11893,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.abbr;
-},{"./internal/abbreviateNumber":496,"./var/AbbreviationUnits":561,"sugar-core":19}],457:[function(require,module,exports){
+},{"./internal/abbreviateNumber":497,"./var/AbbreviationUnits":562,"sugar-core":20}],458:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11824,7 +11901,7 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.abs;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],458:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],459:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11832,7 +11909,7 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.acos;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],459:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],460:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11840,7 +11917,7 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.asin;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],460:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],461:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11848,13 +11925,13 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.atan;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],461:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],462:[function(require,module,exports){
 'use strict';
 
 var buildMathAliases = require('../internal/buildMathAliases');
 
 buildMathAliases();
-},{"../internal/buildMathAliases":497}],462:[function(require,module,exports){
+},{"../internal/buildMathAliases":498}],463:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11878,7 +11955,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.bytes;
-},{"./internal/abbreviateNumber":496,"./var/AbbreviationUnits":561,"sugar-core":19}],463:[function(require,module,exports){
+},{"./internal/abbreviateNumber":497,"./var/AbbreviationUnits":562,"sugar-core":20}],464:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11894,7 +11971,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.cap;
-},{"../range/internal/Range":685,"../range/internal/rangeClamp":699,"sugar-core":19}],464:[function(require,module,exports){
+},{"../range/internal/Range":686,"../range/internal/rangeClamp":700,"sugar-core":20}],465:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11910,7 +11987,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.ceil;
-},{"../common/var/mathAliases":196,"./internal/createRoundingFunction":498,"sugar-core":19}],465:[function(require,module,exports){
+},{"../common/var/mathAliases":197,"./internal/createRoundingFunction":499,"sugar-core":20}],466:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11925,7 +12002,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.chr;
-},{"../common/var/chr":192,"sugar-core":19}],466:[function(require,module,exports){
+},{"../common/var/chr":193,"sugar-core":20}],467:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -11941,7 +12018,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.clamp;
-},{"../range/internal/Range":685,"../range/internal/rangeClamp":699,"sugar-core":19}],467:[function(require,module,exports){
+},{"../range/internal/Range":686,"../range/internal/rangeClamp":700,"sugar-core":20}],468:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11949,7 +12026,7 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.cos;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],468:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],469:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11957,7 +12034,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.day;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],469:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],470:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11965,7 +12042,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.dayAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],470:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],471:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11973,7 +12050,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.dayAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],471:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],472:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11981,7 +12058,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.dayBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],472:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],473:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11989,7 +12066,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.dayFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],473:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],474:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -11997,7 +12074,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.days;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],474:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],475:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12005,7 +12082,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.daysAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],475:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],476:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12013,7 +12090,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.daysAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],476:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],477:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12021,7 +12098,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.daysBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],477:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],478:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12029,7 +12106,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.daysFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],478:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],479:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12038,7 +12115,7 @@ var Sugar = require('sugar-core'),
 Sugar.Number.alias('downto', 'upto');
 
 module.exports = Sugar.Number.downto;
-},{"./upto":560,"sugar-core":19}],479:[function(require,module,exports){
+},{"./upto":561,"sugar-core":20}],480:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12055,7 +12132,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.duration;
-},{"../date/var/LocaleHelpers":390,"sugar-core":19}],480:[function(require,module,exports){
+},{"../date/var/LocaleHelpers":391,"sugar-core":20}],481:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12063,7 +12140,7 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.exp;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],481:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],482:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12079,7 +12156,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.floor;
-},{"../common/var/mathAliases":196,"./internal/createRoundingFunction":498,"sugar-core":19}],482:[function(require,module,exports){
+},{"../common/var/mathAliases":197,"./internal/createRoundingFunction":499,"sugar-core":20}],483:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12094,14 +12171,14 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.format;
-},{"./internal/numberFormat":501,"sugar-core":19}],483:[function(require,module,exports){
+},{"./internal/numberFormat":502,"sugar-core":20}],484:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
     _numberOptions = require('./var/_numberOptions');
 
 module.exports = Sugar.Number.getOption;
-},{"./var/_numberOptions":563,"sugar-core":19}],484:[function(require,module,exports){
+},{"./var/_numberOptions":564,"sugar-core":20}],485:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12116,7 +12193,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.hex;
-},{"../common/internal/padNumber":163,"sugar-core":19}],485:[function(require,module,exports){
+},{"../common/internal/padNumber":164,"sugar-core":20}],486:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12124,7 +12201,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hour;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],486:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],487:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12132,7 +12209,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hourAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],487:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],488:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12140,7 +12217,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hourAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],488:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],489:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12148,7 +12225,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hourBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],489:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],490:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12156,7 +12233,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hourFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],490:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],491:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12164,7 +12241,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hours;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],491:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],492:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12172,7 +12249,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hoursAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],492:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],493:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12180,7 +12257,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hoursAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],493:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],494:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12188,7 +12265,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hoursBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],494:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],495:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12196,7 +12273,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.hoursFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],495:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],496:[function(require,module,exports){
 'use strict';
 
 // Static Methods
@@ -12237,7 +12314,7 @@ require('./getOption');
 require('./setOption');
 
 module.exports = require('sugar-core');
-},{"./abbr":456,"./abs":457,"./acos":458,"./asin":459,"./atan":460,"./bytes":462,"./ceil":464,"./chr":465,"./cos":467,"./exp":480,"./floor":481,"./format":482,"./getOption":483,"./hex":484,"./isEven":502,"./isInteger":503,"./isMultipleOf":504,"./isOdd":505,"./log":506,"./metric":507,"./ordinalize":538,"./pad":539,"./pow":540,"./random":541,"./round":543,"./setOption":554,"./sin":555,"./sqrt":556,"./tan":557,"./times":558,"./toNumber":559,"sugar-core":19}],496:[function(require,module,exports){
+},{"./abbr":457,"./abs":458,"./acos":459,"./asin":460,"./atan":461,"./bytes":463,"./ceil":465,"./chr":466,"./cos":468,"./exp":481,"./floor":482,"./format":483,"./getOption":484,"./hex":485,"./isEven":503,"./isInteger":504,"./isMultipleOf":505,"./isOdd":506,"./log":507,"./metric":508,"./ordinalize":539,"./pad":540,"./pow":541,"./random":542,"./round":544,"./setOption":555,"./sin":556,"./sqrt":557,"./tan":558,"./times":559,"./toNumber":560,"sugar-core":20}],497:[function(require,module,exports){
 'use strict';
 
 var commaSplit = require('../../common/internal/commaSplit'),
@@ -12287,7 +12364,7 @@ function abbreviateNumber(num, precision, ustr, bytes) {
 }
 
 module.exports = abbreviateNumber;
-},{"../../common/internal/commaSplit":114,"../../common/internal/withPrecision":179,"../../common/var/mathAliases":196,"./numberFormat":501}],497:[function(require,module,exports){
+},{"../../common/internal/commaSplit":115,"../../common/internal/withPrecision":180,"../../common/var/mathAliases":197,"./numberFormat":502}],498:[function(require,module,exports){
 'use strict';
 
 var namespaceAliases = require('../../common/var/namespaceAliases'),
@@ -12308,7 +12385,7 @@ function buildMathAliases() {
 }
 
 module.exports = buildMathAliases;
-},{"../../common/internal/defineInstanceSimilar":123,"../../common/var/namespaceAliases":198}],498:[function(require,module,exports){
+},{"../../common/internal/defineInstanceSimilar":124,"../../common/var/namespaceAliases":199}],499:[function(require,module,exports){
 'use strict';
 
 var withPrecision = require('../../common/internal/withPrecision');
@@ -12320,7 +12397,7 @@ function createRoundingFunction(fn) {
 }
 
 module.exports = createRoundingFunction;
-},{"../../common/internal/withPrecision":179}],499:[function(require,module,exports){
+},{"../../common/internal/withPrecision":180}],500:[function(require,module,exports){
 'use strict';
 
 function isInteger(n) {
@@ -12328,7 +12405,7 @@ function isInteger(n) {
 }
 
 module.exports = isInteger;
-},{}],500:[function(require,module,exports){
+},{}],501:[function(require,module,exports){
 'use strict';
 
 function isMultipleOf(n1, n2) {
@@ -12336,7 +12413,7 @@ function isMultipleOf(n1, n2) {
 }
 
 module.exports = isMultipleOf;
-},{}],501:[function(require,module,exports){
+},{}],502:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -12382,7 +12459,7 @@ function numberFormat(num, place) {
 }
 
 module.exports = numberFormat;
-},{"../../common/internal/periodSplit":164,"../../common/internal/repeatString":167,"../../common/internal/withPrecision":179,"../../common/var/classChecks":193,"../../common/var/mathAliases":196,"../var/_numberOptions":563}],502:[function(require,module,exports){
+},{"../../common/internal/periodSplit":165,"../../common/internal/repeatString":168,"../../common/internal/withPrecision":180,"../../common/var/classChecks":194,"../../common/var/mathAliases":197,"../var/_numberOptions":564}],503:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12397,7 +12474,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.isEven;
-},{"./internal/isMultipleOf":500,"sugar-core":19}],503:[function(require,module,exports){
+},{"./internal/isMultipleOf":501,"sugar-core":20}],504:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12412,7 +12489,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.isInteger;
-},{"./internal/isInteger":499,"sugar-core":19}],504:[function(require,module,exports){
+},{"./internal/isInteger":500,"sugar-core":20}],505:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12427,7 +12504,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.isMultipleOf;
-},{"./internal/isMultipleOf":500,"sugar-core":19}],505:[function(require,module,exports){
+},{"./internal/isMultipleOf":501,"sugar-core":20}],506:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12443,7 +12520,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.isOdd;
-},{"./internal/isInteger":499,"./internal/isMultipleOf":500,"sugar-core":19}],506:[function(require,module,exports){
+},{"./internal/isInteger":500,"./internal/isMultipleOf":501,"sugar-core":20}],507:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12457,7 +12534,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.log;
-},{"sugar-core":19}],507:[function(require,module,exports){
+},{"sugar-core":20}],508:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12481,7 +12558,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.metric;
-},{"./internal/abbreviateNumber":496,"./var/AbbreviationUnits":561,"sugar-core":19}],508:[function(require,module,exports){
+},{"./internal/abbreviateNumber":497,"./var/AbbreviationUnits":562,"sugar-core":20}],509:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12489,7 +12566,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.millisecond;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],509:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],510:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12497,7 +12574,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.millisecondAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],510:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],511:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12505,7 +12582,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.millisecondAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],511:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],512:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12513,7 +12590,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.millisecondBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],512:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],513:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12521,7 +12598,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.millisecondFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],513:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],514:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12529,7 +12606,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.milliseconds;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],514:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],515:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12537,7 +12614,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.millisecondsAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],515:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],516:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12545,7 +12622,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.millisecondsAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],516:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],517:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12553,7 +12630,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.millisecondsBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],517:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],518:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12561,7 +12638,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.millisecondsFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],518:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],519:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12569,7 +12646,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minute;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],519:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],520:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12577,7 +12654,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minuteAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],520:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],521:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12585,7 +12662,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minuteAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],521:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],522:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12593,7 +12670,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minuteBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],522:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],523:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12601,7 +12678,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minuteFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],523:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],524:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12609,7 +12686,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minutes;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],524:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],525:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12617,7 +12694,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minutesAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],525:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],526:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12625,7 +12702,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minutesAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],526:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],527:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12633,7 +12710,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minutesBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],527:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],528:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12641,7 +12718,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.minutesFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],528:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],529:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12649,7 +12726,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.month;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],529:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],530:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12657,7 +12734,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.monthAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],530:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],531:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12665,7 +12742,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.monthAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],531:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],532:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12673,7 +12750,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.monthBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],532:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],533:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12681,7 +12758,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.monthFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],533:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],534:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12689,7 +12766,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.months;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],534:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],535:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12697,7 +12774,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.monthsAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],535:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],536:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12705,7 +12782,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.monthsAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],536:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],537:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12713,7 +12790,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.monthsBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],537:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],538:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12721,7 +12798,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.monthsFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],538:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],539:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12740,7 +12817,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.ordinalize;
-},{"../common/internal/getOrdinalSuffix":139,"../common/var/mathAliases":196,"sugar-core":19}],539:[function(require,module,exports){
+},{"../common/internal/getOrdinalSuffix":140,"../common/var/mathAliases":197,"sugar-core":20}],540:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12755,7 +12832,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.pad;
-},{"../common/internal/padNumber":163,"sugar-core":19}],540:[function(require,module,exports){
+},{"../common/internal/padNumber":164,"sugar-core":20}],541:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12763,7 +12840,7 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.pow;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],541:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],542:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12787,7 +12864,7 @@ Sugar.Number.defineStatic({
 });
 
 module.exports = Sugar.Number.random;
-},{"../common/internal/isUndefined":156,"../common/var/mathAliases":196,"../common/var/trunc":199,"sugar-core":19}],542:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"../common/var/mathAliases":197,"../common/var/trunc":200,"sugar-core":20}],543:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12800,7 +12877,7 @@ Sugar.Number.defineStatic({
 });
 
 module.exports = Sugar.Number.range;
-},{"../range/var/PrimitiveRangeConstructor":719,"sugar-core":19}],543:[function(require,module,exports){
+},{"../range/var/PrimitiveRangeConstructor":720,"sugar-core":20}],544:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12816,7 +12893,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.round;
-},{"../common/var/mathAliases":196,"./internal/createRoundingFunction":498,"sugar-core":19}],544:[function(require,module,exports){
+},{"../common/var/mathAliases":197,"./internal/createRoundingFunction":499,"sugar-core":20}],545:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12824,7 +12901,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.second;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],545:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],546:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12832,7 +12909,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.secondAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],546:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],547:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12840,7 +12917,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.secondAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],547:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],548:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12848,7 +12925,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.secondBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],548:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],549:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12856,7 +12933,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.secondFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],549:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],550:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12864,7 +12941,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.seconds;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],550:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],551:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12872,7 +12949,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.secondsAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],551:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],552:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12880,7 +12957,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.secondsAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],552:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],553:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12888,7 +12965,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.secondsBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],553:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],554:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12896,14 +12973,14 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.secondsFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],554:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],555:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
     _numberOptions = require('./var/_numberOptions');
 
 module.exports = Sugar.Number.setOption;
-},{"./var/_numberOptions":563,"sugar-core":19}],555:[function(require,module,exports){
+},{"./var/_numberOptions":564,"sugar-core":20}],556:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12911,7 +12988,7 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.sin;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],556:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],557:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12919,7 +12996,7 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.sqrt;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],557:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],558:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12927,7 +13004,7 @@ var Sugar = require('sugar-core');
 require('./build/buildMathAliasesCall');
 
 module.exports = Sugar.Number.tan;
-},{"./build/buildMathAliasesCall":461,"sugar-core":19}],558:[function(require,module,exports){
+},{"./build/buildMathAliasesCall":462,"sugar-core":20}],559:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12952,7 +13029,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.times;
-},{"../common/internal/isDefined":150,"sugar-core":19}],559:[function(require,module,exports){
+},{"../common/internal/isDefined":151,"sugar-core":20}],560:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -12966,7 +13043,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.toNumber;
-},{"sugar-core":19}],560:[function(require,module,exports){
+},{"sugar-core":20}],561:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -12982,7 +13059,7 @@ Sugar.Number.defineInstance({
 });
 
 module.exports = Sugar.Number.upto;
-},{"../range/internal/Range":685,"../range/internal/rangeEvery":700,"sugar-core":19}],561:[function(require,module,exports){
+},{"../range/internal/Range":686,"../range/internal/rangeEvery":701,"sugar-core":20}],562:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -12992,7 +13069,7 @@ module.exports = {
   METRIC_UNITS_SHORT: 'nμm|k',
   METRIC_UNITS_FULL: 'yzafpnμm|KMGTPEZY'
 };
-},{}],562:[function(require,module,exports){
+},{}],563:[function(require,module,exports){
 'use strict';
 
 var CommonChars = require('../../common/var/CommonChars');
@@ -13006,7 +13083,7 @@ var NUMBER_OPTIONS = {
 };
 
 module.exports = NUMBER_OPTIONS;
-},{"../../common/var/CommonChars":181}],563:[function(require,module,exports){
+},{"../../common/var/CommonChars":182}],564:[function(require,module,exports){
 'use strict';
 
 var NUMBER_OPTIONS = require('./NUMBER_OPTIONS'),
@@ -13016,7 +13093,7 @@ var NUMBER_OPTIONS = require('./NUMBER_OPTIONS'),
 var sugarNumber = namespaceAliases.sugarNumber;
 
 module.exports = defineOptionsAccessor(sugarNumber, NUMBER_OPTIONS);
-},{"../../common/internal/defineOptionsAccessor":125,"../../common/var/namespaceAliases":198,"./NUMBER_OPTIONS":562}],564:[function(require,module,exports){
+},{"../../common/internal/defineOptionsAccessor":126,"../../common/var/namespaceAliases":199,"./NUMBER_OPTIONS":563}],565:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13024,7 +13101,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.week;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],565:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],566:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13032,7 +13109,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.weekAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],566:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],567:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13040,7 +13117,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.weekAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],567:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],568:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13048,7 +13125,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.weekBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],568:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],569:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13056,7 +13133,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.weekFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],569:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],570:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13064,7 +13141,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.weeks;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],570:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],571:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13072,7 +13149,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.weeksAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],571:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],572:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13080,7 +13157,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.weeksAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],572:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],573:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13088,7 +13165,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.weeksBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],573:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],574:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13096,7 +13173,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.weeksFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],574:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],575:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13104,7 +13181,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.year;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],575:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],576:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13112,7 +13189,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.yearAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],576:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],577:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13120,7 +13197,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.yearAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],577:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],578:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13128,7 +13205,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.yearBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],578:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],579:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13136,7 +13213,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.yearFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],579:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],580:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13144,7 +13221,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.years;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],580:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],581:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13152,7 +13229,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.yearsAfter;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],581:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],582:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13160,7 +13237,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.yearsAgo;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],582:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],583:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13168,7 +13245,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.yearsBefore;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],583:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],584:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -13176,7 +13253,7 @@ var Sugar = require('sugar-core');
 require('../date/build/buildNumberUnitMethodsCall');
 
 module.exports = Sugar.Number.yearsFromNow;
-},{"../date/build/buildNumberUnitMethodsCall":216,"sugar-core":19}],584:[function(require,module,exports){
+},{"../date/build/buildNumberUnitMethodsCall":217,"sugar-core":20}],585:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13192,7 +13269,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.add;
-},{"./internal/clone":601,"./internal/mergeWithOptions":616,"sugar-core":19}],585:[function(require,module,exports){
+},{"./internal/clone":602,"./internal/mergeWithOptions":617,"sugar-core":20}],586:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13208,7 +13285,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.addAll;
-},{"./internal/clone":601,"./internal/mergeAll":614,"sugar-core":19}],586:[function(require,module,exports){
+},{"./internal/clone":602,"./internal/mergeAll":615,"sugar-core":20}],587:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13223,13 +13300,13 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.average;
-},{"../enumerable/internal/average":409,"sugar-core":19}],587:[function(require,module,exports){
+},{"../enumerable/internal/average":410,"sugar-core":20}],588:[function(require,module,exports){
 'use strict';
 
 var buildClassCheckMethods = require('../internal/buildClassCheckMethods');
 
 buildClassCheckMethods();
-},{"../internal/buildClassCheckMethods":600}],588:[function(require,module,exports){
+},{"../internal/buildClassCheckMethods":601}],589:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13244,7 +13321,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.clone;
-},{"./internal/clone":601,"sugar-core":19}],589:[function(require,module,exports){
+},{"./internal/clone":602,"sugar-core":20}],590:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13259,7 +13336,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.count;
-},{"../enumerable/internal/objectCount":420,"sugar-core":19}],590:[function(require,module,exports){
+},{"../enumerable/internal/objectCount":421,"sugar-core":20}],591:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13274,7 +13351,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.defaults;
-},{"./internal/defaults":602,"sugar-core":19}],591:[function(require,module,exports){
+},{"./internal/defaults":603,"sugar-core":20}],592:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13289,7 +13366,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.every;
-},{"../enumerable/var/objectMatchers":432,"sugar-core":19}],592:[function(require,module,exports){
+},{"../enumerable/var/objectMatchers":433,"sugar-core":20}],593:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13304,7 +13381,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.exclude;
-},{"./internal/objectExclude":617,"sugar-core":19}],593:[function(require,module,exports){
+},{"./internal/objectExclude":618,"sugar-core":20}],594:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13319,7 +13396,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.filter;
-},{"../enumerable/internal/objectFilter":421,"sugar-core":19}],594:[function(require,module,exports){
+},{"../enumerable/internal/objectFilter":422,"sugar-core":20}],595:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13334,7 +13411,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.find;
-},{"../enumerable/var/objectMatchers":432,"sugar-core":19}],595:[function(require,module,exports){
+},{"../enumerable/var/objectMatchers":433,"sugar-core":20}],596:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13349,7 +13426,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.forEach;
-},{"../enumerable/internal/objectForEach":422,"sugar-core":19}],596:[function(require,module,exports){
+},{"../enumerable/internal/objectForEach":423,"sugar-core":20}],597:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13364,7 +13441,7 @@ Sugar.Object.defineStatic({
 });
 
 module.exports = Sugar.Object.fromQueryString;
-},{"./internal/fromQueryStringWithOptions":603,"sugar-core":19}],597:[function(require,module,exports){
+},{"./internal/fromQueryStringWithOptions":604,"sugar-core":20}],598:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13379,7 +13456,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.get;
-},{"../common/internal/deepGetProperty":117,"sugar-core":19}],598:[function(require,module,exports){
+},{"../common/internal/deepGetProperty":118,"sugar-core":20}],599:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13394,7 +13471,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.has;
-},{"../common/internal/deepHasProperty":118,"sugar-core":19}],599:[function(require,module,exports){
+},{"../common/internal/deepHasProperty":119,"sugar-core":20}],600:[function(require,module,exports){
 'use strict';
 
 // Static Methods
@@ -13438,7 +13515,7 @@ require('./values');
 require('./keys');
 
 module.exports = require('sugar-core');
-},{"./add":584,"./addAll":585,"./clone":588,"./defaults":590,"./exclude":592,"./fromQueryString":596,"./get":597,"./has":598,"./intersect":633,"./invert":634,"./isArguments":635,"./isArray":636,"./isBoolean":637,"./isDate":638,"./isEmpty":639,"./isEqual":640,"./isError":641,"./isFunction":642,"./isMap":643,"./isNumber":644,"./isObject":645,"./isRegExp":646,"./isSet":647,"./isString":648,"./keys":649,"./merge":654,"./mergeAll":655,"./reject":660,"./remove":661,"./select":662,"./set":663,"./size":664,"./subtract":666,"./tap":668,"./toQueryString":669,"./values":670,"sugar-core":19}],600:[function(require,module,exports){
+},{"./add":585,"./addAll":586,"./clone":589,"./defaults":591,"./exclude":593,"./fromQueryString":597,"./get":598,"./has":599,"./intersect":634,"./invert":635,"./isArguments":636,"./isArray":637,"./isBoolean":638,"./isDate":639,"./isEmpty":640,"./isEqual":641,"./isError":642,"./isFunction":643,"./isMap":644,"./isNumber":645,"./isObject":646,"./isRegExp":647,"./isSet":648,"./isString":649,"./keys":650,"./merge":655,"./mergeAll":656,"./reject":661,"./remove":662,"./select":663,"./set":664,"./size":665,"./subtract":667,"./tap":669,"./toQueryString":670,"./values":671,"sugar-core":20}],601:[function(require,module,exports){
 'use strict';
 
 var NATIVE_TYPES = require('../../common/var/NATIVE_TYPES'),
@@ -13466,7 +13543,7 @@ function buildClassCheckMethods() {
 }
 
 module.exports = buildClassCheckMethods;
-},{"../../common/internal/defineInstanceAndStaticSimilar":122,"../../common/var/NATIVE_TYPES":185,"../../common/var/classChecks":193,"../../common/var/namespaceAliases":198}],601:[function(require,module,exports){
+},{"../../common/internal/defineInstanceAndStaticSimilar":123,"../../common/var/NATIVE_TYPES":186,"../../common/var/classChecks":194,"../../common/var/namespaceAliases":199}],602:[function(require,module,exports){
 'use strict';
 
 var objectMerge = require('./objectMerge'),
@@ -13478,7 +13555,7 @@ function clone(source, deep) {
 }
 
 module.exports = clone;
-},{"./getNewObjectForMerge":605,"./objectMerge":619}],602:[function(require,module,exports){
+},{"./getNewObjectForMerge":606,"./objectMerge":620}],603:[function(require,module,exports){
 'use strict';
 
 var mergeAll = require('./mergeAll');
@@ -13490,7 +13567,7 @@ function defaults(target, sources, opts) {
 }
 
 module.exports = defaults;
-},{"./mergeAll":614}],603:[function(require,module,exports){
+},{"./mergeAll":615}],604:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -13512,7 +13589,7 @@ function fromQueryStringWithOptions(obj, opts) {
 }
 
 module.exports = fromQueryStringWithOptions;
-},{"../../common/internal/forEach":130,"./parseQueryComponent":625}],604:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"./parseQueryComponent":626}],605:[function(require,module,exports){
 'use strict';
 
 var getKeys = require('../../common/internal/getKeys'),
@@ -13523,7 +13600,7 @@ function getKeysWithObjectCoercion(obj) {
 }
 
 module.exports = getKeysWithObjectCoercion;
-},{"../../common/internal/coercePrimitiveToObject":112,"../../common/internal/getKeys":136}],605:[function(require,module,exports){
+},{"../../common/internal/coercePrimitiveToObject":113,"../../common/internal/getKeys":137}],606:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -13567,7 +13644,7 @@ function getNewObjectForMerge(source) {
 }
 
 module.exports = getNewObjectForMerge;
-},{"../../common/internal/getRegExpFlags":141,"../../common/internal/isPlainObject":153,"../../common/internal/isPrimitive":154,"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194}],606:[function(require,module,exports){
+},{"../../common/internal/getRegExpFlags":142,"../../common/internal/isPlainObject":154,"../../common/internal/isPrimitive":155,"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195}],607:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -13597,7 +13674,7 @@ function getQueryValueAuto(obj, key, val) {
 }
 
 module.exports = getQueryValueAuto;
-},{"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194,"./stringIsDecimal":629}],607:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195,"./stringIsDecimal":630}],608:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -13618,7 +13695,7 @@ function getURIComponentValue(obj, prefix, transform) {
 }
 
 module.exports = getURIComponentValue;
-},{"../../common/var/classChecks":193,"./sanitizeURIComponent":626}],608:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"./sanitizeURIComponent":627}],609:[function(require,module,exports){
 'use strict';
 
 var coreUtilityAliases = require('../../common/var/coreUtilityAliases');
@@ -13634,7 +13711,7 @@ function getValues(obj) {
 }
 
 module.exports = getValues;
-},{"../../common/var/coreUtilityAliases":194}],609:[function(require,module,exports){
+},{"../../common/var/coreUtilityAliases":195}],610:[function(require,module,exports){
 'use strict';
 
 var hasProperty = require('../../common/internal/hasProperty'),
@@ -13649,7 +13726,7 @@ function isArguments(obj, className) {
 }
 
 module.exports = isArguments;
-},{"../../common/internal/hasProperty":145,"../../common/var/coreUtilityAliases":194}],610:[function(require,module,exports){
+},{"../../common/internal/hasProperty":146,"../../common/var/coreUtilityAliases":195}],611:[function(require,module,exports){
 'use strict';
 
 var getOwnPropertyDescriptor = require('../var/getOwnPropertyDescriptor');
@@ -13665,7 +13742,7 @@ function iterateOverKeys(getFn, obj, fn, hidden) {
 }
 
 module.exports = iterateOverKeys;
-},{"../var/getOwnPropertyDescriptor":673}],611:[function(require,module,exports){
+},{"../var/getOwnPropertyDescriptor":674}],612:[function(require,module,exports){
 'use strict';
 
 var iterateOverKeys = require('./iterateOverKeys'),
@@ -13687,7 +13764,7 @@ function iterateOverProperties(hidden, obj, fn) {
 }
 
 module.exports = iterateOverProperties;
-},{"../../common/var/coreUtilityAliases":194,"../var/getOwnPropertyNames":674,"../var/getOwnPropertySymbols":675,"./iterateOverKeys":610}],612:[function(require,module,exports){
+},{"../../common/var/coreUtilityAliases":195,"../var/getOwnPropertyNames":675,"../var/getOwnPropertySymbols":676,"./iterateOverKeys":611}],613:[function(require,module,exports){
 'use strict';
 
 function mapQuerySeparatorToKeys(key, separator) {
@@ -13699,7 +13776,7 @@ function mapQuerySeparatorToKeys(key, separator) {
 }
 
 module.exports = mapQuerySeparatorToKeys;
-},{}],613:[function(require,module,exports){
+},{}],614:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -13718,7 +13795,7 @@ function matchInObject(match, key) {
 }
 
 module.exports = matchInObject;
-},{"../../common/internal/isObjectType":152,"../../common/var/classChecks":193}],614:[function(require,module,exports){
+},{"../../common/internal/isObjectType":153,"../../common/var/classChecks":194}],615:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -13738,7 +13815,7 @@ function mergeAll(target, sources, opts) {
 }
 
 module.exports = mergeAll;
-},{"../../common/internal/forEach":130,"../../common/var/classChecks":193,"./mergeWithOptions":616}],615:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"../../common/var/classChecks":194,"./mergeWithOptions":617}],616:[function(require,module,exports){
 'use strict';
 
 var isDefined = require('../../common/internal/isDefined'),
@@ -13756,7 +13833,7 @@ function mergeByPropertyDescriptor(target, source, prop, sourceVal) {
 }
 
 module.exports = mergeByPropertyDescriptor;
-},{"../../common/internal/isDefined":150,"../../common/var/coreUtilityAliases":194,"../var/getOwnPropertyDescriptor":673}],616:[function(require,module,exports){
+},{"../../common/internal/isDefined":151,"../../common/var/coreUtilityAliases":195,"../var/getOwnPropertyDescriptor":674}],617:[function(require,module,exports){
 'use strict';
 
 var objectMerge = require('./objectMerge');
@@ -13767,7 +13844,7 @@ function mergeWithOptions(target, source, opts) {
 }
 
 module.exports = mergeWithOptions;
-},{"./objectMerge":619}],617:[function(require,module,exports){
+},{"./objectMerge":620}],618:[function(require,module,exports){
 'use strict';
 
 var getMatcher = require('../../common/internal/getMatcher'),
@@ -13787,7 +13864,7 @@ function objectExclude(obj, f) {
 }
 
 module.exports = objectExclude;
-},{"../../common/internal/getMatcher":137,"../../common/var/coreUtilityAliases":194}],618:[function(require,module,exports){
+},{"../../common/internal/getMatcher":138,"../../common/var/coreUtilityAliases":195}],619:[function(require,module,exports){
 'use strict';
 
 var isEqual = require('../../common/internal/isEqual'),
@@ -13810,7 +13887,7 @@ function objectIntersectOrSubtract(obj1, obj2, subtract) {
 }
 
 module.exports = objectIntersectOrSubtract;
-},{"../../common/internal/coercePrimitiveToObject":112,"../../common/internal/isEqual":151,"../../common/internal/isObjectType":152,"./objectMerge":619}],619:[function(require,module,exports){
+},{"../../common/internal/coercePrimitiveToObject":113,"../../common/internal/isEqual":152,"../../common/internal/isObjectType":153,"./objectMerge":620}],620:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -13907,7 +13984,7 @@ function objectMerge(target, source, deep, resolve, hidden, descriptor) {
 }
 
 module.exports = objectMerge;
-},{"../../common/internal/coercePrimitiveToObject":112,"../../common/internal/isDefined":150,"../../common/internal/isObjectType":152,"../../common/internal/isPrimitive":154,"../../common/internal/isUndefined":156,"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194,"../var/getOwnPropertyNames":674,"./getNewObjectForMerge":605,"./iterateOverProperties":611,"./mergeByPropertyDescriptor":615,"sugar-core":19}],620:[function(require,module,exports){
+},{"../../common/internal/coercePrimitiveToObject":113,"../../common/internal/isDefined":151,"../../common/internal/isObjectType":153,"../../common/internal/isPrimitive":155,"../../common/internal/isUndefined":157,"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195,"../var/getOwnPropertyNames":675,"./getNewObjectForMerge":606,"./iterateOverProperties":612,"./mergeByPropertyDescriptor":616,"sugar-core":20}],621:[function(require,module,exports){
 'use strict';
 
 var selectFromObject = require('./selectFromObject');
@@ -13917,7 +13994,7 @@ function objectReject(obj, f) {
 }
 
 module.exports = objectReject;
-},{"./selectFromObject":627}],621:[function(require,module,exports){
+},{"./selectFromObject":628}],622:[function(require,module,exports){
 'use strict';
 
 var getMatcher = require('../../common/internal/getMatcher'),
@@ -13936,7 +14013,7 @@ function objectRemove(obj, f) {
 }
 
 module.exports = objectRemove;
-},{"../../common/internal/getMatcher":137,"../../common/var/coreUtilityAliases":194}],622:[function(require,module,exports){
+},{"../../common/internal/getMatcher":138,"../../common/var/coreUtilityAliases":195}],623:[function(require,module,exports){
 'use strict';
 
 var selectFromObject = require('./selectFromObject');
@@ -13946,7 +14023,7 @@ function objectSelect(obj, f) {
 }
 
 module.exports = objectSelect;
-},{"./selectFromObject":627}],623:[function(require,module,exports){
+},{"./selectFromObject":628}],624:[function(require,module,exports){
 'use strict';
 
 var getKeysWithObjectCoercion = require('./getKeysWithObjectCoercion');
@@ -13956,7 +14033,7 @@ function objectSize(obj) {
 }
 
 module.exports = objectSize;
-},{"./getKeysWithObjectCoercion":604}],624:[function(require,module,exports){
+},{"./getKeysWithObjectCoercion":605}],625:[function(require,module,exports){
 'use strict';
 
 var forEach = require('../../common/internal/forEach'),
@@ -13980,7 +14057,7 @@ function parseDeepQueryComponent(obj, match, val, deep, auto, separator, transfo
 }
 
 module.exports = parseDeepQueryComponent;
-},{"../../common/internal/forEach":130,"../../common/var/coreUtilityAliases":194,"./setQueryProperty":628}],625:[function(require,module,exports){
+},{"../../common/internal/forEach":131,"../../common/var/coreUtilityAliases":195,"./setQueryProperty":629}],626:[function(require,module,exports){
 'use strict';
 
 var DEEP_QUERY_STRING_REG = require('../var/DEEP_QUERY_STRING_REG'),
@@ -14002,7 +14079,7 @@ function parseQueryComponent(obj, key, val, deep, auto, separator, transform) {
 }
 
 module.exports = parseQueryComponent;
-},{"../var/DEEP_QUERY_STRING_REG":671,"./mapQuerySeparatorToKeys":612,"./parseDeepQueryComponent":624,"./setQueryProperty":628}],626:[function(require,module,exports){
+},{"../var/DEEP_QUERY_STRING_REG":672,"./mapQuerySeparatorToKeys":613,"./parseDeepQueryComponent":625,"./setQueryProperty":629}],627:[function(require,module,exports){
 'use strict';
 
 function sanitizeURIComponent(obj) {
@@ -14012,7 +14089,7 @@ function sanitizeURIComponent(obj) {
 }
 
 module.exports = sanitizeURIComponent;
-},{}],627:[function(require,module,exports){
+},{}],628:[function(require,module,exports){
 'use strict';
 
 var matchInObject = require('./matchInObject'),
@@ -14038,7 +14115,7 @@ function selectFromObject(obj, f, select) {
 }
 
 module.exports = selectFromObject;
-},{"../../common/var/coreUtilityAliases":194,"./matchInObject":613}],628:[function(require,module,exports){
+},{"../../common/var/coreUtilityAliases":195,"./matchInObject":614}],629:[function(require,module,exports){
 'use strict';
 
 var isDefined = require('../../common/internal/isDefined'),
@@ -14058,7 +14135,7 @@ function setQueryProperty(obj, key, val, auto, transform) {
 }
 
 module.exports = setQueryProperty;
-},{"../../common/internal/isDefined":150,"./getQueryValueAuto":606}],629:[function(require,module,exports){
+},{"../../common/internal/isDefined":151,"./getQueryValueAuto":607}],630:[function(require,module,exports){
 'use strict';
 
 var NON_DECIMAL_REG = require('../var/NON_DECIMAL_REG');
@@ -14068,7 +14145,7 @@ function stringIsDecimal(str) {
 }
 
 module.exports = stringIsDecimal;
-},{"../var/NON_DECIMAL_REG":672}],630:[function(require,module,exports){
+},{"../var/NON_DECIMAL_REG":673}],631:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks');
@@ -14087,7 +14164,7 @@ function tap(obj, arg) {
 }
 
 module.exports = tap;
-},{"../../common/var/classChecks":193}],631:[function(require,module,exports){
+},{"../../common/var/classChecks":194}],632:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -14147,7 +14224,7 @@ function collectObjectAsQueryString(obj, deep, transform, prefix, separator) {
 }
 
 module.exports = toQueryString;
-},{"../../common/internal/isObjectType":152,"../../common/var/classChecks":193,"../../common/var/coreUtilityAliases":194,"../var/internalToString":676,"./getURIComponentValue":607,"./sanitizeURIComponent":626}],632:[function(require,module,exports){
+},{"../../common/internal/isObjectType":153,"../../common/var/classChecks":194,"../../common/var/coreUtilityAliases":195,"../var/internalToString":677,"./getURIComponentValue":608,"./sanitizeURIComponent":627}],633:[function(require,module,exports){
 'use strict';
 
 var isUndefined = require('../../common/internal/isUndefined'),
@@ -14162,7 +14239,7 @@ function toQueryStringWithOptions(obj, opts) {
 }
 
 module.exports = toQueryStringWithOptions;
-},{"../../common/internal/isUndefined":156,"./toQueryString":631}],633:[function(require,module,exports){
+},{"../../common/internal/isUndefined":157,"./toQueryString":632}],634:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14177,7 +14254,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.intersect;
-},{"./internal/objectIntersectOrSubtract":618,"sugar-core":19}],634:[function(require,module,exports){
+},{"./internal/objectIntersectOrSubtract":619,"sugar-core":20}],635:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14206,7 +14283,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.invert;
-},{"../common/var/coreUtilityAliases":194,"sugar-core":19}],635:[function(require,module,exports){
+},{"../common/var/coreUtilityAliases":195,"sugar-core":20}],636:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14221,7 +14298,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.isArguments;
-},{"./internal/isArguments":609,"sugar-core":19}],636:[function(require,module,exports){
+},{"./internal/isArguments":610,"sugar-core":20}],637:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14229,7 +14306,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isArray;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],637:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],638:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14237,7 +14314,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isBoolean;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],638:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],639:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14245,7 +14322,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isDate;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],639:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],640:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14260,7 +14337,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.isEmpty;
-},{"./internal/objectSize":623,"sugar-core":19}],640:[function(require,module,exports){
+},{"./internal/objectSize":624,"sugar-core":20}],641:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14275,7 +14352,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.isEqual;
-},{"../common/internal/isEqual":151,"sugar-core":19}],641:[function(require,module,exports){
+},{"../common/internal/isEqual":152,"sugar-core":20}],642:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14283,7 +14360,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isError;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],642:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],643:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14291,7 +14368,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isFunction;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],643:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],644:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14299,7 +14376,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isMap;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],644:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],645:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14307,7 +14384,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isNumber;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],645:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],646:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14322,7 +14399,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.isObject;
-},{"../common/internal/isPlainObject":153,"sugar-core":19}],646:[function(require,module,exports){
+},{"../common/internal/isPlainObject":154,"sugar-core":20}],647:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14330,7 +14407,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isRegExp;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],647:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],648:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14338,7 +14415,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isSet;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],648:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],649:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -14346,7 +14423,7 @@ var Sugar = require('sugar-core');
 require('./build/buildClassCheckMethodsCall');
 
 module.exports = Sugar.Object.isString;
-},{"./build/buildClassCheckMethodsCall":587,"sugar-core":19}],649:[function(require,module,exports){
+},{"./build/buildClassCheckMethodsCall":588,"sugar-core":20}],650:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14361,7 +14438,7 @@ Sugar.Object.defineInstance({
 });
 
 module.exports = Sugar.Object.keys;
-},{"../common/internal/getKeys":136,"sugar-core":19}],650:[function(require,module,exports){
+},{"../common/internal/getKeys":137,"sugar-core":20}],651:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14376,7 +14453,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.least;
-},{"../enumerable/internal/getLeastOrMost":416,"sugar-core":19}],651:[function(require,module,exports){
+},{"../enumerable/internal/getLeastOrMost":417,"sugar-core":20}],652:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14391,7 +14468,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.map;
-},{"../enumerable/internal/objectMap":423,"sugar-core":19}],652:[function(require,module,exports){
+},{"../enumerable/internal/objectMap":424,"sugar-core":20}],653:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14406,7 +14483,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.max;
-},{"../enumerable/internal/getMinOrMax":417,"sugar-core":19}],653:[function(require,module,exports){
+},{"../enumerable/internal/getMinOrMax":418,"sugar-core":20}],654:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14421,7 +14498,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.median;
-},{"../enumerable/internal/median":419,"sugar-core":19}],654:[function(require,module,exports){
+},{"../enumerable/internal/median":420,"sugar-core":20}],655:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14436,7 +14513,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.merge;
-},{"./internal/mergeWithOptions":616,"sugar-core":19}],655:[function(require,module,exports){
+},{"./internal/mergeWithOptions":617,"sugar-core":20}],656:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14451,7 +14528,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.mergeAll;
-},{"./internal/mergeAll":614,"sugar-core":19}],656:[function(require,module,exports){
+},{"./internal/mergeAll":615,"sugar-core":20}],657:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14466,7 +14543,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.min;
-},{"../enumerable/internal/getMinOrMax":417,"sugar-core":19}],657:[function(require,module,exports){
+},{"../enumerable/internal/getMinOrMax":418,"sugar-core":20}],658:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14481,7 +14558,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.most;
-},{"../enumerable/internal/getLeastOrMost":416,"sugar-core":19}],658:[function(require,module,exports){
+},{"../enumerable/internal/getLeastOrMost":417,"sugar-core":20}],659:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14496,7 +14573,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.none;
-},{"../enumerable/internal/objectNone":424,"sugar-core":19}],659:[function(require,module,exports){
+},{"../enumerable/internal/objectNone":425,"sugar-core":20}],660:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14511,7 +14588,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.reduce;
-},{"../enumerable/internal/objectReduce":425,"sugar-core":19}],660:[function(require,module,exports){
+},{"../enumerable/internal/objectReduce":426,"sugar-core":20}],661:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14526,7 +14603,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.reject;
-},{"./internal/objectReject":620,"sugar-core":19}],661:[function(require,module,exports){
+},{"./internal/objectReject":621,"sugar-core":20}],662:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14541,7 +14618,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.remove;
-},{"./internal/objectRemove":621,"sugar-core":19}],662:[function(require,module,exports){
+},{"./internal/objectRemove":622,"sugar-core":20}],663:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14556,7 +14633,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.select;
-},{"./internal/objectSelect":622,"sugar-core":19}],663:[function(require,module,exports){
+},{"./internal/objectSelect":623,"sugar-core":20}],664:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14571,7 +14648,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.set;
-},{"../common/internal/deepSetProperty":119,"sugar-core":19}],664:[function(require,module,exports){
+},{"../common/internal/deepSetProperty":120,"sugar-core":20}],665:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14586,7 +14663,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.size;
-},{"./internal/objectSize":623,"sugar-core":19}],665:[function(require,module,exports){
+},{"./internal/objectSize":624,"sugar-core":20}],666:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14601,7 +14678,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.some;
-},{"../enumerable/var/objectMatchers":432,"sugar-core":19}],666:[function(require,module,exports){
+},{"../enumerable/var/objectMatchers":433,"sugar-core":20}],667:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14616,7 +14693,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.subtract;
-},{"./internal/objectIntersectOrSubtract":618,"sugar-core":19}],667:[function(require,module,exports){
+},{"./internal/objectIntersectOrSubtract":619,"sugar-core":20}],668:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14631,7 +14708,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.sum;
-},{"../enumerable/internal/sum":426,"sugar-core":19}],668:[function(require,module,exports){
+},{"../enumerable/internal/sum":427,"sugar-core":20}],669:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14646,7 +14723,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.tap;
-},{"./internal/tap":630,"sugar-core":19}],669:[function(require,module,exports){
+},{"./internal/tap":631,"sugar-core":20}],670:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14661,7 +14738,7 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.toQueryString;
-},{"./internal/toQueryStringWithOptions":632,"sugar-core":19}],670:[function(require,module,exports){
+},{"./internal/toQueryStringWithOptions":633,"sugar-core":20}],671:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -14676,37 +14753,37 @@ Sugar.Object.defineInstanceAndStatic({
 });
 
 module.exports = Sugar.Object.values;
-},{"./internal/getValues":608,"sugar-core":19}],671:[function(require,module,exports){
+},{"./internal/getValues":609,"sugar-core":20}],672:[function(require,module,exports){
 'use strict';
 
 module.exports = /^(.+?)(\[.*\])$/;
-},{}],672:[function(require,module,exports){
-'use strict';
-
-module.exports = /[^\d.-]/;
 },{}],673:[function(require,module,exports){
 'use strict';
 
-module.exports = Object.getOwnPropertyDescriptor;
+module.exports = /[^\d.-]/;
 },{}],674:[function(require,module,exports){
 'use strict';
 
-module.exports = Object.getOwnPropertyNames;
+module.exports = Object.getOwnPropertyDescriptor;
 },{}],675:[function(require,module,exports){
 'use strict';
 
-module.exports = Object.getOwnPropertySymbols;
+module.exports = Object.getOwnPropertyNames;
 },{}],676:[function(require,module,exports){
 'use strict';
 
-module.exports = Object.prototype.toString;
+module.exports = Object.getOwnPropertySymbols;
 },{}],677:[function(require,module,exports){
+'use strict';
+
+module.exports = Object.prototype.toString;
+},{}],678:[function(require,module,exports){
 'use strict';
 
 var buildDateRangeUnits = require('../internal/buildDateRangeUnits');
 
 buildDateRangeUnits();
-},{"../internal/buildDateRangeUnits":686}],678:[function(require,module,exports){
+},{"../internal/buildDateRangeUnits":687}],679:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -14723,7 +14800,7 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "clamp" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"./internal/Range":685,"./internal/rangeClamp":699}],679:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"./internal/Range":686,"./internal/rangeClamp":700}],680:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -14739,7 +14816,7 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "clone" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"./internal/Range":685}],680:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"./internal/Range":686}],681:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -14761,14 +14838,14 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "contains" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"./internal/Range":685}],681:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"./internal/Range":686}],682:[function(require,module,exports){
 'use strict';
 
 require('./build/buildDateRangeUnitsCall');
 
 // This package does not export anything as it is
 // simply defining "days" on Range.prototype.
-},{"./build/buildDateRangeUnitsCall":677}],682:[function(require,module,exports){
+},{"./build/buildDateRangeUnitsCall":678}],683:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -14785,14 +14862,14 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "every" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"./internal/Range":685,"./internal/rangeEvery":700}],683:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"./internal/Range":686,"./internal/rangeEvery":701}],684:[function(require,module,exports){
 'use strict';
 
 require('./build/buildDateRangeUnitsCall');
 
 // This package does not export anything as it is
 // simply defining "hours" on Range.prototype.
-},{"./build/buildDateRangeUnitsCall":677}],684:[function(require,module,exports){
+},{"./build/buildDateRangeUnitsCall":678}],685:[function(require,module,exports){
 'use strict';
 
 // Static Methods
@@ -14829,7 +14906,7 @@ require('./years');
 require('../number/downto');
 
 module.exports = require('sugar-core');
-},{"../date/range":361,"../number/cap":463,"../number/clamp":466,"../number/downto":478,"../number/range":542,"../number/upto":560,"../string/range":775,"./clamp":678,"./clone":679,"./contains":680,"./days":681,"./every":682,"./hours":683,"./intersect":703,"./isValid":704,"./milliseconds":705,"./minutes":706,"./months":707,"./seconds":708,"./span":709,"./toArray":710,"./toString":711,"./union":712,"./weeks":720,"./years":721,"sugar-core":19}],685:[function(require,module,exports){
+},{"../date/range":362,"../number/cap":464,"../number/clamp":467,"../number/downto":479,"../number/range":543,"../number/upto":561,"../string/range":776,"./clamp":679,"./clone":680,"./contains":681,"./days":682,"./every":683,"./hours":684,"./intersect":704,"./isValid":705,"./milliseconds":706,"./minutes":707,"./months":708,"./seconds":709,"./span":710,"./toArray":711,"./toString":712,"./union":713,"./weeks":721,"./years":722,"sugar-core":20}],686:[function(require,module,exports){
 'use strict';
 
 var cloneRangeMember = require('./cloneRangeMember');
@@ -14840,7 +14917,7 @@ function Range(start, end) {
 }
 
 module.exports = Range;
-},{"./cloneRangeMember":687}],686:[function(require,module,exports){
+},{"./cloneRangeMember":688}],687:[function(require,module,exports){
 'use strict';
 
 var MULTIPLIERS = require('../var/MULTIPLIERS'),
@@ -14872,7 +14949,7 @@ function buildDateRangeUnits() {
 }
 
 module.exports = buildDateRangeUnits;
-},{"../../common/internal/defineOnPrototype":124,"../../common/internal/forEach":130,"../../common/internal/simpleCapitalize":172,"../../common/var/trunc":199,"../var/DURATION_UNITS":714,"../var/MULTIPLIERS":718,"./Range":685,"./rangeEvery":700}],687:[function(require,module,exports){
+},{"../../common/internal/defineOnPrototype":125,"../../common/internal/forEach":131,"../../common/internal/simpleCapitalize":173,"../../common/var/trunc":200,"../var/DURATION_UNITS":715,"../var/MULTIPLIERS":719,"./Range":686,"./rangeEvery":701}],688:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -14889,7 +14966,7 @@ function cloneRangeMember(m) {
 }
 
 module.exports = cloneRangeMember;
-},{"../../common/var/classChecks":193,"./getRangeMemberPrimitiveValue":694}],688:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"./getRangeMemberPrimitiveValue":695}],689:[function(require,module,exports){
 'use strict';
 
 var Range = require('./Range'),
@@ -14930,7 +15007,7 @@ function createDateRangeFromString(str) {
 }
 
 module.exports = createDateRangeFromString;
-},{"../../common/var/namespaceAliases":198,"../var/DurationTextFormats":716,"./Range":685,"./getDateForRange":689,"./getDateIncrementObject":690,"./incrementDate":695}],689:[function(require,module,exports){
+},{"../../common/var/namespaceAliases":199,"../var/DurationTextFormats":717,"./Range":686,"./getDateForRange":690,"./getDateIncrementObject":691,"./incrementDate":696}],690:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -14951,7 +15028,7 @@ function getDateForRange(d) {
 }
 
 module.exports = getDateForRange;
-},{"../../common/var/classChecks":193,"../../common/var/namespaceAliases":198}],690:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"../../common/var/namespaceAliases":199}],691:[function(require,module,exports){
 'use strict';
 
 var DURATION_REG = require('../var/DURATION_REG'),
@@ -14982,7 +15059,7 @@ function getDateIncrementObject(amt) {
 }
 
 module.exports = getDateIncrementObject;
-},{"../../common/internal/simpleCapitalize":172,"../../common/var/classChecks":193,"../var/DURATION_REG":713}],691:[function(require,module,exports){
+},{"../../common/internal/simpleCapitalize":173,"../../common/var/classChecks":194,"../var/DURATION_REG":714}],692:[function(require,module,exports){
 'use strict';
 
 var mathAliases = require('../../common/var/mathAliases'),
@@ -14995,7 +15072,7 @@ function getGreaterPrecision(n1, n2) {
 }
 
 module.exports = getGreaterPrecision;
-},{"../../common/var/mathAliases":196,"./getPrecision":692}],692:[function(require,module,exports){
+},{"../../common/var/mathAliases":197,"./getPrecision":693}],693:[function(require,module,exports){
 'use strict';
 
 var periodSplit = require('../../common/internal/periodSplit');
@@ -15006,7 +15083,7 @@ function getPrecision(n) {
 }
 
 module.exports = getPrecision;
-},{"../../common/internal/periodSplit":164}],693:[function(require,module,exports){
+},{"../../common/internal/periodSplit":165}],694:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks');
@@ -15018,7 +15095,7 @@ function getRangeMemberNumericValue(m) {
 }
 
 module.exports = getRangeMemberNumericValue;
-},{"../../common/var/classChecks":193}],694:[function(require,module,exports){
+},{"../../common/var/classChecks":194}],695:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks');
@@ -15031,7 +15108,7 @@ function getRangeMemberPrimitiveValue(m) {
 }
 
 module.exports = getRangeMemberPrimitiveValue;
-},{"../../common/var/classChecks":193}],695:[function(require,module,exports){
+},{"../../common/var/classChecks":194}],696:[function(require,module,exports){
 'use strict';
 
 var MULTIPLIERS = require('../var/MULTIPLIERS'),
@@ -15050,7 +15127,7 @@ function incrementDate(src, amount, unit) {
 }
 
 module.exports = incrementDate;
-},{"../../common/internal/callDateGet":109,"../../common/internal/callDateSet":110,"../var/MULTIPLIERS":718}],696:[function(require,module,exports){
+},{"../../common/internal/callDateGet":110,"../../common/internal/callDateSet":111,"../var/MULTIPLIERS":719}],697:[function(require,module,exports){
 'use strict';
 
 var withPrecision = require('../../common/internal/withPrecision');
@@ -15060,7 +15137,7 @@ function incrementNumber(current, amount, precision) {
 }
 
 module.exports = incrementNumber;
-},{"../../common/internal/withPrecision":179}],697:[function(require,module,exports){
+},{"../../common/internal/withPrecision":180}],698:[function(require,module,exports){
 'use strict';
 
 var chr = require('../../common/var/chr');
@@ -15070,7 +15147,7 @@ function incrementString(current, amount) {
 }
 
 module.exports = incrementString;
-},{"../../common/var/chr":192}],698:[function(require,module,exports){
+},{"../../common/var/chr":193}],699:[function(require,module,exports){
 'use strict';
 
 var valueIsNotInfinite = require('./valueIsNotInfinite'),
@@ -15082,7 +15159,7 @@ function isValidRangeMember(m) {
 }
 
 module.exports = isValidRangeMember;
-},{"./getRangeMemberPrimitiveValue":694,"./valueIsNotInfinite":702}],699:[function(require,module,exports){
+},{"./getRangeMemberPrimitiveValue":695,"./valueIsNotInfinite":703}],700:[function(require,module,exports){
 'use strict';
 
 var cloneRangeMember = require('./cloneRangeMember');
@@ -15104,7 +15181,7 @@ function rangeClamp(range, obj) {
 }
 
 module.exports = rangeClamp;
-},{"./cloneRangeMember":687}],700:[function(require,module,exports){
+},{"./cloneRangeMember":688}],701:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -15175,7 +15252,7 @@ function rangeEvery(range, step, countOnly, fn) {
 }
 
 module.exports = rangeEvery;
-},{"../../common/var/classChecks":193,"./getDateIncrementObject":690,"./getGreaterPrecision":691,"./incrementDate":695,"./incrementNumber":696,"./incrementString":697,"./rangeIsValid":701}],701:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"./getDateIncrementObject":691,"./getGreaterPrecision":692,"./incrementDate":696,"./incrementNumber":697,"./incrementString":698,"./rangeIsValid":702}],702:[function(require,module,exports){
 'use strict';
 
 var isValidRangeMember = require('./isValidRangeMember');
@@ -15187,7 +15264,7 @@ function rangeIsValid(range) {
 }
 
 module.exports = rangeIsValid;
-},{"./isValidRangeMember":698}],702:[function(require,module,exports){
+},{"./isValidRangeMember":699}],703:[function(require,module,exports){
 'use strict';
 
 function valueIsNotInfinite(m) {
@@ -15195,7 +15272,7 @@ function valueIsNotInfinite(m) {
 }
 
 module.exports = valueIsNotInfinite;
-},{}],703:[function(require,module,exports){
+},{}],704:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -15217,7 +15294,7 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "intersect" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"./internal/Range":685}],704:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"./internal/Range":686}],705:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -15234,35 +15311,35 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "isValid" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"./internal/Range":685,"./internal/rangeIsValid":701}],705:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"./internal/Range":686,"./internal/rangeIsValid":702}],706:[function(require,module,exports){
 'use strict';
 
 require('./build/buildDateRangeUnitsCall');
 
 // This package does not export anything as it is
 // simply defining "milliseconds" on Range.prototype.
-},{"./build/buildDateRangeUnitsCall":677}],706:[function(require,module,exports){
+},{"./build/buildDateRangeUnitsCall":678}],707:[function(require,module,exports){
 'use strict';
 
 require('./build/buildDateRangeUnitsCall');
 
 // This package does not export anything as it is
 // simply defining "minutes" on Range.prototype.
-},{"./build/buildDateRangeUnitsCall":677}],707:[function(require,module,exports){
+},{"./build/buildDateRangeUnitsCall":678}],708:[function(require,module,exports){
 'use strict';
 
 require('./build/buildDateRangeUnitsCall');
 
 // This package does not export anything as it is
 // simply defining "months" on Range.prototype.
-},{"./build/buildDateRangeUnitsCall":677}],708:[function(require,module,exports){
+},{"./build/buildDateRangeUnitsCall":678}],709:[function(require,module,exports){
 'use strict';
 
 require('./build/buildDateRangeUnitsCall');
 
 // This package does not export anything as it is
 // simply defining "seconds" on Range.prototype.
-},{"./build/buildDateRangeUnitsCall":677}],709:[function(require,module,exports){
+},{"./build/buildDateRangeUnitsCall":678}],710:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -15284,7 +15361,7 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "span" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"../common/var/mathAliases":196,"./internal/Range":685,"./internal/getRangeMemberNumericValue":693,"./internal/rangeIsValid":701}],710:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"../common/var/mathAliases":197,"./internal/Range":686,"./internal/getRangeMemberNumericValue":694,"./internal/rangeIsValid":702}],711:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -15301,7 +15378,7 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "toArray" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"./internal/Range":685,"./internal/rangeEvery":700}],711:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"./internal/Range":686,"./internal/rangeEvery":701}],712:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -15318,7 +15395,7 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "toString" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"./internal/Range":685,"./internal/rangeIsValid":701}],712:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"./internal/Range":686,"./internal/rangeIsValid":702}],713:[function(require,module,exports){
 'use strict';
 
 var Range = require('./internal/Range'),
@@ -15337,17 +15414,17 @@ defineOnPrototype(Range, {
 
 // This package does not export anything as it is
 // simply defining "union" on Range.prototype.
-},{"../common/internal/defineOnPrototype":124,"./internal/Range":685}],713:[function(require,module,exports){
+},{"../common/internal/defineOnPrototype":125,"./internal/Range":686}],714:[function(require,module,exports){
 'use strict';
 
 var DURATION_UNITS = require('./DURATION_UNITS');
 
 module.exports = RegExp('(\\d+)?\\s*('+ DURATION_UNITS +')s?', 'i');
-},{"./DURATION_UNITS":714}],714:[function(require,module,exports){
+},{"./DURATION_UNITS":715}],715:[function(require,module,exports){
 'use strict';
 
 module.exports = 'year|month|week|day|hour|minute|second|millisecond';
-},{}],715:[function(require,module,exports){
+},{}],716:[function(require,module,exports){
 'use strict';
 
 var Range = require('../internal/Range'),
@@ -15365,7 +15442,7 @@ var DateRangeConstructor = function(start, end) {
 };
 
 module.exports = DateRangeConstructor;
-},{"../../common/var/classChecks":193,"../internal/Range":685,"../internal/createDateRangeFromString":688,"../internal/getDateForRange":689}],716:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"../internal/Range":686,"../internal/createDateRangeFromString":689,"../internal/getDateForRange":690}],717:[function(require,module,exports){
 'use strict';
 
 var FULL_CAPTURED_DURATION = require('./FULL_CAPTURED_DURATION');
@@ -15375,13 +15452,13 @@ module.exports = {
   RANGE_REG_REAR_DURATION: RegExp('(.+)\\s*for\\s*' + FULL_CAPTURED_DURATION, 'i'),
   RANGE_REG_FRONT_DURATION: RegExp('(?:for)?\\s*'+ FULL_CAPTURED_DURATION +'\\s*(?:starting)?\\s(?:at\\s)?(.+)', 'i')
 };
-},{"./FULL_CAPTURED_DURATION":717}],717:[function(require,module,exports){
+},{"./FULL_CAPTURED_DURATION":718}],718:[function(require,module,exports){
 'use strict';
 
 var DURATION_UNITS = require('./DURATION_UNITS');
 
 module.exports = '((?:\\d+)?\\s*(?:' + DURATION_UNITS + '))s?';
-},{"./DURATION_UNITS":714}],718:[function(require,module,exports){
+},{"./DURATION_UNITS":715}],719:[function(require,module,exports){
 'use strict';
 
 var MULTIPLIERS = {
@@ -15392,7 +15469,7 @@ var MULTIPLIERS = {
 };
 
 module.exports = MULTIPLIERS;
-},{}],719:[function(require,module,exports){
+},{}],720:[function(require,module,exports){
 'use strict';
 
 var Range = require('../internal/Range');
@@ -15402,21 +15479,21 @@ var PrimitiveRangeConstructor = function(start, end) {
 };
 
 module.exports = PrimitiveRangeConstructor;
-},{"../internal/Range":685}],720:[function(require,module,exports){
+},{"../internal/Range":686}],721:[function(require,module,exports){
 'use strict';
 
 require('./build/buildDateRangeUnitsCall');
 
 // This package does not export anything as it is
 // simply defining "weeks" on Range.prototype.
-},{"./build/buildDateRangeUnitsCall":677}],721:[function(require,module,exports){
+},{"./build/buildDateRangeUnitsCall":678}],722:[function(require,module,exports){
 'use strict';
 
 require('./build/buildDateRangeUnitsCall');
 
 // This package does not export anything as it is
 // simply defining "years" on Range.prototype.
-},{"./build/buildDateRangeUnitsCall":677}],722:[function(require,module,exports){
+},{"./build/buildDateRangeUnitsCall":678}],723:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15431,7 +15508,7 @@ Sugar.RegExp.defineInstance({
 });
 
 module.exports = Sugar.RegExp.addFlags;
-},{"../common/internal/getRegExpFlags":141,"sugar-core":19}],723:[function(require,module,exports){
+},{"../common/internal/getRegExpFlags":142,"sugar-core":20}],724:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15446,7 +15523,7 @@ Sugar.RegExp.defineStatic({
 });
 
 module.exports = Sugar.RegExp.escape;
-},{"../common/internal/escapeRegExp":127,"sugar-core":19}],724:[function(require,module,exports){
+},{"../common/internal/escapeRegExp":128,"sugar-core":20}],725:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15461,7 +15538,7 @@ Sugar.RegExp.defineInstance({
 });
 
 module.exports = Sugar.RegExp.getFlags;
-},{"../common/internal/getRegExpFlags":141,"sugar-core":19}],725:[function(require,module,exports){
+},{"../common/internal/getRegExpFlags":142,"sugar-core":20}],726:[function(require,module,exports){
 'use strict';
 
 // Static Methods
@@ -15474,7 +15551,7 @@ require('./removeFlags');
 require('./setFlags');
 
 module.exports = require('sugar-core');
-},{"./addFlags":722,"./escape":723,"./getFlags":724,"./removeFlags":726,"./setFlags":727,"sugar-core":19}],726:[function(require,module,exports){
+},{"./addFlags":723,"./escape":724,"./getFlags":725,"./removeFlags":727,"./setFlags":728,"sugar-core":20}],727:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15491,7 +15568,7 @@ Sugar.RegExp.defineInstance({
 });
 
 module.exports = Sugar.RegExp.removeFlags;
-},{"../common/internal/allCharsReg":104,"../common/internal/getRegExpFlags":141,"sugar-core":19}],727:[function(require,module,exports){
+},{"../common/internal/allCharsReg":105,"../common/internal/getRegExpFlags":142,"sugar-core":20}],728:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -15505,7 +15582,7 @@ Sugar.RegExp.defineInstance({
 });
 
 module.exports = Sugar.RegExp.setFlags;
-},{"sugar-core":19}],728:[function(require,module,exports){
+},{"sugar-core":20}],729:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15520,7 +15597,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.at;
-},{"../common/internal/getEntriesForIndexes":134,"sugar-core":19}],729:[function(require,module,exports){
+},{"../common/internal/getEntriesForIndexes":135,"sugar-core":20}],730:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15535,7 +15612,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.camelize;
-},{"./internal/stringCamelize":754,"sugar-core":19}],730:[function(require,module,exports){
+},{"./internal/stringCamelize":755,"sugar-core":20}],731:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15550,7 +15627,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.capitalize;
-},{"./internal/stringCapitalize":755,"sugar-core":19}],731:[function(require,module,exports){
+},{"./internal/stringCapitalize":756,"sugar-core":20}],732:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15565,7 +15642,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.chars;
-},{"./internal/stringEach":757,"sugar-core":19}],732:[function(require,module,exports){
+},{"./internal/stringEach":758,"sugar-core":20}],733:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15580,7 +15657,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.codes;
-},{"./internal/stringCodes":756,"sugar-core":19}],733:[function(require,module,exports){
+},{"./internal/stringCodes":757,"sugar-core":20}],734:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15597,7 +15674,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.compact;
-},{"../common/internal/trim":178,"sugar-core":19}],734:[function(require,module,exports){
+},{"../common/internal/trim":179,"sugar-core":20}],735:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15612,7 +15689,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.dasherize;
-},{"./internal/stringUnderscore":762,"sugar-core":19}],735:[function(require,module,exports){
+},{"./internal/stringUnderscore":763,"sugar-core":20}],736:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15629,7 +15706,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.decodeBase64;
-},{"./var/base64":806,"sugar-core":19}],736:[function(require,module,exports){
+},{"./var/base64":807,"sugar-core":20}],737:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15646,7 +15723,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.encodeBase64;
-},{"./var/base64":806,"sugar-core":19}],737:[function(require,module,exports){
+},{"./var/base64":807,"sugar-core":20}],738:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15667,7 +15744,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.escapeHTML;
-},{"../common/var/coreUtilityAliases":194,"./var/HTMLToEntityMap":798,"./var/HTML_ESCAPE_REG":800,"sugar-core":19}],738:[function(require,module,exports){
+},{"../common/var/coreUtilityAliases":195,"./var/HTMLToEntityMap":799,"./var/HTML_ESCAPE_REG":801,"sugar-core":20}],739:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -15681,7 +15758,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.escapeURL;
-},{"sugar-core":19}],739:[function(require,module,exports){
+},{"sugar-core":20}],740:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15697,7 +15774,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.first;
-},{"../common/internal/isUndefined":156,"sugar-core":19}],740:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"sugar-core":20}],741:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15712,7 +15789,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.forEach;
-},{"./internal/stringEach":757,"sugar-core":19}],741:[function(require,module,exports){
+},{"./internal/stringEach":758,"sugar-core":20}],742:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15733,7 +15810,7 @@ Sugar.String.defineInstanceWithArguments({
 });
 
 module.exports = Sugar.String.format;
-},{"../common/internal/isObjectType":152,"./var/stringFormatMatcher":808,"sugar-core":19}],742:[function(require,module,exports){
+},{"../common/internal/isObjectType":153,"./var/stringFormatMatcher":809,"sugar-core":20}],743:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15748,7 +15825,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.from;
-},{"./internal/numberOrIndex":748,"sugar-core":19}],743:[function(require,module,exports){
+},{"./internal/numberOrIndex":749,"sugar-core":20}],744:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15764,7 +15841,7 @@ Sugar.String.defineInstance({
 }, [ENHANCEMENTS_FLAG, STRING_ENHANCEMENTS_FLAG]);
 
 module.exports = Sugar.String.includes;
-},{"../common/internal/fixArgumentLength":129,"../common/var/ENHANCEMENTS_FLAG":182,"./internal/callIncludesWithRegexSupport":746,"./var/STRING_ENHANCEMENTS_FLAG":804,"sugar-core":19}],744:[function(require,module,exports){
+},{"../common/internal/fixArgumentLength":130,"../common/var/ENHANCEMENTS_FLAG":183,"./internal/callIncludesWithRegexSupport":747,"./var/STRING_ENHANCEMENTS_FLAG":805,"sugar-core":20}],745:[function(require,module,exports){
 'use strict';
 
 // Instance Methods
@@ -15814,7 +15891,7 @@ require('./unescapeURL');
 require('./words');
 
 module.exports = require('sugar-core');
-},{"./at":728,"./camelize":729,"./capitalize":730,"./chars":731,"./codes":732,"./compact":733,"./dasherize":734,"./decodeBase64":735,"./encodeBase64":736,"./escapeHTML":737,"./escapeURL":738,"./first":739,"./forEach":740,"./format":741,"./from":742,"./includes":743,"./insert":745,"./isBlank":767,"./isEmpty":768,"./last":769,"./lines":770,"./pad":771,"./padLeft":772,"./padRight":773,"./parameterize":774,"./remove":776,"./removeAll":777,"./removeTags":778,"./replaceAll":779,"./reverse":780,"./shift":781,"./spacify":782,"./stripTags":783,"./titleize":784,"./to":785,"./toNumber":786,"./trimLeft":787,"./trimRight":788,"./truncate":789,"./truncateOnWord":790,"./underscore":791,"./unescapeHTML":792,"./unescapeURL":793,"./words":809,"sugar-core":19}],745:[function(require,module,exports){
+},{"./at":729,"./camelize":730,"./capitalize":731,"./chars":732,"./codes":733,"./compact":734,"./dasherize":735,"./decodeBase64":736,"./encodeBase64":737,"./escapeHTML":738,"./escapeURL":739,"./first":740,"./forEach":741,"./format":742,"./from":743,"./includes":744,"./insert":746,"./isBlank":768,"./isEmpty":769,"./last":770,"./lines":771,"./pad":772,"./padLeft":773,"./padRight":774,"./parameterize":775,"./remove":777,"./removeAll":778,"./removeTags":779,"./replaceAll":780,"./reverse":781,"./shift":782,"./spacify":783,"./stripTags":784,"./titleize":785,"./to":786,"./toNumber":787,"./trimLeft":788,"./trimRight":789,"./truncate":790,"./truncateOnWord":791,"./underscore":792,"./unescapeHTML":793,"./unescapeURL":794,"./words":810,"sugar-core":20}],746:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -15830,7 +15907,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.insert;
-},{"../common/internal/isUndefined":156,"sugar-core":19}],746:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"sugar-core":20}],747:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -15849,7 +15926,7 @@ function callIncludesWithRegexSupport(str, search, position) {
 }
 
 module.exports = callIncludesWithRegexSupport;
-},{"../../common/var/classChecks":193,"../var/nativeIncludes":807}],747:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"../var/nativeIncludes":808}],748:[function(require,module,exports){
 'use strict';
 
 var trim = require('../../common/internal/trim'),
@@ -15860,7 +15937,7 @@ function eachWord(str, fn) {
 }
 
 module.exports = eachWord;
-},{"../../common/internal/trim":178,"./stringEach":757}],748:[function(require,module,exports){
+},{"../../common/internal/trim":179,"./stringEach":758}],749:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks');
@@ -15878,7 +15955,7 @@ function numberOrIndex(str, n, from) {
 }
 
 module.exports = numberOrIndex;
-},{"../../common/var/classChecks":193}],749:[function(require,module,exports){
+},{"../../common/var/classChecks":194}],750:[function(require,module,exports){
 'use strict';
 
 var isDefined = require('../../common/internal/isDefined'),
@@ -15889,7 +15966,7 @@ function padString(num, padding) {
 }
 
 module.exports = padString;
-},{"../../common/internal/isDefined":150,"../../common/internal/repeatString":167}],750:[function(require,module,exports){
+},{"../../common/internal/isDefined":151,"../../common/internal/repeatString":168}],751:[function(require,module,exports){
 'use strict';
 
 var map = require('../../common/internal/map'),
@@ -15911,7 +15988,7 @@ function replaceTags(str, find, replacement, strip) {
 }
 
 module.exports = replaceTags;
-},{"../../common/internal/escapeRegExp":127,"../../common/internal/map":159,"../../common/var/classChecks":193,"./runTagReplacements":753}],751:[function(require,module,exports){
+},{"../../common/internal/escapeRegExp":128,"../../common/internal/map":160,"../../common/var/classChecks":194,"./runTagReplacements":754}],752:[function(require,module,exports){
 'use strict';
 
 function reverseString(str) {
@@ -15919,7 +15996,7 @@ function reverseString(str) {
 }
 
 module.exports = reverseString;
-},{}],752:[function(require,module,exports){
+},{}],753:[function(require,module,exports){
 'use strict';
 
 function runGlobalMatch(str, reg) {
@@ -15936,7 +16013,7 @@ function runGlobalMatch(str, reg) {
 }
 
 module.exports = runGlobalMatch;
-},{}],753:[function(require,module,exports){
+},{}],754:[function(require,module,exports){
 'use strict';
 
 var tagIsVoid = require('./tagIsVoid'),
@@ -16019,7 +16096,7 @@ function runTagReplacements(str, reg, strip, replacement, fullString) {
 }
 
 module.exports = runTagReplacements;
-},{"../../common/var/classChecks":193,"./tagIsVoid":763}],754:[function(require,module,exports){
+},{"../../common/var/classChecks":194,"./tagIsVoid":764}],755:[function(require,module,exports){
 'use strict';
 
 var CAMELIZE_REG = require('../var/CAMELIZE_REG'),
@@ -16040,7 +16117,7 @@ function stringCamelize(str, upper) {
 }
 
 module.exports = stringCamelize;
-},{"../../common/internal/getAcronym":133,"../var/CAMELIZE_REG":794,"./stringCapitalize":755,"./stringUnderscore":762}],755:[function(require,module,exports){
+},{"../../common/internal/getAcronym":134,"../var/CAMELIZE_REG":795,"./stringCapitalize":756,"./stringUnderscore":763}],756:[function(require,module,exports){
 'use strict';
 
 var CAPITALIZE_REG = require('../var/CAPITALIZE_REG'),
@@ -16054,7 +16131,7 @@ function stringCapitalize(str, downcase, all) {
 }
 
 module.exports = stringCapitalize;
-},{"../../common/internal/simpleCapitalize":172,"../var/CAPITALIZE_REG":795}],756:[function(require,module,exports){
+},{"../../common/internal/simpleCapitalize":173,"../var/CAPITALIZE_REG":796}],757:[function(require,module,exports){
 'use strict';
 
 function stringCodes(str, fn) {
@@ -16070,7 +16147,7 @@ function stringCodes(str, fn) {
 }
 
 module.exports = stringCodes;
-},{}],757:[function(require,module,exports){
+},{}],758:[function(require,module,exports){
 'use strict';
 
 var isDefined = require('../../common/internal/isDefined'),
@@ -16117,7 +16194,7 @@ function stringEach(str, search, fn) {
 }
 
 module.exports = stringEach;
-},{"../../common/internal/escapeRegExp":127,"../../common/internal/getRegExpFlags":141,"../../common/internal/isDefined":150,"../../common/var/classChecks":193,"./runGlobalMatch":752}],758:[function(require,module,exports){
+},{"../../common/internal/escapeRegExp":128,"../../common/internal/getRegExpFlags":142,"../../common/internal/isDefined":151,"../../common/var/classChecks":194,"./runGlobalMatch":753}],759:[function(require,module,exports){
 'use strict';
 
 var escapeRegExp = require('../../common/internal/escapeRegExp');
@@ -16133,7 +16210,7 @@ function stringParameterize(str, separator) {
 }
 
 module.exports = stringParameterize;
-},{"../../common/internal/escapeRegExp":127}],759:[function(require,module,exports){
+},{"../../common/internal/escapeRegExp":128}],760:[function(require,module,exports){
 'use strict';
 
 var classChecks = require('../../common/var/classChecks'),
@@ -16162,7 +16239,7 @@ function stringReplaceAll(str, f, replace) {
 }
 
 module.exports = stringReplaceAll;
-},{"../../common/internal/escapeRegExp":127,"../../common/internal/getRegExpFlags":141,"../../common/var/classChecks":193}],760:[function(require,module,exports){
+},{"../../common/internal/escapeRegExp":128,"../../common/internal/getRegExpFlags":142,"../../common/var/classChecks":194}],761:[function(require,module,exports){
 'use strict';
 
 var stringUnderscore = require('./stringUnderscore');
@@ -16172,7 +16249,7 @@ function stringSpacify(str) {
 }
 
 module.exports = stringSpacify;
-},{"./stringUnderscore":762}],761:[function(require,module,exports){
+},{"./stringUnderscore":763}],762:[function(require,module,exports){
 'use strict';
 
 var DOWNCASED_WORDS = require('../var/DOWNCASED_WORDS'),
@@ -16205,7 +16282,7 @@ function stringTitleize(str) {
 }
 
 module.exports = stringTitleize;
-},{"../../common/internal/getAcronym":133,"../../common/internal/getHumanWord":135,"../../common/internal/indexOf":147,"../../common/internal/runHumanRules":168,"../var/DOWNCASED_WORDS":796,"./eachWord":747,"./stringCapitalize":755,"./stringSpacify":760}],762:[function(require,module,exports){
+},{"../../common/internal/getAcronym":134,"../../common/internal/getHumanWord":136,"../../common/internal/indexOf":148,"../../common/internal/runHumanRules":169,"../var/DOWNCASED_WORDS":797,"./eachWord":748,"./stringCapitalize":756,"./stringSpacify":761}],763:[function(require,module,exports){
 'use strict';
 
 var Inflections = require('../../common/var/Inflections');
@@ -16223,7 +16300,7 @@ function stringUnderscore(str) {
 }
 
 module.exports = stringUnderscore;
-},{"../../common/var/Inflections":184}],763:[function(require,module,exports){
+},{"../../common/var/Inflections":185}],764:[function(require,module,exports){
 'use strict';
 
 var HTML_VOID_ELEMENTS = require('../var/HTML_VOID_ELEMENTS'),
@@ -16234,7 +16311,7 @@ function tagIsVoid(tag) {
 }
 
 module.exports = tagIsVoid;
-},{"../../common/internal/indexOf":147,"../var/HTML_VOID_ELEMENTS":801}],764:[function(require,module,exports){
+},{"../../common/internal/indexOf":148,"../var/HTML_VOID_ELEMENTS":802}],765:[function(require,module,exports){
 'use strict';
 
 var TRUNC_REG = require('../var/TRUNC_REG'),
@@ -16254,7 +16331,7 @@ function truncateOnWord(str, limit, fromLeft) {
 }
 
 module.exports = truncateOnWord;
-},{"../../common/internal/filter":128,"../var/TRUNC_REG":805,"./reverseString":751}],765:[function(require,module,exports){
+},{"../../common/internal/filter":129,"../var/TRUNC_REG":806,"./reverseString":752}],766:[function(require,module,exports){
 'use strict';
 
 var isUndefined = require('../../common/internal/isUndefined'),
@@ -16287,7 +16364,7 @@ function truncateString(str, length, from, ellipsis, split) {
 }
 
 module.exports = truncateString;
-},{"../../common/internal/isUndefined":156,"../../common/var/mathAliases":196,"./truncateOnWord":764}],766:[function(require,module,exports){
+},{"../../common/internal/isUndefined":157,"../../common/var/mathAliases":197,"./truncateOnWord":765}],767:[function(require,module,exports){
 'use strict';
 
 var HTML_ENTITY_REG = require('../var/HTML_ENTITY_REG'),
@@ -16302,7 +16379,7 @@ function unescapeHTML(str) {
 }
 
 module.exports = unescapeHTML;
-},{"../../common/var/chr":192,"../var/HTMLFromEntityMap":797,"../var/HTML_ENTITY_REG":799}],767:[function(require,module,exports){
+},{"../../common/var/chr":193,"../var/HTMLFromEntityMap":798,"../var/HTML_ENTITY_REG":800}],768:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16317,7 +16394,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.isBlank;
-},{"../common/internal/trim":178,"sugar-core":19}],768:[function(require,module,exports){
+},{"../common/internal/trim":179,"sugar-core":20}],769:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -16331,7 +16408,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.isEmpty;
-},{"sugar-core":19}],769:[function(require,module,exports){
+},{"sugar-core":20}],770:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16348,7 +16425,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.last;
-},{"../common/internal/isUndefined":156,"sugar-core":19}],770:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"sugar-core":20}],771:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16364,7 +16441,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.lines;
-},{"../common/internal/trim":178,"./internal/stringEach":757,"sugar-core":19}],771:[function(require,module,exports){
+},{"../common/internal/trim":179,"./internal/stringEach":758,"sugar-core":20}],772:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16390,7 +16467,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.pad;
-},{"../common/internal/coercePositiveInteger":111,"../common/var/mathAliases":196,"./internal/padString":749,"sugar-core":19}],772:[function(require,module,exports){
+},{"../common/internal/coercePositiveInteger":112,"../common/var/mathAliases":197,"./internal/padString":750,"sugar-core":20}],773:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16410,7 +16487,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.padLeft;
-},{"../common/internal/coercePositiveInteger":111,"../common/var/mathAliases":196,"./internal/padString":749,"sugar-core":19}],773:[function(require,module,exports){
+},{"../common/internal/coercePositiveInteger":112,"../common/var/mathAliases":197,"./internal/padString":750,"sugar-core":20}],774:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16430,7 +16507,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.padRight;
-},{"../common/internal/coercePositiveInteger":111,"../common/var/mathAliases":196,"./internal/padString":749,"sugar-core":19}],774:[function(require,module,exports){
+},{"../common/internal/coercePositiveInteger":112,"../common/var/mathAliases":197,"./internal/padString":750,"sugar-core":20}],775:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16445,7 +16522,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.parameterize;
-},{"./internal/stringParameterize":758,"sugar-core":19}],775:[function(require,module,exports){
+},{"./internal/stringParameterize":759,"sugar-core":20}],776:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16458,7 +16535,7 @@ Sugar.String.defineStatic({
 });
 
 module.exports = Sugar.String.range;
-},{"../range/var/PrimitiveRangeConstructor":719,"sugar-core":19}],776:[function(require,module,exports){
+},{"../range/var/PrimitiveRangeConstructor":720,"sugar-core":20}],777:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -16472,7 +16549,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.remove;
-},{"sugar-core":19}],777:[function(require,module,exports){
+},{"sugar-core":20}],778:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16487,7 +16564,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.removeAll;
-},{"./internal/stringReplaceAll":759,"sugar-core":19}],778:[function(require,module,exports){
+},{"./internal/stringReplaceAll":760,"sugar-core":20}],779:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16502,7 +16579,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.removeTags;
-},{"./internal/replaceTags":750,"sugar-core":19}],779:[function(require,module,exports){
+},{"./internal/replaceTags":751,"sugar-core":20}],780:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16517,7 +16594,7 @@ Sugar.String.defineInstanceWithArguments({
 });
 
 module.exports = Sugar.String.replaceAll;
-},{"./internal/stringReplaceAll":759,"sugar-core":19}],780:[function(require,module,exports){
+},{"./internal/stringReplaceAll":760,"sugar-core":20}],781:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16532,7 +16609,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.reverse;
-},{"./internal/reverseString":751,"sugar-core":19}],781:[function(require,module,exports){
+},{"./internal/reverseString":752,"sugar-core":20}],782:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16553,7 +16630,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.shift;
-},{"../common/var/chr":192,"./internal/stringCodes":756,"sugar-core":19}],782:[function(require,module,exports){
+},{"../common/var/chr":193,"./internal/stringCodes":757,"sugar-core":20}],783:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16568,7 +16645,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.spacify;
-},{"./internal/stringSpacify":760,"sugar-core":19}],783:[function(require,module,exports){
+},{"./internal/stringSpacify":761,"sugar-core":20}],784:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16583,7 +16660,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.stripTags;
-},{"./internal/replaceTags":750,"sugar-core":19}],784:[function(require,module,exports){
+},{"./internal/replaceTags":751,"sugar-core":20}],785:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16598,7 +16675,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.titleize;
-},{"./internal/stringTitleize":761,"sugar-core":19}],785:[function(require,module,exports){
+},{"./internal/stringTitleize":762,"sugar-core":20}],786:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16615,7 +16692,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.to;
-},{"../common/internal/isUndefined":156,"./internal/numberOrIndex":748,"sugar-core":19}],786:[function(require,module,exports){
+},{"../common/internal/isUndefined":157,"./internal/numberOrIndex":749,"sugar-core":20}],787:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16630,7 +16707,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.toNumber;
-},{"../common/internal/stringToNumber":177,"sugar-core":19}],787:[function(require,module,exports){
+},{"../common/internal/stringToNumber":178,"sugar-core":20}],788:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16645,7 +16722,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.trimLeft;
-},{"./var/LEFT_TRIM_REG":802,"sugar-core":19}],788:[function(require,module,exports){
+},{"./var/LEFT_TRIM_REG":803,"sugar-core":20}],789:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16660,7 +16737,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.trimRight;
-},{"./var/RIGHT_TRIM_REG":803,"sugar-core":19}],789:[function(require,module,exports){
+},{"./var/RIGHT_TRIM_REG":804,"sugar-core":20}],790:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16675,7 +16752,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.truncate;
-},{"./internal/truncateString":765,"sugar-core":19}],790:[function(require,module,exports){
+},{"./internal/truncateString":766,"sugar-core":20}],791:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16690,7 +16767,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.truncateOnWord;
-},{"./internal/truncateString":765,"sugar-core":19}],791:[function(require,module,exports){
+},{"./internal/truncateString":766,"sugar-core":20}],792:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16705,7 +16782,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.underscore;
-},{"./internal/stringUnderscore":762,"sugar-core":19}],792:[function(require,module,exports){
+},{"./internal/stringUnderscore":763,"sugar-core":20}],793:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16720,7 +16797,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.unescapeHTML;
-},{"./internal/unescapeHTML":766,"sugar-core":19}],793:[function(require,module,exports){
+},{"./internal/unescapeHTML":767,"sugar-core":20}],794:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core');
@@ -16734,15 +16811,15 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.unescapeURL;
-},{"sugar-core":19}],794:[function(require,module,exports){
+},{"sugar-core":20}],795:[function(require,module,exports){
 'use strict';
 
 module.exports = /(^|_)([^_]+)/g;
-},{}],795:[function(require,module,exports){
+},{}],796:[function(require,module,exports){
 'use strict';
 
 module.exports = /[^\u0000-\u0040\u005B-\u0060\u007B-\u007F]+('s)?/g;
-},{}],796:[function(require,module,exports){
+},{}],797:[function(require,module,exports){
 'use strict';
 
 var DOWNCASED_WORDS = [
@@ -16752,7 +16829,7 @@ var DOWNCASED_WORDS = [
 ];
 
 module.exports = DOWNCASED_WORDS;
-},{}],797:[function(require,module,exports){
+},{}],798:[function(require,module,exports){
 'use strict';
 
 var HTMLFromEntityMap = {
@@ -16765,7 +16842,7 @@ var HTMLFromEntityMap = {
 };
 
 module.exports = HTMLFromEntityMap;
-},{}],798:[function(require,module,exports){
+},{}],799:[function(require,module,exports){
 'use strict';
 
 var HTMLFromEntityMap = require('./HTMLFromEntityMap'),
@@ -16785,15 +16862,15 @@ function buildEntities() {
 buildEntities();
 
 module.exports = HTMLToEntityMap;
-},{"../../common/var/coreUtilityAliases":194,"./HTMLFromEntityMap":797}],799:[function(require,module,exports){
+},{"../../common/var/coreUtilityAliases":195,"./HTMLFromEntityMap":798}],800:[function(require,module,exports){
 'use strict';
 
 module.exports = /&#?(x)?([\w\d]{0,5});/gi;
-},{}],800:[function(require,module,exports){
+},{}],801:[function(require,module,exports){
 'use strict';
 
 module.exports = /[&<>]/g;
-},{}],801:[function(require,module,exports){
+},{}],802:[function(require,module,exports){
 'use strict';
 
 var HTML_VOID_ELEMENTS = [
@@ -16802,29 +16879,29 @@ var HTML_VOID_ELEMENTS = [
 ];
 
 module.exports = HTML_VOID_ELEMENTS;
-},{}],802:[function(require,module,exports){
+},{}],803:[function(require,module,exports){
 'use strict';
 
 var TRIM_CHARS = require('../../common/var/TRIM_CHARS');
 
 module.exports = RegExp('^['+ TRIM_CHARS +']+');
-},{"../../common/var/TRIM_CHARS":190}],803:[function(require,module,exports){
+},{"../../common/var/TRIM_CHARS":191}],804:[function(require,module,exports){
 'use strict';
 
 var TRIM_CHARS = require('../../common/var/TRIM_CHARS');
 
 module.exports = RegExp('['+ TRIM_CHARS +']+$');
-},{"../../common/var/TRIM_CHARS":190}],804:[function(require,module,exports){
+},{"../../common/var/TRIM_CHARS":191}],805:[function(require,module,exports){
 'use strict';
 
 module.exports = 'enhanceString';
-},{}],805:[function(require,module,exports){
+},{}],806:[function(require,module,exports){
 'use strict';
 
 var TRIM_CHARS = require('../../common/var/TRIM_CHARS');
 
 module.exports = RegExp('(?=[' + TRIM_CHARS + '])');
-},{"../../common/var/TRIM_CHARS":190}],806:[function(require,module,exports){
+},{"../../common/var/TRIM_CHARS":191}],807:[function(require,module,exports){
 (function (Buffer){
 'use strict';
 
@@ -16932,18 +17009,18 @@ module.exports = {
   decodeBase64: decodeBase64
 };
 }).call(this,require("buffer").Buffer)
-},{"../../common/var/chr":192,"buffer":815}],807:[function(require,module,exports){
+},{"../../common/var/chr":193,"buffer":816}],808:[function(require,module,exports){
 'use strict';
 
 module.exports = String.prototype.includes;
-},{}],808:[function(require,module,exports){
+},{}],809:[function(require,module,exports){
 'use strict';
 
 var deepGetProperty = require('../../common/internal/deepGetProperty'),
     createFormatMatcher = require('../../common/internal/createFormatMatcher');
 
 module.exports = createFormatMatcher(deepGetProperty);
-},{"../../common/internal/createFormatMatcher":115,"../../common/internal/deepGetProperty":117}],809:[function(require,module,exports){
+},{"../../common/internal/createFormatMatcher":116,"../../common/internal/deepGetProperty":118}],810:[function(require,module,exports){
 'use strict';
 
 var Sugar = require('sugar-core'),
@@ -16959,7 +17036,7 @@ Sugar.String.defineInstance({
 });
 
 module.exports = Sugar.String.words;
-},{"../common/internal/trim":178,"./internal/stringEach":757,"sugar-core":19}],810:[function(require,module,exports){
+},{"../common/internal/trim":179,"./internal/stringEach":758,"sugar-core":20}],811:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -17032,7 +17109,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":813}],811:[function(require,module,exports){
+},{"./request":814}],812:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -17159,7 +17236,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":810,"./relay":812}],812:[function(require,module,exports){
+},{"./dispatch":811,"./relay":813}],813:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -17202,7 +17279,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],813:[function(require,module,exports){
+},{}],814:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -17327,11 +17404,11 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":816}],814:[function(require,module,exports){
+},{"events":817}],815:[function(require,module,exports){
 
-},{}],815:[function(require,module,exports){
-arguments[4][814][0].apply(exports,arguments)
-},{"dup":814}],816:[function(require,module,exports){
+},{}],816:[function(require,module,exports){
+arguments[4][815][0].apply(exports,arguments)
+},{"dup":815}],817:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -17635,7 +17712,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],817:[function(require,module,exports){
+},{}],818:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 

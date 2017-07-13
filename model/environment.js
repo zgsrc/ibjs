@@ -12,6 +12,35 @@ class Environment extends Events {
         this.workspace = { };
     }
     
+    assign(name, value) {
+        if (this.workspace[name] == null) {
+            this.workspace[name] = value;
+            this.workspace.symbols.append(name).sort();
+        }
+    }
+    
+    free(name) {
+        if (this.workspace[name]) {
+            this.workspace[name].cancel();
+        }
+        
+        delete this.workspace[name];
+        this.symbols.remove(name);
+    }
+    
+    load(symbol, cb) {
+        this.session.securities(symbol, (err, securities) => {
+            if (err && cb) cb(err);
+            else {
+                securities.forEach(s => {
+                    this.assign(s.contract.symbol, s);
+                });
+                
+                if (cb) cb(null, s);
+            }
+        });
+    }
+    
     setup(cb) {
         this.workspace.session = this.session;
         
@@ -21,17 +50,8 @@ class Environment extends Events {
         
         this.workspace.$ = text => {
             this.session.securities(text, (err, list) => {
-                if (err) {
-                    this.emit("error", err);
-                }
-                else {
-                    this.workspace.symbols = this.workspace.symbols.union(list.map(l => l.contract.symbol)).sort();
-                    list.forEach(l => {
-                        if (this.workspace[l.contract.symbol] == null) {
-                            this.workspace[l.contract.symbol] = l;
-                        }
-                    });
-                }
+                if (err) this.emit("error", err);
+                else list.forEach(l => assign(l.contract.symbol, l));
             });
         };
         
