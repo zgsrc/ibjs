@@ -30,13 +30,17 @@ class Environment extends Events {
     
     load(symbol, cb) {
         this.session.securities(symbol, (err, securities) => {
-            if (err && cb) cb(err);
+            if (err) {
+                if (cb) cb(err);
+                else this.emit("error", err);
+            }
             else {
                 securities.forEach(s => {
                     this.assign(s.contract.symbol, s);
                 });
                 
                 if (cb) cb(null, s);
+                else this.emit("load", s);
             }
         });
     }
@@ -48,7 +52,7 @@ class Environment extends Events {
         }
         
         if (!symbols || !symbols.length) {
-            cb();
+            if (cb) cb();
         }
         else {
             let result = [ ];
@@ -56,13 +60,15 @@ class Environment extends Events {
                 this.load(symbols.pop(), (err, sym) => {
                     if (err) {
                         clearTimeout(loop);
-                        cb(err);
+                        if (cb) cb(err);
+                        else this.emit("error", err);
                     }
                     else {
                         result.push(sym);
                         if (symbols.length == 0) {
                             clearTimeout(loop);
-                            cb(null, result);
+                            if (cb) cb(null, result);
+                            else this.emit("load", result);
                         }
                     }
                 });
@@ -70,11 +76,33 @@ class Environment extends Events {
         }
     }
     
-    setup(cb) {
+    setup(symbols, cb) {
+        if (cb == null && Object.isFunction(symbols)) {
+            cb = symbols;
+            symbols = null;
+        }
+        
         this.workspace.session = this.session;
         
+        this.workspace.symbols = [ ];
+        
         this.workspace.account = this.session.account().on("load", err => {
-            if (cb) cb(err);
+            if (cb) {
+                cb(err);
+            }
+            else {
+                if (symbols) {
+                    if (Array.isArray(symbols)) {
+                        loadMany(symbols);
+                    }
+                    else {
+                        load(symbols);
+                    }
+                }
+                else {
+                    this.emit("load");
+                }
+            }
         });
         
         this.workspace.$ = text => {
@@ -83,8 +111,6 @@ class Environment extends Events {
                 else list.forEach(l => this.assign(l.contract.symbol, l));
             });
         };
-        
-        this.workspace.symbols = [ ];
         
         return this;
     }
