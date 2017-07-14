@@ -17,14 +17,36 @@ Futures:
 
 Options:
 
-* Sep16'17 AAPL puts at 110
-
-Currencies:
-
-* USD.EUR currency
+* Sep'17 AAPL puts at 110
 
 Indices:
 
 * INDU index
 
-> **NOTE**: This capability does not serve as a security search.  Use the [IB contract search](https://pennies.interactivebrokers.com/cstools/contract_info) for that.
+## Date
+
+Dates must be in the format of a three letter month abbreviation, and then either a 2 or 4 digit year component.  The year component may be separated by a dash (-), slash (/), or apostrophe (').  If the date component is omitted, the current year is used.
+
+For example:
+
+    Jan
+    Jun18
+    Sep'2018
+
+Alternatively, the "Front" syntax can be used to reference the front contract.  This format is composed of the word "Front", followed by a cutoff day of month (i.e. the last safe day to trade before rolling over to the next contract), and an optional month offset.  If the cutoff day is omitted, it is assumed to be 15.
+
+For example:
+
+    Front
+    Front+1
+    Front20
+    Front15+1
+    Front20+5
+
+## Symbol
+
+Symbols should be the common symbol for the contract.  You can use the [IB contract search](https://pennies.interactivebrokers.com/cstools/contract_info) to find this.
+
+## Type
+
+Type must be either a security type, or in the case of options, a side.

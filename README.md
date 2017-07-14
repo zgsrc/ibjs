@@ -36,6 +36,7 @@ The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to m
         Loaded securities are directly addressable (like AAPL.quote).
         A list of loaded securities is stored in "symbols".
         Type .exit to quit.
+        
         > 
 
 ## Programming

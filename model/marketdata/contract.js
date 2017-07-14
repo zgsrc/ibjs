@@ -28,6 +28,10 @@ class Contract extends RealTime {
         this.orderTypes = this.orderTypes.split(",").compact();
         this.validExchanges = this.validExchanges.split(",").compact();
 
+        if (this.summary.expiry) {
+            this.expiry = Date.create(Date.create(this.summary.expiry).format("{Month} {dd}, {yyyy}") + " 00:00:00 " + this.timeZoneId);
+        }
+        
         let timeZoneId = this.timeZoneId,
             tradingHours = (this.tradingHours || "").split(';').map(d => d.split(':')),
             liquidHours = (this.liquidHours || "").split(';').map(d => d.split(':'));
@@ -150,6 +154,20 @@ class Contract extends RealTime {
 
 exports.details = details;
 
+let frontMonth = exports.frontMonth = function(cutOffDay, offset) {
+    let date = Date.create();
+    
+    if (date.getDate() >= cutOffDay) {
+        date.addMonths(1);
+    }
+    
+    if (offset) {
+        date.addMonths(offset);
+    }
+
+    return date;
+};
+
 function parse(definition) {
     if (Object.isNumber(definition)) {
         definition = { conId: definition };
@@ -173,14 +191,31 @@ function parse(definition) {
             }
             
             if (date) {
-                let month = date.to(3),
-                    year = date.from(3).trim();
+                if (date.toLowerCase().startsWith("front")) {
+                    date = date.from(5);
+                    date = date.split('+');
+                    
+                    if (date[0] == "") date[0] = "15";
+                    
+                    let cutOff = parseInt(date[0]),
+                        offset = date[1] ? parseInt(date[1]) : 0;
+                    
+                    date = frontMonth(cutOff, offset);
+                    if (type == "FUT") date.addMonths(1);
+                }
+                else {
+                    let month = date.to(3),
+                        year = date.from(3).trim();
 
-                if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) year = year.from(1);
-                if (year.length == 2) year = "20" + year;
-                if (year == "") year = Date.create().fullYear();
+                    if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) year = year.from(1);
+                    
+                    if (year.length == 2) year = "20" + year;
+                    if (year == "") year = Date.create().fullYear();
 
-                date = Date.create(month + " " + year).format("{yyyy}{MM}");
+                    date = Date.create(month + " " + year);
+                }
+                
+                date = date.format("{yyyy}{MM}");
                 definition.expiry = date;
             }
 

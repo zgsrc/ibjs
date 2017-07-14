@@ -41,6 +41,35 @@ class Environment extends Events {
         });
     }
     
+    loadMany(symbols, interval, cb) {
+        if (cb == null && Object.isFunction(interval)) {
+            cb = interval;
+            interval = 50;
+        }
+        
+        if (!symbols || !symbols.length) {
+            cb();
+        }
+        else {
+            let result = [ ];
+            let loop = setTimeout(() => {
+                this.load(symbols.pop(), (err, sym) => {
+                    if (err) {
+                        clearTimeout(loop);
+                        cb(err);
+                    }
+                    else {
+                        result.push(sym);
+                        if (symbols.length == 0) {
+                            clearTimeout(loop);
+                            cb(null, result);
+                        }
+                    }
+                });
+            }, Math.max(interval || 50, 50));
+        }
+    }
+    
     setup(cb) {
         this.workspace.session = this.session;
         
@@ -51,7 +80,7 @@ class Environment extends Events {
         this.workspace.$ = text => {
             this.session.securities(text, (err, list) => {
                 if (err) this.emit("error", err);
-                else list.forEach(l => assign(l.contract.symbol, l));
+                else list.forEach(l => this.assign(l.contract.symbol, l));
             });
         };
         
