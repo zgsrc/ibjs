@@ -57,4 +57,8 @@ Symbols should be the common symbol for the contract.  You can use the [IB contr
 
 ## Type
 
-Type must be either a security type, or in the case of options, a side.
+Type must be either a security type, or in the case of options, a side.  See options at `sdk.flags.SECURITY_TYPE`.
+
+## Currency
+
+Valid currencies are in `sdk.flags.CURRENCIES`.
