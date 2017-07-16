@@ -114,7 +114,7 @@ class Bars extends MarketData {
     }
     
     study(name, length, calculator) {
-        if (Sugar.Object.isString(calculator)) {
+        if (typeof calculator == "string") {
             calculator = studies[calculator];
         }
         
@@ -161,7 +161,7 @@ class Bars extends MarketData {
 }
 
 function barDate(size, date) {
-    let now = new Date(date),
+    let now = Sugar.Date.create(date),
         count = parseInt(size.split(' ').first());
 
     if (size.endsWith("day")) now = now.beginningOfDay();
