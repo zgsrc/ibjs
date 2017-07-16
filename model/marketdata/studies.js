@@ -1,5 +1,3 @@
-require("sugar").extend();
-
 const studies = module.exports = { };
 
 // Simple moving average

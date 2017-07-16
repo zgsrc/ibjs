@@ -3,7 +3,8 @@
 const MarketData = require("./marketdata"),
       studies = require("./studies"),
       flags = require("../flags"),
-      fs = require("fs");
+      fs = require("fs"),
+      Sugar = require("sugar");
 
 class Bars extends MarketData {
     
@@ -25,6 +26,7 @@ class Bars extends MarketData {
                 this.emit("update", this.series.last());
             }
             else {
+                data.synthetic = true;
                 data.date = bd;
                 data.timestamp = bd.getTime();
                 
@@ -37,7 +39,7 @@ class Bars extends MarketData {
     }
     
     set(options) {
-        this.options = Object.merge(this.options, options);
+        this.options = Sugar.Object.merge(this.options, options);
         return this;
     }
     
@@ -68,10 +70,25 @@ class Bars extends MarketData {
         );
         
         let length = this.series.length;
+        
+        let min = Number.MAX_VALUE,
+            max = Number.MIN_VALUE;
+        
         req.on("data", record => {
-            record.date = Date.create(record.date);
+            record.date = Sugar.Date.create(record.date);
             record.timestamp = record.date.getTime();
-            this.series.push(record);
+            
+            if (min > record.timestamp) min = record.timestamp;
+            if (max < record.timestamp) max = record.timestamp;
+            
+            let existing = this.series.find(r => r.timestamp == record.timestamp);
+            if (existing && existing.synthetic) {
+                Sugar.Object.merge(existing, record);
+                delete existing.synthetic;
+            }
+            else {
+                this.series.push(record);
+            }
         }).once("error", err => {
             if (!retry && err.timeout) {
                 this.history(cb, true);
@@ -81,13 +98,9 @@ class Bars extends MarketData {
                 else this.emit("error", err);
             }
         }).once("end", () => {
-            let newRecords = this.series.from(length).map("timestamp"),
-                range = [ newRecords.min(), newRecords.max() ];
-            
-            this.series = this.series.unique().sortBy("timestamp");
+            this.series = this.series.sortBy("timestamp");
             this.options.cursor = this.series.first().date;
-            
-            this.emit("load", range);
+            this.emit("load", [ min, max ]);
             if (cb) cb();
         }).send();
         
@@ -101,7 +114,7 @@ class Bars extends MarketData {
     }
     
     study(name, length, calculator) {
-        if (Object.isString(calculator)) {
+        if (Sugar.Object.isString(calculator)) {
             calculator = studies[calculator];
         }
         

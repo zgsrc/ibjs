@@ -8,7 +8,7 @@ class Account extends RealTime {
     constructor(session, options) {
         super(session);
         
-        if (Object.isString(options)) {
+        if (typeof options == "string") {
             options = { 
                 id: options,
                 orders: true,
@@ -16,7 +16,7 @@ class Account extends RealTime {
             };
         }
         
-        if (!Object.isString(options.id)) {
+        if (typeof options.id != "string") {
             throw new Error("Account id is required.");
         }
         

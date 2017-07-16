@@ -39,24 +39,25 @@ class Environment extends Events {
                     this.assign(s.contract.symbol, s);
                 });
                 
-                if (cb) cb(null, s);
-                else this.emit("load", s);
+                if (cb) cb(null, securities);
+                else this.emit("load", securities);
             }
         });
     }
     
     loadMany(symbols, interval, cb) {
-        if (cb == null && Object.isFunction(interval)) {
+        if (cb == null && typeof interval == "function") {
             cb = interval;
             interval = 50;
         }
         
         if (!symbols || !symbols.length) {
             if (cb) cb();
+            else this.emit("load");
         }
         else {
             let result = [ ];
-            let loop = setTimeout(() => {
+            let loop = setInterval(() => {
                 this.load(symbols.pop(), (err, sym) => {
                     if (err) {
                         clearTimeout(loop);
@@ -77,7 +78,7 @@ class Environment extends Events {
     }
     
     setup(symbols, cb) {
-        if (cb == null && Object.isFunction(symbols)) {
+        if (cb == null && typeof symbols == "function") {
             cb = symbols;
             symbols = null;
         }
@@ -87,20 +88,18 @@ class Environment extends Events {
         this.workspace.symbols = [ ];
         
         this.workspace.account = this.session.account().on("load", err => {
-            if (cb) {
-                cb(err);
+            if (err) {
+                if (cb) cb(err);
+                else this.emit("error", err);
             }
             else {
                 if (symbols) {
-                    if (Array.isArray(symbols)) {
-                        loadMany(symbols);
-                    }
-                    else {
-                        load(symbols);
-                    }
+                    if (Array.isArray(symbols)) this.loadMany(symbols, cb);
+                    else this.load(symbols, cb);
                 }
                 else {
-                    this.emit("load");
+                    if (cb) cb();
+                    else this.emit("load");
                 }
             }
         });

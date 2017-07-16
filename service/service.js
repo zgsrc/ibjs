@@ -1,11 +1,10 @@
 "use strict";
 
-require("sugar").extend();
-
 const tickTypeToString = require("ib").util.tickTypeToString,
       parseXML = require('xml2js').parseString,
       Dispatch = require("./dispatch"),
-      relay = require("./relay");
+      relay = require("./relay"),
+      Sugar = require("sugar");
 
 class Service {
     
@@ -120,7 +119,7 @@ class Service {
 function singleton(event, send, cancel, timeout, ib, dispatch) {
     return function() {
         return dispatch.singleton(
-            `${ send }(${ Array.create(arguments).map(JSON.stringify).join(', ') })`,
+            `${ send }(${ Sugar.Array.create(arguments).map(JSON.stringify).join(', ') })`,
             req => ib[send](...arguments), 
             cancel ? req => ib[cancel]() : null, 
             timeout,
@@ -132,7 +131,7 @@ function singleton(event, send, cancel, timeout, ib, dispatch) {
 function instance(send, cancel, timeout, ib, dispatch) {
     return function() {
         return dispatch.instance(
-            `${ send }(${ Array.create(arguments).map(JSON.stringify).join(', ') })`,
+            `${ send }(${ Sugar.Array.create(arguments).map(JSON.stringify).join(', ') })`,
             req => ib[send](req.id, ...arguments), 
             cancel ? req => ib[cancel](req.id) : null, 
             timeout

@@ -1,6 +1,7 @@
 "use strict";
 
-const Events = require("events");
+const Events = require("events"),
+      Sugar = require("sugar");
 
 class RealTime extends Events {
     
@@ -12,7 +13,7 @@ class RealTime extends Events {
     }
     
     get fields() {
-        return Object.keys(this).exclude(/\_.*/).subtract(this._exclude).exclude("cancel").exclude("domain");
+        return Sugar.Object.keys(this).exclude(/\_.*/).subtract(this._exclude).exclude("cancel").exclude("domain");
     }
     
     each(fn) {

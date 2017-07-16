@@ -1,15 +1,14 @@
 "use strict";
 
-require('sugar');
-
-var Events = require("events"),
-    Accounts = require("./accounting/accounts"),
-    Positions = require("./accounting/positions"),
-    Orders = require("./accounting/orders"),
-    Trades = require("./accounting/trades"),
-    Account = require("./accounting/account"),
-    contract = require("./marketdata/contract"),
-    securities = require("./marketdata/security");
+const Events = require("events"),
+      Accounts = require("./accounting/accounts"),
+      Positions = require("./accounting/positions"),
+      Orders = require("./accounting/orders"),
+      Trades = require("./accounting/trades"),
+      Account = require("./accounting/account"),
+      contract = require("./marketdata/contract"),
+      securities = require("./marketdata/security"),
+      Sugar = require("sugar");
 
 class Session extends Events {
     
@@ -38,7 +37,7 @@ class Session extends Events {
                     let status = name[0];
                     name = name[1];
 
-                    this.connectivity[name] = { status: status, time: new Date() };   
+                    this.connectivity[name] = { status: status, time: Sugar.Date.create() };   
                     this.emit("connectivity", this.connectivity[name]);
                 }
                 else {

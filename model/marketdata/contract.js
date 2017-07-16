@@ -3,7 +3,8 @@
 require("sugar").extend();
 
 const flags = require("../flags"),
-      RealTime = require("../realtime");
+      RealTime = require("../realtime"),
+      Sugar = require("Sugar");
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -22,14 +23,14 @@ class Contract extends RealTime {
     } 
     
     merge(data) {
-        Object.merge(this, data);
+        Sugar.Object.merge(this, data);
         
         this.symbol = this.summary.localSymbol.compact().underscore().toUpperCase();
         this.orderTypes = this.orderTypes.split(",").compact();
         this.validExchanges = this.validExchanges.split(",").compact();
 
         if (this.summary.expiry) {
-            this.expiry = Date.create(Date.create(this.summary.expiry).format("{Month} {dd}, {yyyy}") + " 00:00:00 " + this.timeZoneId);
+            this.expiry = Sugar.Date.create(Sugar.Date.create(this.summary.expiry).format("{Month} {dd}, {yyyy}") + " 00:00:00 " + this.timeZoneId);
         }
         
         let timeZoneId = this.timeZoneId,
@@ -40,7 +41,7 @@ class Contract extends RealTime {
         tradingHours.forEach(arr => {
             if (arr[1] == "CLOSED") return;
             
-            let date = Date.create(arr[0], { future: true });
+            let date = Sugar.Date.create(arr[0], { future: true });
             
             let label = date.format("{Mon}{dd}");
             if (!schedule[label]) schedule[label] = { };
@@ -51,8 +52,8 @@ class Contract extends RealTime {
             schedule[label].end = [ ];
             
             times.forEach(time => {
-                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
-                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
+                let start = Sugar.Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
+                    end = Sugar.Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
 
                 if (end.isBefore(start)) start.addDays(-1);
 
@@ -68,7 +69,7 @@ class Contract extends RealTime {
         liquidHours.forEach(arr => {
             if (arr[1] == "CLOSED") return;
             
-            let date = Date.create(arr[0], { future: true });
+            let date = Sugar.Date.create(arr[0], { future: true });
             
             let label = date.format("{Mon}{dd}");
             if (!schedule[label]) schedule[label] = { };
@@ -79,8 +80,8 @@ class Contract extends RealTime {
             schedule[label].close = [ ];
             
             times.forEach(time => {
-                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
-                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
+                let start = Sugar.Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
+                    end = Sugar.Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
 
                 if (end.isBefore(start)) start.addDays(-1);
 
@@ -95,7 +96,7 @@ class Contract extends RealTime {
         
         Object.defineProperty(schedule, 'today', {
             get: function() {
-                let now = Date.create(),
+                let now = Sugar.Date.create(),
                     today = schedule[now.format("{Mon}{dd}")];
                 
                 if (today.end.every(end => end.isBefore(now))) {
@@ -121,7 +122,7 @@ class Contract extends RealTime {
     }
     
     get marketsOpen() {
-        let now = Date.create(), hours = this.schedule.today;
+        let now = Sugar.Date.create(), hours = this.schedule.today;
         if (hours && hours.start && hours.end) {
             for (let i = 0; i < hours.start.length; i++) {
                 if (now.isBetween(hours.start[i], hours.end[i])) return true;
@@ -132,7 +133,7 @@ class Contract extends RealTime {
     }
     
     get marketsLiquid() {
-        let now = Date.create(), hours = this.schedule.today;
+        let now = Sugar.Date.create(), hours = this.schedule.today;
         if (hours && hours.open && hours.close) {
             for (let i = 0; i < hours.open.length; i++) {
                 if (now.isBetween(hours.open[i], hours.close[i])) return true;
@@ -155,7 +156,7 @@ class Contract extends RealTime {
 exports.details = details;
 
 let frontMonth = exports.frontMonth = function(cutOffDay, offset) {
-    let date = Date.create();
+    let date = Sugar.Date.create();
     
     if (date.getDate() >= cutOffDay) {
         date.addMonths(1);
@@ -169,10 +170,10 @@ let frontMonth = exports.frontMonth = function(cutOffDay, offset) {
 };
 
 function parse(definition) {
-    if (Object.isNumber(definition)) {
+    if (Sugar.Object.isNumber(definition)) {
         definition = { conId: definition };
     }
-    else if (Object.isString(definition)) {
+    else if (Sugar.Object.isString(definition)) {
         let tokens = definition.split(' ').map("trim").compact(true);
         definition = { };
         
@@ -210,9 +211,9 @@ function parse(definition) {
                     if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) year = year.from(1);
                     
                     if (year.length == 2) year = "20" + year;
-                    if (year == "") year = Date.create().fullYear();
+                    if (year == "") year = Sugar.Date.create().fullYear();
 
-                    date = Date.create(month + " " + year);
+                    date = Sugar.Date.create(month + " " + year);
                 }
                 
                 date = date.format("{yyyy}{MM}");
@@ -245,7 +246,7 @@ function parse(definition) {
         });
     }
 
-    if (Object.isObject(definition)) {
+    if (Sugar.Object.isObject(definition)) {
         if (definition.symbol == null && definition.conId == null) {
             throw new Error("Definition must have symbol or conId.");
         }

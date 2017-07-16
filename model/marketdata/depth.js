@@ -2,7 +2,8 @@
 
 require("sugar").extend();
 
-const MarketData = require("./marketdata");
+const MarketData = require("./marketdata"),
+      Sugar = require("sugar");
 
 class Depth extends MarketData {
     
@@ -25,7 +26,7 @@ class Depth extends MarketData {
         if (this.exchanges.indexOf(exchange) < 0) {
             this.exchanges.push(exchange);
             
-            let copy = Object.clone(this.contract.summary);
+            let copy = Sugar.Object.clone(this.contract.summary);
             copy.exchange = exchange;
             
             this.bids[exchange] = { };
@@ -65,7 +66,7 @@ class Depth extends MarketData {
     }
     
     stream(exchanges, rows) {
-        if (Object.isNumber(exchanges)) {
+        if (Sugar.Object.isNumber(exchanges)) {
             rows = exchanges;
             exchanges = null;
         }

@@ -1,12 +1,12 @@
 "use strict";
 
-require("sugar").extend();
-
-Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
-
 const MarketData = require("./marketdata"),
       Bars = require("./bars"),
-      flags = require("../flags");
+      flags = require("../flags"),
+      fs = require('fs'),
+      Sugar = require("sugar");
+
+Sugar.Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
 
 class Charts extends MarketData {
     
@@ -134,18 +134,18 @@ class Charts extends MarketData {
     }
     
     get all() {
-        return Object.values(this.seconds)
-                     .append(Object.values(this.minutes))
-                     .append(Object.values(this.hours))
+        return Sugar.Object.values(this.seconds)
+                     .append(Sugar.Object.values(this.minutes))
+                     .append(Sugar.Object.values(this.hours))
                      .append(this.daily)
                      .append(this.weekly)
                      .append(this.monthly);
     }
     
     each(cb) {
-        Object.values(this.seconds).forEach(cb);
-        Object.values(this.minutes).forEach(cb);
-        Object.values(this.hours).forEach(cb);
+        Sugar.Object.values(this.seconds).forEach(cb);
+        Sugar.Object.values(this.minutes).forEach(cb);
+        Sugar.Object.values(this.hours).forEach(cb);
         cb(this.daily);
         cb(this.weekly);
         cb(this.monthly);
@@ -154,11 +154,11 @@ class Charts extends MarketData {
     
     stream(retry) {
         this.service.headTimestamp(this.contract.summary, this.field, 0, 1).once("data", data => {
-            this.earliestDataTimestamp = Date.create(data);
+            this.earliestDataTimestamp = Sugar.Date.create(data);
         }).send();
         
         let req = this.service.realTimeBars(this.contract.summary, 5, this.field, false).on("data", data => {
-            data.date = Date.create(data.date * 1000);
+            data.date = Sugar.Date.create(data.date * 1000);
             data.timestamp = data.date.getTime();
             this.series.push(data);
             this.emit("update", data);
@@ -179,6 +179,21 @@ class Charts extends MarketData {
         this.cancel = () => req.cancel();
         
         return this;
+    }
+    
+    load(path) {
+        let txt = fs.readFileSync(path),
+            data = JSON.parse(txt.toString()),
+            charts = security.charts.all();
+
+        data.forEach((series, i) => {
+            charts[i].load(series);
+        });
+    }
+
+    store(path) {
+        let data = this.all().map(bars => bars.series.exclude(b => b.synthetic));
+        fs.writeFileSync(path, JSON.stringify(data));
     }
     
 }
