@@ -245,7 +245,10 @@ function parse(definition) {
                 else if (field[0].toLowerCase() == "at") definition.strike = parseFloat(field[1]);
                 else throw new Error("Unrecognized field " + field.join(' '));
             }
-            else throw new Error("Unrecognized field " + field.join(' '));
+            else {
+                console.log(field);
+                throw new Error("Unrecognized field " + field.join(' '));
+            }
         });
     }
 
@@ -258,10 +261,15 @@ function parse(definition) {
             if (!definition.secType && flags.CURRENCIES.indexOf(definition.symbol) >= 0) definition.secType = "CASH";
             else definition.secType = definition.secType || "STK";
 
-            if (definition.secType == "CASH") definition.exchange = "IDEALPRO";
-            else if (definition.secType == "STK" || definition.secType == "OPT") definition.exchange = definition.exchange || "SMART";
-
-            definition.currency = definition.currency || "USD";
+            if (definition.secType == "CASH") {
+                definition.exchange = "IDEALPRO";
+                definition.currency = definition.symbol.from(4);
+                definition.symbol = definition.symbol.to(3);
+            }
+            else {
+                if (definition.secType == "STK" || definition.secType == "OPT") definition.exchange = definition.exchange || "SMART";
+                definition.currency = definition.currency || "USD";
+            }
         }
         
         return definition;
@@ -278,6 +286,7 @@ function lookup(session, description, cb) {
     try { summary = parse(description); }
     catch (ex) { cb(ex); return; }
     
+    console.log(summary);
     details(session, summary, cb);
 }
 

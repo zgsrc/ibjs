@@ -23,6 +23,14 @@ Indices:
 
 * INDU index
 
+Currencies:
+
+* EUR currency in USD
+* EUR.USD currency
+* EUR,USD currency
+* EUR/USD currency
+* EUR*USD currency
+
 ## Date
 
 Dates must be in the format of a three letter month abbreviation, and then either a 2 or 4 digit year component.  The year component may be separated by a dash (-), slash (/), or apostrophe (').  If the date component is omitted, the current year is used.
