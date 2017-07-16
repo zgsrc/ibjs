@@ -129,7 +129,7 @@ function parseQuotePart(datum) {
             time: Sugar.Date.create(parseInt(value[2])),
             volume: parseInt(value[3]),
             vwap: parseFloat(value[4]),
-            marketMaker: new Boolean(value[5])
+            marketMaker: value[5] == "true" ? true : false
         };
     }
     else if (key == "FUNDAMENTAL_RATIOS") {
