@@ -170,7 +170,7 @@ class Charts extends MarketData {
                     this.emit("error", `Real time streaming bars request for ${this.contract.summary.localSymbol} timed out.`);    
                 }
                 else {
-                    stream(true);
+                    this.stream(true);
                 }
             }
             else this.emit("error", err);
