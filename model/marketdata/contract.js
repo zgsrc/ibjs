@@ -99,7 +99,7 @@ class Contract extends RealTime {
                 let now = Sugar.Date.create(),
                     today = schedule[now.format("{Mon}{dd}")];
                 
-                if (today.end.every(end => end.isBefore(now))) {
+                if (today && today.end.every(end => end.isBefore(now))) {
                     now.addDays(1);
                     today = schedule[now.format("{Mon}{dd}")];
                 }
@@ -110,8 +110,11 @@ class Contract extends RealTime {
         
         Object.defineProperty(schedule, 'tomorrow', {
             get: function() {
-                let now = this.today.addDays(1);
-                return schedule[now.format("{Mon}{dd}")];
+                if (this.today) {
+                    let now = this.today.addDays(1);
+                    return schedule[now.format("{Mon}{dd}")];
+                }
+                else return null;
             }
         });
         

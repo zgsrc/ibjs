@@ -113,7 +113,7 @@ class Quote extends MarketData {
 }
 
 function parseQuotePart(datum) {
-    let key = Suger.String(datum.name), value = datum.value;
+    let key = Sugar.String(datum.name), value = datum.value;
     
     if (!key || key == "") throw new Error("Tick key not found.");
     if (value === null || value === "") throw new Error("No tick data value found.");
@@ -144,7 +144,7 @@ function parseQuotePart(datum) {
         value = ratios;
     }
     else if (key == "NEWS_TICK") {
-        value = Suger.String(value).split(" ");
+        value = Sugar.String(value).split(" ");
         value = {
             id: value[0],
             time: value[1],
