@@ -13,6 +13,10 @@ class Environment extends Events {
     }
     
     assign(name, value) {
+        if (!this.workspace.symbols) {
+            this.workspace.symbols = [ ];
+        }
+        
         if (this.workspace[name] == null) {
             this.workspace[name] = value;
             this.workspace.symbols.append(name).sort();
@@ -28,7 +32,7 @@ class Environment extends Events {
         this.symbols.remove(name);
     }
     
-    load(symbol, cb) {
+    security(symbol, cb) {
         this.session.securities(symbol, (err, securities) => {
             if (err) {
                 if (cb) cb(err);
@@ -36,6 +40,7 @@ class Environment extends Events {
             }
             else {
                 securities.forEach(s => {
+                    s.environment = this;
                     this.assign(s.contract.symbol, s);
                 });
                 
@@ -45,7 +50,7 @@ class Environment extends Events {
         });
     }
     
-    loadMany(symbols, interval, cb) {
+    securities(symbols, interval, cb) {
         if (cb == null && typeof interval == "function") {
             cb = interval;
             interval = 50;
@@ -58,14 +63,14 @@ class Environment extends Events {
         else {
             let result = [ ];
             let loop = setInterval(() => {
-                this.load(symbols.pop(), (err, sym) => {
+                this.security(symbols.pop(), (err, sym) => {
                     if (err) {
                         clearTimeout(loop);
                         if (cb) cb(err);
                         else this.emit("error", err);
                     }
                     else {
-                        result.push(sym);
+                        result.append(sym);
                         if (symbols.length == 0) {
                             clearTimeout(loop);
                             if (cb) cb(null, result);
@@ -80,48 +85,65 @@ class Environment extends Events {
             }, Math.max(interval || 50, 50));
         }
     }
-    
-    setup(symbols, cb) {
-        if (cb == null && typeof symbols == "function") {
-            cb = symbols;
-            symbols = null;
+
+    account(options, cb) {
+        if (cb == null && typeof options == "function") {
+            cb = options;
+            options = null;
         }
         
-        this.workspace.session = this.session;
+        this.workspace.account = this.session.account(options).on("load", err => cb(err, this.workspace.account));
+    }
+    
+    accountSummary(options, cb) {
+        if (cb == null && typeof options == "function") {
+            cb = options;
+            options = null;
+        }
         
-        this.workspace.symbols = [ ];
+        this.workspace.accountSummary = this.session.accountSummary(options).on("load", err => cb(err, this.workspace.accountSummary));
+    }
+    
+    positions(options, cb) {
+        if (cb == null && typeof options == "function") {
+            cb = options;
+            options = null;
+        }
         
-        this.workspace.account = this.session.account().on("load", err => {
-            if (err) {
-                if (cb) cb(err);
-                else this.emit("error", err);
-            }
-            else {
-                if (symbols) {
-                    if (Array.isArray(symbols)) this.loadMany(symbols, cb);
-                    else this.load(symbols, cb);
-                }
-                else {
-                    if (cb) cb();
-                    else this.emit("load");
-                }
-            }
-        });
+        this.workspace.positions = this.session.positions(options).on("load", err => cb(err, this.workspace.positions));
+    }
+    
+    orders(options, cb) {
+        if (cb == null && typeof options == "function") {
+            cb = options;
+            options = null;
+        }
         
-        this.workspace.$ = text => {
-            this.session.securities(text, (err, list) => {
-                if (err) this.emit("error", err);
-                else list.forEach(l => this.assign(l.contract.symbol, l));
-            });
-        };
+        this.workspace.orders = this.session.orders(options).on("load", err => cb(err, this.workspace.orders));
+    }
+    
+    trades(options, cb) {
+        if (cb == null && typeof options == "function") {
+            cb = options;
+            options = null;
+        }
         
-        return this;
+        this.workspace.trades = this.session.trades(options).on("load", err => cb(err, this.workspace.trades));
     }
     
     terminal(repl) {
         for (let key in this.workspace) {
             repl.context[key] = this.workspace[key];
         }
+        
+        repl.context.session = this.session;
+        
+        repl.context.$ = text => {
+            this.session.securities(text, (err, list) => {
+                if (err) this.emit("error", err);
+                else list.forEach(l => this.assign(l.contract.symbol, l));
+            });
+        };
         
         this.workspace = repl.context;
         repl.on("exit", () => this.session.close());

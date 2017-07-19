@@ -89,14 +89,13 @@ class Quote extends MarketData {
         
         req.on("data", datum  => {
             datum = parseQuotePart(datum);
-
+            if (this[datum.key]) this.emit("load");
+            
             let oldValue = this[datum.key];
             this[datum.key] = datum.value;
             this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
         }).on("error", err => {
             this.emit("error", err);
-        }).on("end", () => {
-            this.emit("load");
         }).send();
         
         return this;
