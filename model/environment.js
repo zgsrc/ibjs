@@ -73,6 +73,10 @@ class Environment extends Events {
                         }
                     }
                 });
+                
+                if (symbols.length == 0) {
+                    clearTimeout(loop);
+                }
             }, Math.max(interval || 50, 50));
         }
     }
