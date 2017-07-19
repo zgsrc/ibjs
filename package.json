@@ -3,6 +3,10 @@
   "version": "0.8.9",
   "description": "Interactive Brokers SDK framework build atop the native javascript API.",
   "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples"
+  },
   "dependencies": {
     "ib": "^0.2.1",
     "sugar": "^2.0.4",
@@ -21,6 +25,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/triploc/ib-sdk.git"
-  }
+    "url": "git+https://github.com/triploc/ib-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/triploc/ib-sdk/issues"
+  },
+  "homepage": "https://github.com/triploc/ib-sdk#readme",
+  "devDependencies": {}
 }
