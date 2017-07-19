@@ -246,7 +246,6 @@ function parse(definition) {
                 else throw new Error("Unrecognized field " + field.join(' '));
             }
             else {
-                console.log(field);
                 throw new Error("Unrecognized field " + field.join(' '));
             }
         });
@@ -286,7 +285,6 @@ function lookup(session, description, cb) {
     try { summary = parse(description); }
     catch (ex) { cb(ex); return; }
     
-    console.log(summary);
     details(session, summary, cb);
 }
 
