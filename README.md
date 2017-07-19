@@ -17,28 +17,6 @@ The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workst
 
 The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a TCP socket connection from Node.js to an IB Gateway or TWS instance.
 
-## Setup
-
-1. Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software.
-    * The API and SDK expect to connect to an authenticated user session.
-    * The IB software must be configured to accept API connections.
-    * The SDK connects over `tcp://localhost:4001` by default.
-    * Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if so desired.
-2. Make sure sure things work by running the terminal interface from the SDK directory.  Any issues encountered during startup will be reported and the terminal will exit.
-
-        $ cd ib-sdk
-        $ npm start [port]
-    
-3. If the SDK can establish a working connection and load the object model, the terminal will start successfully.
-
-        SDK entry point is "session".
-        Load securities with the $("AAPL stock") function.
-        Loaded securities are directly addressable (like AAPL.quote).
-        A list of loaded securities is stored in "symbols".
-        Type .exit to quit.
-        
-        > 
-
 ## Programming
 
 Each session is associated with one or more accounts.  The most common case is access to a single [account](./examples/account.js).  Other use cases can benefit from the lightweight [account summary](./examples/summary.js) model.
@@ -51,9 +29,9 @@ Manage [system](./examples/system.js) events like changes in market data farm co
 
 The programming model is built on top of the [service](./docs/service.md) module, which makes interacting with the IB API pub/sub paradigm easier.
 
-[Remoting](./docs/remoting.md) is made possible by proxying events over a compatible messaging system, such as [Socket.io](https://socket.io).
-
 ## License
+
+Copyright 2017 Jonathan Hollinger
 
 Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
 

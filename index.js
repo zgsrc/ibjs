@@ -1,6 +1,7 @@
 "use strict";
 
-const fs = require("fs"),
+const id = exports.id = 0,
+      fs = require("fs"),
       IB = require("ib"),
       Service = exports.Service = require("./service/service"),
       Dispatch = exports.Dispatch = require("./service/dispatch"),
@@ -8,8 +9,6 @@ const fs = require("fs"),
       Session = exports.Session = require("./model/session"),
       flags = exports.flags = require("./model/flags"),
       studies = exports.studies = require("./model/marketdata/studies"),
-      id = exports.id = 0,
-      Environment = exports.Environment = require("./model/environment"),
       RealTime = exports.RealTime = require("./model/realtime"),
       MarketData = exports.MarketData = require("./model/marketdata/marketdata");
 
