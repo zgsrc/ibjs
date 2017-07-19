@@ -11,7 +11,7 @@ const fs = require("fs"),
       id = exports.id = 0,
       Environment = exports.Environment = require("./model/environment"),
       RealTime = exports.RealTime = require("./model/realtime"),
-      MarketData = exports.MarketData = require("./model/marketdata");
+      MarketData = exports.MarketData = require("./model/marketdata/marketdata");
 
 exports.open = (options, cb) => {
     if (Object.isFunction(options) && cb == null) {
