@@ -9,7 +9,9 @@ const fs = require("fs"),
       flags = exports.flags = require("./model/flags"),
       studies = exports.studies = require("./model/marketdata/studies"),
       id = exports.id = 0,
-      Environment = exports.Environment = require("./model/environment");
+      Environment = exports.Environment = require("./model/environment"),
+      RealTime = exports.RealTime = require("./model/realtime"),
+      MarketData = exports.MarketData = require("./model/marketdata");
 
 exports.open = (options, cb) => {
     if (Object.isFunction(options) && cb == null) {

@@ -63,12 +63,12 @@ class Quote extends MarketData {
         return this;
     }
     
-    snapshot(cb) {
+    query(cb) {
         let state = { };
         this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true, false)
             .on("data", datum => {
                 datum = parseQuotePart(datum);
-                state[datum.key] = datum.value;
+                this[datum.key] = state[datum.key] = datum.value;
             }).on("error", (err, cancel) => {
                 cb(err, state);
                 cb = null;
@@ -100,6 +100,10 @@ class Quote extends MarketData {
         }).send();
         
         return this;
+    }
+    
+    get snapshot() {
+        return Sugar.Object.select(this, this.fields);
     }
     
     tickBuffer(duration) {

@@ -1,3 +1,5 @@
+const math = require('mathjs');
+
 const studies = module.exports = { };
 
 // Simple moving average
@@ -42,4 +44,24 @@ studies.AR = window => {
     
     ar.oscillator = ar.up - ar.down;
     return ar;
+};
+
+// Bollinger Bands
+studies.BBANDS = (window, factor) => {
+    let sma = window.map("close").average(),
+        dev = window.map("close").std() * (factor || 2);
+
+    return { upper: sma + dev, middle: sma, lower: sma - dev };
+};
+
+// Keltner Channel
+studies.KELTNER = window => {
+    let typicalPrice = window.map(b => (b.high + b.low + b.close) / 3).average(),
+        typicalRange = window.map(b => b.high - b.low).average();
+    
+    return {
+        high: typicalPrice + typicalRange,
+        middle: typicalPrice,
+        low: typicalPrice - typicalRange
+    };
 };
