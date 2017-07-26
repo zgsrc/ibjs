@@ -3,7 +3,6 @@
 const MarketData = require("./marketdata"),
       studies = require("./studies"),
       flags = require("../flags"),
-      fs = require("fs"),
       Sugar = require("sugar");
 
 class Bars extends MarketData {

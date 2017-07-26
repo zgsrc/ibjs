@@ -3,7 +3,6 @@
 const MarketData = require("./marketdata"),
       Bars = require("./bars"),
       flags = require("../flags"),
-      fs = require('fs'),
       Sugar = require("sugar");
 
 Sugar.Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
@@ -179,21 +178,6 @@ class Charts extends MarketData {
         this.cancel = () => req.cancel();
         
         return this;
-    }
-    
-    load(path) {
-        let txt = fs.readFileSync(path),
-            data = JSON.parse(txt.toString()),
-            charts = security.charts.all();
-
-        data.forEach((series, i) => {
-            charts[i].load(series);
-        });
-    }
-
-    store(path) {
-        let data = this.all().map(bars => bars.series.exclude(b => b.synthetic));
-        fs.writeFileSync(path, JSON.stringify(data));
     }
     
 }

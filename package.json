@@ -4,8 +4,8 @@
   "description": "Interactive Brokers SDK framework build atop the native javascript API.",
   "main": "index.js",
   "directories": {
-    "doc": "docs",
-    "example": "examples"
+    "doc": "doc",
+    "example": "example"
   },
   "dependencies": {
     "ib": "^0.2.1",

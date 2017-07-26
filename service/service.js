@@ -1,10 +1,9 @@
 "use strict";
 
-const tickTypeToString = require("ib").util.tickTypeToString,
+const Sugar = require("sugar"),
       parseXML = require('xml2js').parseString,
       Dispatch = require("./dispatch"),
-      relay = require("./relay"),
-      Sugar = require("sugar");
+      relay = require("./relay");
 
 class Service {
     
@@ -219,7 +218,7 @@ function attach(ib, dispatch) {
         dispatch.data(tickerId, { 
             type: 'EFP', 
             tickType: tickType, 
-            name: tickTypeToString(tickType),
+            name: ib.util.tickTypeToString(tickType),
             basisPoints: basisPoints, 
             formattedBasisPoints: formattedBasisPoints, 
             impliedFuturesPrice: impliedFuturesPrice, 
@@ -232,14 +231,14 @@ function attach(ib, dispatch) {
         dispatch.data(tickerId, { 
             type: 'Generic', 
             tickType: tickType, 
-            name: tickTypeToString(tickType),
+            name: ib.util.tickTypeToString(tickType),
             value: value 
         });
     }).on('tickPrice', function(tickerId, tickType, price, canAutoExecute) {
         dispatch.data(tickerId, { 
             type: 'Price', 
             tickType: tickType, 
-            name: tickTypeToString(tickType),
+            name: ib.util.tickTypeToString(tickType),
             value: price, 
             canAutoExecute: canAutoExecute 
         });
@@ -247,14 +246,14 @@ function attach(ib, dispatch) {
         dispatch.data(tickerId, { 
             type: 'Size', 
             tickType: sizeTickType, 
-            name: tickTypeToString(sizeTickType),
+            name: ib.util.tickTypeToString(sizeTickType),
             value: size 
         });
     }).on('tickString', function(tickerId, tickType, value) {
         dispatch.data(tickerId, { 
             type: 'String', 
             tickType: tickType, 
-            name: tickTypeToString(tickType),
+            name: ib.util.tickTypeToString(tickType),
             value: value 
         });
     }).on('tickSnapshotEnd', function(reqId) {
@@ -263,7 +262,7 @@ function attach(ib, dispatch) {
         dispatch.data(tickerId, {
             type: 'OptionComputation', 
             tickType: tickType, 
-            name: tickTypeToString(tickType),
+            name: ib.util.tickTypeToString(tickType),
             value: {
                 impliedVol: impliedVol, 
                 delta: delta, 
