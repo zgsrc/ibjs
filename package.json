@@ -14,6 +14,8 @@
   },
   "keywords": [
     "interactive brokers",
+    "ib",
+    "ib api",
     "brokerage api",
     "trading api"
   ],
@@ -26,6 +28,5 @@
   "bugs": {
     "url": "https://github.com/triploc/ib-sdk/issues"
   },
-  "homepage": "https://github.com/triploc/ib-sdk#readme",
-  "devDependencies": {}
+  "homepage": "https://github.com/triploc/ib-sdk#readme"
 }
