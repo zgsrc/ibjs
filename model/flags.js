@@ -16,7 +16,7 @@ const HISTORICAL = {
 
 exports.HISTORICAL = HISTORICAL;
 
-const TAGS = {
+const ACCOUNT_TAGS = {
     accountType: "AccountType",
     netLiquidation: "NetLiquidation",
     totalCashValue: "TotalCashValue",
@@ -48,7 +48,7 @@ const TAGS = {
     leverage: "Leverage"
 };
 
-exports.ACCOUNT_TAGS = TAGS;
+exports.ACCOUNT_TAGS = ACCOUNT_TAGS;
 
 const TICKS = {  
     optionVolume: 100,
@@ -123,34 +123,24 @@ const SIDE = {
 exports.SIDE = SIDE;
 
 const ORDER_TYPE = {
-    limit: "LMT",
-    marketToLimit: "MTL",
-    marketWithProtection: "MKT PRT",
-    requestForQuote: "QUOTE",
-    stop: "STP",
-    stopLimit: "STP LMT",
-    trailingLimitIfTouched: "TRAIL LIT",
-    trailingMarketIfTouched: "TRAIL MIT",
-    trailingStop: "TRAIL",
-    trailingStopLimit: "TRAIL LIMIT",
     market: "MKT",
+    marketProtect: "MKT PRT",
+    marketToLimit: "MTL",
     marketIfTouched: "MIT",
     marketOnClose: "MOC",
-    marketOnOpen: "MOO",
-    peggedToMarket: "PEG MKT",
-    relative: "REL",
-    boxTop: "BOX TOP",
-    limitOnClose: "LOC",
-    limitOnOpen: "LOO",
+    
+    limit: "LMT",
     limitIfTouched: "LIT",
-    peggedToMidpoint: "PEG MID",
-    VWAP: "VWAP",
-    goodAfter: "GAT",
-    goodUntil: "GTD",
-    goodUntilCancelled: "GTC",
-    immediateOrCancel: "IOC",
-    oneCancelsAll: "OCA",
-    volatility: "VOL"
+    limitOnClose: "LOC",
+    
+    stop: "STP",
+    stopProtect: "STP PRT",
+    stopLimit: "STP LMT",
+    
+    trailingStop: "TRAIL",
+    trailingStopLimit: "TRAIL LIMIT",
+    trailingLimitIfTouched: "TRAIL LIT",
+    trailingMarketIfTouched: "TRAIL MIT"
 };
 
 exports.ORDER_TYPE = ORDER_TYPE;
@@ -172,8 +162,20 @@ exports.RULE80A = RULE80A;
 const TIME_IN_FORCE = {
     day: "DAY",
     goodUntilCancelled: "GTC",
+    goodTilCancelled: "GTC",
     immediateOrCancel: "IOC",
-    goodUntil: "GTD"
+    fillOrKill: "FOK",
+    goodUntil: "GTD",
+    auction: "AUC",
+    open: "OPG"
 };
 
 exports.TIME_IN_FORCE = TIME_IN_FORCE;
+
+const OCA_TYPE = {
+    cancel: 1,
+    reduce: 2,
+    reduceWithoutOverfillProtection: 3
+};
+
+exports.OCA_TYPE = OCA_TYPE;
