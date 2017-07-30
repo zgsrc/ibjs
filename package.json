@@ -28,5 +28,8 @@
   "bugs": {
     "url": "https://github.com/triploc/ib-sdk/issues"
   },
-  "homepage": "https://github.com/triploc/ib-sdk#readme"
+  "homepage": "https://github.com/triploc/ib-sdk#readme",
+  "scripts": {
+    "browserify": "browserify browser/browserify.js -o browser/ib.js"
+  }
 }
