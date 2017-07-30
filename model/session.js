@@ -86,6 +86,7 @@ class Session extends Events {
     }
     
     account(options) {
+        if (options === true) options = { };
         if (options && !options.id) {
             options.id = this.managedAccounts.first();
         }

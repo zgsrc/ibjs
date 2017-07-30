@@ -2,7 +2,7 @@
 
 const id = exports.id = 0,
       fs = require("fs"),
-      IB = require("ib"),
+      IB = exports.IB = require("ib"),
       Service = exports.Service = require("./service/service"),
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),
