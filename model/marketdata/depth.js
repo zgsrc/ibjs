@@ -64,7 +64,7 @@ class Depth extends MarketData {
     }
     
     stream(exchanges, rows) {
-        if (Sugar.Object.isNumber(exchanges)) {
+        if (typeof exchanges == "number") {
             rows = exchanges;
             exchanges = null;
         }

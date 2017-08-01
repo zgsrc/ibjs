@@ -11,13 +11,13 @@ class Request extends Events {
         this.id = id;
         this.call = call;
         
-        if (!Object.isFunction(send)) {
+        if (!typeof send == "function") {
             throw new Error("Send must be a function.");
         }
         else {
             this.send = () => {
                 if (timeout) {
-                    if (!Object.isNumber(timeout) || timeout <= 0) {
+                    if (typeof timeout != "number" || timeout <= 0) {
                         throw new Error("Timeout must be a positive number.");
                     }
 
@@ -66,7 +66,7 @@ class Request extends Events {
         }
         
         if (cancel) {
-            if (!Object.isFunction(cancel)) {
+            if (!typeof cancel == "function") {
                 throw new Error("Cancel must be a function.");
             }
             

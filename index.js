@@ -13,7 +13,7 @@ const id = exports.id = 0,
       MarketData = exports.MarketData = require("./model/marketdata/marketdata");
 
 exports.open = (options, cb) => {
-    if (Object.isFunction(options) && cb == null) {
+    if (typeof options == "function" && cb == null) {
         cb = options;
         options = { };
     }

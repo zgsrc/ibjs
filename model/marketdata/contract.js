@@ -171,10 +171,10 @@ let frontMonth = exports.frontMonth = function(cutOffDay, offset) {
 };
 
 function parse(definition) {
-    if (Sugar.Object.isNumber(definition)) {
+    if (typeof definition == "number") {
         definition = { conId: definition };
     }
-    else if (Sugar.Object.isString(definition)) {
+    else if (typeof definition == "string") {
         let tokens = definition.split(' ').map("trim").compact(true);
         definition = { };
         
@@ -249,7 +249,7 @@ function parse(definition) {
         });
     }
 
-    if (Sugar.Object.isObject(definition)) {
+    if (typeof definition == "object") {
         if (definition.symbol == null && definition.conId == null) {
             throw new Error("Definition must have symbol or conId.");
         }
