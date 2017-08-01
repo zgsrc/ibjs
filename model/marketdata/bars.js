@@ -114,7 +114,7 @@ class Bars extends MarketData {
         else return null;
     }
     
-    study(name, length, calculator) {
+    study(name, length, calculator, options) {
         if (typeof calculator == "string") {
             calculator = studies[calculator];
         }
@@ -125,7 +125,7 @@ class Bars extends MarketData {
         
         for (let i = 0; i < this.series.length; i++) {
             if (i + length - 1 < this.series.length) {
-                this.series[i + length - 1][name] = calculator(this.series.from(i).to(length), name) || this.series[i + length - 1][name];
+                this.series[i + length - 1][name] = calculator(this.series.from(i).to(length), name, options) || this.series[i + length - 1][name];
             }
         }
         
@@ -139,7 +139,7 @@ class Bars extends MarketData {
 
                 start.upto(end).forEach(i => {
                     let window = this.series.from(i).to(length);
-                    this.series[i + length - 1][name] = calculator(window, name) || this.series[i + length - 1][name];
+                    this.series[i + length - 1][name] = calculator(window, name, options) || this.series[i + length - 1][name];
                 });
             }
             catch (ex) {
@@ -150,7 +150,7 @@ class Bars extends MarketData {
         this.on("update", data => {
             try {
                 let window = this.series.from(-length);
-                data[name] = calculator(window, name) || data[name];
+                data[name] = calculator(window, name, options) || data[name];
             }
             catch (ex) {
                 this.emit("error", ex);
