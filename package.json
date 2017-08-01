@@ -1,6 +1,6 @@
 {
   "name": "ib-sdk",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Interactive Brokers SDK framework build atop the native javascript API.",
   "main": "index.js",
   "directories": {

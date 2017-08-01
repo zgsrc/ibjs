@@ -92,22 +92,22 @@ class Charts extends MarketData {
                 duration: "2 M"
             }).on("error", err => this.emit("error", err)),
             two: new Bars(session, contract, this, {
-                text: "2 hour",
+                text: "2 hours",
                 integer: 7200,
                 duration: "2 M"
             }).on("error", err => this.emit("error", err)),
             three: new Bars(session, contract, this, {
-                text: "3 hour",
+                text: "3 hours",
                 integer: 10800,
                 duration: "3 M"
             }).on("error", err => this.emit("error", err)),
             four: new Bars(session, contract, this, {
-                text: "4 hour",
+                text: "4 hours",
                 integer: 14400,
                 duration: "4 M"
             }).on("error", err => this.emit("error", err)),
             eight: new Bars(session, contract, this, {
-                text: "4 hour",
+                text: "8 hours",
                 integer: 28800,
                 duration: "8 M"
             }).on("error", err => this.emit("error", err))
@@ -120,13 +120,13 @@ class Charts extends MarketData {
         }).on("error", err => this.emit("error", err));
         
         this.weekly = new Bars(session, contract, this, {
-            text: "1 week",
+            text: "1W",
             integer: 3600 * 24 * 7,
             duration: "2 Y"
         }).on("error", err => this.emit("error", err));
         
         this.monthly = new Bars(session, contract, this, {
-            text: "1 month",
+            text: "1M",
             integer: 3600 * 24 * 7 * 30,
             duration: "5 Y" 
         }).on("error", err => this.emit("error", err));

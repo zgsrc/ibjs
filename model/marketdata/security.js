@@ -1,7 +1,5 @@
 "use strict";
 
-require("sugar").extend();
-
 const flags = require("../flags"),
       MarketData = require("./marketdata"),
       Quote = require("./quote"),

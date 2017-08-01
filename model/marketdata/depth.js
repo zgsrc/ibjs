@@ -1,7 +1,5 @@
 "use strict";
 
-require("sugar").extend();
-
 const MarketData = require("./marketdata"),
       Sugar = require("sugar");
 

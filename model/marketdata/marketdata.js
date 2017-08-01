@@ -1,7 +1,5 @@
 "use strict";
 
-require("sugar").extend();
-
 const RealTime = require("../realtime");
 
 class MarketData extends RealTime {

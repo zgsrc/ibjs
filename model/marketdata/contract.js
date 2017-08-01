@@ -1,7 +1,5 @@
 "use strict";
 
-require("sugar").extend();
-
 const flags = require("../flags"),
       RealTime = require("../realtime"),
       Sugar = require("Sugar");
@@ -195,7 +193,7 @@ function parse(definition) {
             }
             
             if (date) {
-                if (date.toLowerCase().startsWith("front")) {
+                if (date.toLowerCase().startsWith("front") || date.toLowerCase().startsWith("first")) {
                     date = date.from(5);
                     date = date.split('+');
                     

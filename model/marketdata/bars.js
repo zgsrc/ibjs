@@ -10,7 +10,7 @@ class Bars extends MarketData {
     constructor(session, contract, charts, barSize) {
         super(session, contract);
 
-        this.series = [ ];
+        this.series = Sugar.Array.create();
         this.charts = charts;
         this.barSize = barSize;
         this.options = {
@@ -56,6 +56,8 @@ class Bars extends MarketData {
         if (this.options.cursor == null && this.series.length) {
             this.options.cursor = this.series.first().date;
         }
+        
+        console.log(this.barSize);
         
         let req = this.service.historicalData(
             this.contract.summary, 
@@ -123,7 +125,7 @@ class Bars extends MarketData {
         
         for (let i = 0; i < this.series.length; i++) {
             if (i + length - 1 < this.series.length) {
-                this.series[i + length - 1][name] = calculator(this.series.from(i).to(length));
+                this.series[i + length - 1][name] = calculator(this.series.from(i).to(length), name) || this.series[i + length - 1][name];
             }
         }
         
@@ -137,7 +139,7 @@ class Bars extends MarketData {
 
                 start.upto(end).forEach(i => {
                     let window = this.series.from(i).to(length);
-                    this.series[i + length - 1][name] = calculator(window);
+                    this.series[i + length - 1][name] = calculator(window, name) || this.series[i + length - 1][name];
                 });
             }
             catch (ex) {
@@ -148,7 +150,7 @@ class Bars extends MarketData {
         this.on("update", data => {
             try {
                 let window = this.series.from(-length);
-                data[name] = calculator(window);
+                data[name] = calculator(window, name) || data[name];
             }
             catch (ex) {
                 this.emit("error", ex);
