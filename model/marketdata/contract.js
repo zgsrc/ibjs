@@ -2,7 +2,7 @@
 
 const flags = require("../flags"),
       RealTime = require("../realtime"),
-      Sugar = require("Sugar");
+      Sugar = require("sugar");
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -224,6 +224,8 @@ function parse(definition) {
             tokens = tokens.from(3);
         }
         else {
+            console.log(tokens);
+            console.log(tokens[0]);
             definition.symbol = tokens[0].toUpperCase();
             
             if (tokens[1] && flags.SECURITY_TYPE[tokens[1].toLowerCase()]) {

@@ -1,5 +1,7 @@
 "use strict";
 
+require("sugar")();
+
 const id = exports.id = 0,
       fs = require("fs"),
       IB = exports.IB = require("ib"),

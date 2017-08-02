@@ -57,8 +57,6 @@ class Bars extends MarketData {
             this.options.cursor = this.series.first().date;
         }
         
-        console.log(this.barSize);
-        
         let req = this.service.historicalData(
             this.contract.summary, 
             this.options.cursor ? this.options.cursor.format("{yyyy}{MM}{dd} {HH}:{mm}:{ss}") + (this.locale ? " " + this.locale : "") : "", 
