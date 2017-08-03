@@ -858,7 +858,7 @@ class Contract extends RealTime {
     merge(data) {
         Object.merge(this, data);
         
-        this.symbol = this.summary.localSymbol.compact().underscore().toUpperCase();
+        this.symbol = this.summary.localSymbol.compact().parameterize().underscore().toUpperCase();
         this.orderTypes = this.orderTypes.split(",").compact();
         this.validExchanges = this.validExchanges.split(",").compact();
 
@@ -1059,8 +1059,6 @@ function parse(definition) {
             tokens = tokens.from(3);
         }
         else {
-            console.log(tokens);
-            console.log(tokens[0]);
             definition.symbol = tokens[0].toUpperCase();
             
             if (tokens[1] && flags.SECURITY_TYPE[tokens[1].toLowerCase()]) {
