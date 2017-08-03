@@ -2,15 +2,14 @@
 
 const MarketData = require("./marketdata"),
       studies = require("./studies"),
-      flags = require("../flags"),
-      Sugar = require("sugar");
+      flags = require("../flags");
 
 class Bars extends MarketData {
     
     constructor(session, contract, charts, barSize) {
         super(session, contract);
 
-        this.series = Sugar.Array.create();
+        this.series = Array.create();
         this.charts = charts;
         this.barSize = barSize;
         this.options = {
@@ -38,7 +37,7 @@ class Bars extends MarketData {
     }
     
     set(options) {
-        this.options = Sugar.Object.merge(this.options, options);
+        this.options = Object.merge(this.options, options);
         return this;
     }
     
@@ -74,7 +73,7 @@ class Bars extends MarketData {
             max = Number.MIN_VALUE;
         
         req.on("data", record => {
-            record.date = Sugar.Date.create(record.date);
+            record.date = Date.create(record.date);
             record.timestamp = record.date.getTime();
             
             if (min > record.timestamp) min = record.timestamp;
@@ -82,7 +81,7 @@ class Bars extends MarketData {
             
             let existing = this.series.find(r => r.timestamp == record.timestamp);
             if (existing && existing.synthetic) {
-                Sugar.Object.merge(existing, record);
+                Object.merge(existing, record);
                 delete existing.synthetic;
             }
             else {
@@ -121,24 +120,25 @@ class Bars extends MarketData {
             throw new Error("No study named " + name);
         }
         
-        for (let i = 0; i < this.series.length; i++) {
-            if (i + length - 1 < this.series.length) {
-                this.series[i + length - 1][name] = calculator(this.series.from(i).to(length), name, options) || this.series[i + length - 1][name];
-            }
+        for (let i = 0; i < this.series.length - length; i++) {
+            let window = this.series.slice(i, i + length);
+            this.series[i + length - 1][name] = calculator(window, name, options || { }) || this.series[i + length - 1][name];
         }
         
         this.on("load", timestamps => {
             try {
-                let start = this.series.findIndex(i => i.timestamp <= timestamps.min()),
-                    end = this.series.findIndex(i => i.timestamp > timestamps.max());
-
+                let start = this.series.findIndex(i => i.timestamp <= timestamps.min()) - length,
+                    end = this.series.findIndex(i => i.timestamp >= timestamps.max());
+                
                 if (start < 0) start = 0;
                 if (end < 0) end = this.series.length - 1;
-
-                start.upto(end).forEach(i => {
-                    let window = this.series.from(i).to(length);
-                    this.series[i + length - 1][name] = calculator(window, name, options) || this.series[i + length - 1][name];
-                });
+                
+                for (let i = start; i <= end; i++) {
+                    if (i + length - 1 < this.series.length) {
+                        let window = this.series.slice(i, i + length);
+                        this.series[i + length - 1][name] = calculator(window, name, options || { }) || this.series[i + length - 1][name];
+                    }
+                }
             }
             catch (ex) {
                 this.emit("error", ex);
@@ -148,7 +148,7 @@ class Bars extends MarketData {
         this.on("update", data => {
             try {
                 let window = this.series.from(-length);
-                data[name] = calculator(window, name, options) || data[name];
+                data[name] = calculator(window, name, options || { }) || data[name];
             }
             catch (ex) {
                 this.emit("error", ex);
@@ -160,7 +160,7 @@ class Bars extends MarketData {
 }
 
 function barDate(size, date) {
-    let now = Sugar.Date.create(date),
+    let now = Date.create(date),
         count = parseInt(size.split(' ').first());
 
     if (size.endsWith("day")) now = now.beginningOfDay();

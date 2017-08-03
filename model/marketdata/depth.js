@@ -1,7 +1,6 @@
 "use strict";
 
-const MarketData = require("./marketdata"),
-      Sugar = require("sugar");
+const MarketData = require("./marketdata");
 
 class Depth extends MarketData {
     
@@ -24,7 +23,7 @@ class Depth extends MarketData {
         if (this.exchanges.indexOf(exchange) < 0) {
             this.exchanges.push(exchange);
             
-            let copy = Sugar.Object.clone(this.contract.summary);
+            let copy = Object.clone(this.contract.summary);
             copy.exchange = exchange;
             
             this.bids[exchange] = { };

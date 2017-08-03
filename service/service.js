@@ -1,7 +1,6 @@
 "use strict";
 
-const Sugar = require("sugar"),
-      parseXML = require('xml2js').parseString,
+const parseXML = require('xml2js').parseString,
       Dispatch = require("./dispatch"),
       relay = require("./relay");
 
@@ -118,7 +117,7 @@ class Service {
 function singleton(event, send, cancel, timeout, ib, dispatch) {
     return function() {
         return dispatch.singleton(
-            `${ send }(${ Sugar.Array.create(arguments).map(JSON.stringify).join(', ') })`,
+            `${ send }(${ Array.create(arguments).map(JSON.stringify).join(', ') })`,
             req => ib[send](...arguments), 
             cancel ? req => ib[cancel]() : null, 
             timeout,
@@ -130,7 +129,7 @@ function singleton(event, send, cancel, timeout, ib, dispatch) {
 function instance(send, cancel, timeout, ib, dispatch) {
     return function() {
         return dispatch.instance(
-            `${ send }(${ Sugar.Array.create(arguments).map(JSON.stringify).join(', ') })`,
+            `${ send }(${ Array.create(arguments).map(JSON.stringify).join(', ') })`,
             req => ib[send](req.id, ...arguments), 
             cancel ? req => ib[cancel](req.id) : null, 
             timeout

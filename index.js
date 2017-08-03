@@ -1,6 +1,9 @@
 "use strict";
 
-require("sugar")();
+// IMPOSED DESIGN OPINION
+//   * Programming the rest of the SDK is either 
+//   * not functional or readable otherwise.
+require("sugar").extend();
 
 const id = exports.id = 0,
       fs = require("fs"),

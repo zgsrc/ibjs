@@ -7,8 +7,7 @@ const Events = require("events"),
       Trades = require("./accounting/trades"),
       Account = require("./accounting/account"),
       contract = require("./marketdata/contract"),
-      securities = require("./marketdata/security"),
-      Sugar = require("sugar");
+      securities = require("./marketdata/security");
 
 class Session extends Events {
     
@@ -37,7 +36,7 @@ class Session extends Events {
                     let status = name[0];
                     name = name[1];
 
-                    this.connectivity[name] = { status: status, time: Sugar.Date.create() };   
+                    this.connectivity[name] = { status: status, time: Date.create() };   
                     this.emit("connectivity", this.connectivity[name]);
                 }
                 else {

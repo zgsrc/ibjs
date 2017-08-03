@@ -2,16 +2,15 @@
 
 const MarketData = require("./marketdata"),
       flags = require("../flags"),
-      TICKS = flags.QUOTE_TICK_TYPES,
-      Sugar = require("sugar");
+      TICKS = flags.QUOTE_TICK_TYPES;
 
-Sugar.Date.getLocale('en').addFormat('{yyyy}{MM}{dd}-{hh}:{mm}:{ss}');
+Date.getLocale('en').addFormat('{yyyy}{MM}{dd}-{hh}:{mm}:{ss}');
 
 class Quote extends MarketData {
     
     constructor(session, contract) {
         super(session, contract);
-        this._fieldTypes = Sugar.Array.create();
+        this._fieldTypes = Array.create();
         this._exclude.push("_fieldTypes");
     }
     
@@ -102,7 +101,7 @@ class Quote extends MarketData {
     }
     
     get snapshot() {
-        return Sugar.Object.select(this, this.fields);
+        return Object.select(this, this.fields);
     }
     
     tickBuffer(duration) {
@@ -116,20 +115,20 @@ class Quote extends MarketData {
 }
 
 function parseQuotePart(datum) {
-    let key = Sugar.String(datum.name), value = datum.value;
+    let key = String(datum.name), value = datum.value;
     
     if (!key || key == "") throw new Error("Tick key not found.");
     if (value === null || value === "") throw new Error("No tick data value found.");
     
     if (key == "LAST_TIMESTAMP") {
-        value = Sugar.Date.create(parseInt(value) * 1000);
+        value = Date.create(parseInt(value) * 1000);
     }
     else if (key == "RT_VOLUME") {
         value = value.split(";");
         value = {
             price: parseFloat(value[0]),
             size: parseInt(value[1]),
-            time: Sugar.Date.create(parseInt(value[2])),
+            time: Date.create(parseInt(value[2])),
             volume: parseInt(value[3]),
             vwap: parseFloat(value[4]),
             marketMaker: value[5] == "true" ? true : false
@@ -147,7 +146,7 @@ function parseQuotePart(datum) {
         value = ratios;
     }
     else if (key == "NEWS_TICK") {
-        value = Sugar.String(value).split(" ");
+        value = String(value).split(" ");
         value = {
             id: value[0],
             time: value[1],

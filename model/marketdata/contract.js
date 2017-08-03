@@ -1,8 +1,7 @@
 "use strict";
 
 const flags = require("../flags"),
-      RealTime = require("../realtime"),
-      Sugar = require("sugar");
+      RealTime = require("../realtime");
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -21,14 +20,14 @@ class Contract extends RealTime {
     } 
     
     merge(data) {
-        Sugar.Object.merge(this, data);
+        Object.merge(this, data);
         
         this.symbol = this.summary.localSymbol.compact().underscore().toUpperCase();
         this.orderTypes = this.orderTypes.split(",").compact();
         this.validExchanges = this.validExchanges.split(",").compact();
 
         if (this.summary.expiry) {
-            this.expiry = Sugar.Date.create(Sugar.Date.create(this.summary.expiry).format("{Month} {dd}, {yyyy}") + " 00:00:00 " + this.timeZoneId);
+            this.expiry = Date.create(Date.create(this.summary.expiry).format("{Month} {dd}, {yyyy}") + " 00:00:00 " + this.timeZoneId);
         }
         
         let timeZoneId = this.timeZoneId,
@@ -39,7 +38,7 @@ class Contract extends RealTime {
         tradingHours.forEach(arr => {
             if (arr[1] == "CLOSED") return;
             
-            let date = Sugar.Date.create(arr[0], { future: true });
+            let date = Date.create(arr[0], { future: true });
             
             let label = date.format("{Mon}{dd}");
             if (!schedule[label]) schedule[label] = { };
@@ -50,8 +49,8 @@ class Contract extends RealTime {
             schedule[label].end = [ ];
             
             times.forEach(time => {
-                let start = Sugar.Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
-                    end = Sugar.Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
+                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
+                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
 
                 if (end.isBefore(start)) start.addDays(-1);
 
@@ -67,7 +66,7 @@ class Contract extends RealTime {
         liquidHours.forEach(arr => {
             if (arr[1] == "CLOSED") return;
             
-            let date = Sugar.Date.create(arr[0], { future: true });
+            let date = Date.create(arr[0], { future: true });
             
             let label = date.format("{Mon}{dd}");
             if (!schedule[label]) schedule[label] = { };
@@ -78,8 +77,8 @@ class Contract extends RealTime {
             schedule[label].close = [ ];
             
             times.forEach(time => {
-                let start = Sugar.Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
-                    end = Sugar.Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
+                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
+                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
 
                 if (end.isBefore(start)) start.addDays(-1);
 
@@ -94,7 +93,7 @@ class Contract extends RealTime {
         
         Object.defineProperty(schedule, 'today', {
             get: function() {
-                let now = Sugar.Date.create(),
+                let now = Date.create(),
                     today = schedule[now.format("{Mon}{dd}")];
                 
                 if (today && today.end.every(end => end.isBefore(now))) {
@@ -123,7 +122,7 @@ class Contract extends RealTime {
     }
     
     get marketsOpen() {
-        let now = Sugar.Date.create(), hours = this.schedule.today;
+        let now = Date.create(), hours = this.schedule.today;
         if (hours && hours.start && hours.end) {
             for (let i = 0; i < hours.start.length; i++) {
                 if (now.isBetween(hours.start[i], hours.end[i])) return true;
@@ -134,7 +133,7 @@ class Contract extends RealTime {
     }
     
     get marketsLiquid() {
-        let now = Sugar.Date.create(), hours = this.schedule.today;
+        let now = Date.create(), hours = this.schedule.today;
         if (hours && hours.open && hours.close) {
             for (let i = 0; i < hours.open.length; i++) {
                 if (now.isBetween(hours.open[i], hours.close[i])) return true;
@@ -157,7 +156,7 @@ class Contract extends RealTime {
 exports.details = details;
 
 let frontMonth = exports.frontMonth = function(cutOffDay, offset) {
-    let date = Sugar.Date.create();
+    let date = Date.create();
     
     if (date.getDate() >= cutOffDay) {
         date.addMonths(1);
@@ -212,9 +211,9 @@ function parse(definition) {
                     if (year.startsWith("'") || year.startsWith("`") || year.startsWith("-") || year.startsWith("/")) year = year.from(1);
                     
                     if (year.length == 2) year = "20" + year;
-                    if (year == "") year = Sugar.Date.create().fullYear();
+                    if (year == "") year = Date.create().fullYear();
 
-                    date = Sugar.Date.create(month + " " + year);
+                    date = Date.create(month + " " + year);
                 }
                 
                 date = date.format("{yyyy}{MM}");
