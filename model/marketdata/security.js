@@ -15,13 +15,21 @@ class Security extends MarketData {
         this.quote = new Quote(session, contract);
         this.depth = new Depth(session, contract);
         this.charts = new Charts(session, contract, flags.HISTORICAL.trades);
+        this.reports = { };
     }
     
     fundamentals(type, cb) {
         this.service.fundamentalData(this.contract.summary, flags.FUNDAMENTALS_REPORTS[type])
-            .on("data", data => cb(null, data))
-            .on("end", () => cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message)))
-            .on("error", err => cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message)))
+            .once("data", data => {
+                this.reports[type] = data;
+                if (cb) cb(null, data);
+            })
+            .once("end", () => {
+                if (cb) cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message))
+            })
+            .once("error", err => {
+                if (cb) cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message))
+            })
             .send();
     }
     

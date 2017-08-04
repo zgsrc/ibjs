@@ -9,8 +9,9 @@ class Bars extends MarketData {
     constructor(session, contract, charts, barSize) {
         super(session, contract);
 
+        Object.defineProperty(this, "charts", { value: charts });
+        
         this.series = Array.create();
-        this.charts = charts;
         this.barSize = barSize;
         this.options = {
             regularTradingHours: false,

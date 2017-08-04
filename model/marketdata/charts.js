@@ -131,6 +131,10 @@ class Charts extends MarketData {
         }).on("error", err => this.emit("error", err));
     }
     
+    get(text) {
+        return this.all().find(f => f.barSize.text == text);
+    }
+    
     get all() {
         return Object.values(this.seconds)
                      .append(Object.values(this.minutes))
