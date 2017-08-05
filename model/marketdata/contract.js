@@ -134,7 +134,9 @@ class Contract extends RealTime {
             }
         });
         
-        Object.defineProperty(this, 'schedule', { value: schedule });
+        Object.defineProperty(this, 'schedule', { 
+            value: schedule 
+        });
         
         delete this.tradingHours;
         delete this.liquidHours;
