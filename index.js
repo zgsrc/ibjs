@@ -6,7 +6,6 @@
 require("sugar").extend();
 
 const id = exports.id = 0,
-      fs = require("fs"),
       IB = exports.IB = require("ib"),
       Service = exports.Service = require("./service/service"),
       Dispatch = exports.Dispatch = require("./service/dispatch"),
@@ -59,11 +58,8 @@ const session = exports.session = options => {
         port: options.port || 4001
     });
     
-    if (options.trace) {
-        ib.on("all", (name, data) => {
-            let msg = (new Date()).getTime() + "|" + name + "|" + JSON.stringify(data) + "\n";
-            fs.appendFile(options.trace, msg, err => err ? console.log(err) : null);
-        });
+    if (options.trace && typeof options.trace == "function") {
+        ib.on("all", options.trace);
     }
     
     return new Session(new Service(ib, options.dispatch || new Dispatch()));

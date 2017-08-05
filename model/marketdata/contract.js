@@ -143,6 +143,14 @@ class Contract extends RealTime {
         return false;
     }
     
+    get nextOpen() {
+        
+    }
+    
+    get nextLiquid() {
+        
+    }
+    
     refresh(cb) {
         this.session.service.contractDetails(this.summary)
             .once("data", contract => merge(data))

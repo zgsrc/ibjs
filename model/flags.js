@@ -74,9 +74,9 @@ const TICKS = {
 exports.QUOTE_TICK_TYPES = TICKS;
 
 const REPORT = {
-    snapshot: "ReportSnapshot",
     financials: "ReportsFinSummary",
-    ratios: "ReportRatios",
+    ownership: "ReportsOwnership",
+    snapshot: "ReportSnapshot",
     statements: "ReportsFinStatements",
     consensus: "RESC",
     calendar: "CalendarReport"

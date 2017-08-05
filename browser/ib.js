@@ -340,9 +340,9 @@ const TICKS = {
 exports.QUOTE_TICK_TYPES = TICKS;
 
 const REPORT = {
-    snapshot: "ReportSnapshot",
     financials: "ReportsFinSummary",
-    ratios: "ReportRatios",
+    ownership: "ReportsOwnership",
+    snapshot: "ReportSnapshot",
     statements: "ReportsFinStatements",
     consensus: "RESC",
     calendar: "CalendarReport"
@@ -458,8 +458,9 @@ class Bars extends MarketData {
     constructor(session, contract, charts, barSize) {
         super(session, contract);
 
+        Object.defineProperty(this, "charts", { value: charts });
+        
         this.series = Array.create();
-        this.charts = charts;
         this.barSize = barSize;
         this.options = {
             regularTradingHours: false,
@@ -782,6 +783,10 @@ class Charts extends MarketData {
         }).on("error", err => this.emit("error", err));
     }
     
+    get(text) {
+        return this.all().find(f => f.barSize.text == text);
+    }
+    
     get all() {
         return Object.values(this.seconds)
                      .append(Object.values(this.minutes))
@@ -977,6 +982,14 @@ class Contract extends RealTime {
         }
         
         return false;
+    }
+    
+    get nextOpen() {
+        
+    }
+    
+    get nextLiquid() {
+        
     }
     
     refresh(cb) {
@@ -1591,7 +1604,10 @@ class Quote extends MarketData {
         
         req.on("data", datum  => {
             datum = parseQuotePart(datum);
-            if (this[datum.key]) this.emit("load");
+            if (this[datum.key] && !this.loaded) {
+                this.loaded = true;
+                this.emit("load");
+            }
             
             let oldValue = this[datum.key];
             this[datum.key] = datum.value;
@@ -1601,10 +1617,6 @@ class Quote extends MarketData {
         }).send();
         
         return this;
-    }
-    
-    get snapshot() {
-        return Object.select(this, this.fields);
     }
     
     tickBuffer(duration) {
@@ -1711,13 +1723,24 @@ class Security extends MarketData {
         this.quote = new Quote(session, contract);
         this.depth = new Depth(session, contract);
         this.charts = new Charts(session, contract, flags.HISTORICAL.trades);
+        this.reports = { };
     }
     
     fundamentals(type, cb) {
-        this.service.fundamentalData(this.contract.summary, flags.FUNDAMENTALS_REPORTS[type])
-            .on("data", data => cb(null, data))
-            .on("end", () => cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message)))
-            .on("error", err => cb(new Error("Could not load " + type + " fundamental data for " + this.contract.localSymbol + ". " + err.message)))
+        this.service.fundamentalData(this.contract.summary, flags.FUNDAMENTALS_REPORTS[type] || type)
+            .once("data", data => {
+                let keys = Object.keys(data);
+                if (keys.length == 1) this.reports[type] = data[keys.first()];
+                else this.reports[type] = data;
+                
+                if (cb) cb(null, this.reports[type]);
+            })
+            .once("end", () => {
+                if (cb) cb(new Error("Could not load " + type + " fundamental data for " + this.contract.symbol + ". " + err.message))
+            })
+            .once("error", err => {
+                if (cb) cb(new Error("Could not load " + type + " fundamental data for " + this.contract.symbol + ". " + err.message))
+            })
             .send();
     }
     
@@ -1761,12 +1784,41 @@ class RealTime extends Events {
         return Object.keys(this).exclude(/\_.*/).subtract(this._exclude).exclude("cancel").exclude("domain");
     }
     
+    get snapshot() {
+        let obj = Object.select(this, this.fields);
+        for (let prop in obj) {
+            let snapshot = null;
+            if (snapshot = obj[prop].snapshot) {
+                obj[prop] = snapshot;
+            }
+        }
+        
+        return obj;
+    }
+    
     each(fn) {
         this.fields.forEach((e, i) => fn(this[e], e, i));
     }
     
     cancel() {
         return false;
+    }
+    
+    either(event1, event2, cb) {
+        let done = false;
+        this.once(event1, arg => { 
+            if (!done) {
+                done = true;
+                cb(arg, null);
+            }
+        }).once(event2, arg => { 
+            if (!done) {
+                done = true;
+                cb(null, arg);
+            }
+        });
+        
+        return this;
     }
     
 }
