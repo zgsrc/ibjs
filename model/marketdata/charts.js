@@ -132,7 +132,7 @@ class Charts extends MarketData {
     }
     
     get(text) {
-        return this.all().find(f => f.barSize.text == text);
+        return this.all.find(f => f.barSize.text == text);
     }
     
     get all() {
