@@ -115,10 +115,33 @@ class Contract extends RealTime {
             }
         });
         
+        Object.defineProperty(schedule, 'next', {
+            get: function() {
+                let now = Date.create(),
+                    today = schedule[now.format("{Mon}{dd}")],
+                    advances = 0;
+                
+                while (today == null && advances < 7) {
+                    advances++;
+                    now.addDays(1);
+                    today = schedule[now.format("{Mon}{dd}")];
+                    if (today && today.end.every(end => end.isBefore(Date.create()))) {
+                        today = null;
+                    }
+                }
+                
+                return today;
+            }
+        });
+        
         Object.defineProperty(this, 'schedule', { value: schedule });
         
         delete this.tradingHours;
         delete this.liquidHours;
+    }
+    
+    get nextOpen() {
+        return this.marketsOpen ? Date.create() : this.schedule.next.start[0];
     }
     
     get marketsOpen() {
@@ -141,14 +164,6 @@ class Contract extends RealTime {
         }
         
         return false;
-    }
-    
-    get nextOpen() {
-        
-    }
-    
-    get nextLiquid() {
-        
     }
     
     refresh(cb) {
