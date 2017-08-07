@@ -12,10 +12,25 @@ function details(session, summary, cb) {
         .send();
 }
 
+function schedule(time, cb) {
+    if (time.isPast() || time.secondsFromNow() < 10) cb();
+    else {
+        return setTimeout(() => {
+            setTimeout(() => {
+                cb();
+            }, time.millisecondsFromNow() - 5);
+        }, time.millisecondsFromNow() - 5000);
+    }
+}
+
 class Contract extends RealTime {
     
     constructor(session, data) {
         super(session);
+        
+        this._timers = [ ];
+        this._exclude.push("_timers");
+        
         this.merge(data);
     } 
     
@@ -140,6 +155,13 @@ class Contract extends RealTime {
         
         delete this.tradingHours;
         delete this.liquidHours;
+        
+        schedule.forEach(day => {
+            day.start.forEach(start => this._timers.push(schedule(start, () => this.emit("start"))));
+            day.open.forEach(open => this._timers.push(schedule(open, () => this.emit("open"))));
+            day.close.forEach(close => this._timers.push(schedule(close, () => this.emit("close"))));
+            day.end.forEach(end => this._timers.push(schedule(end, () => this.emit("end"))));
+        });
     }
     
     get nextOpen() {
@@ -169,6 +191,9 @@ class Contract extends RealTime {
     }
     
     refresh(cb) {
+        this._timers.forEach(timer => clearTimeout(timer));
+        this._timers = [ ];
+    
         this.session.service.contractDetails(this.summary)
             .once("data", contract => merge(data))
             .once("error", err => cb(err, list))
