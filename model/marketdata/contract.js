@@ -12,7 +12,7 @@ function details(session, summary, cb) {
         .send();
 }
 
-function schedule(time, cb) {
+function notify(time, cb) {
     if (time.isPast() || time.secondsFromNow() < 10) cb();
     else {
         return setTimeout(() => {
@@ -156,16 +156,18 @@ class Contract extends RealTime {
         delete this.tradingHours;
         delete this.liquidHours;
         
-        schedule.forEach(day => {
-            day.start.forEach(start => this._timers.push(schedule(start, () => this.emit("start"))));
-            day.open.forEach(open => this._timers.push(schedule(open, () => this.emit("open"))));
-            day.close.forEach(close => this._timers.push(schedule(close, () => this.emit("close"))));
-            day.end.forEach(end => this._timers.push(schedule(end, () => this.emit("end"))));
+        Object.keys(schedule).forEach(key => {
+            let day = schedule[key];
+            day.start.forEach(start => this._timers.push(notify(start, () => this.emit("start"))));
+            day.open.forEach(open => this._timers.push(notify(open, () => this.emit("open"))));
+            day.close.forEach(close => this._timers.push(notify(close, () => this.emit("close"))));
+            day.end.forEach(end => this._timers.push(notify(end, () => this.emit("end"))));
         });
     }
     
     get nextOpen() {
-        return this.marketsOpen ? Date.create() : this.schedule.next.start[0];
+        if (this.marketsOpen) return Date.create();
+        else return this.schedule.next.start.find(start => start.isAfter(Date.create()));
     }
     
     get marketsOpen() {

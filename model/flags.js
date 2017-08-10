@@ -97,6 +97,7 @@ const SECURITY_TYPE = {
     stock: "STK",
     equity: "STK",
     option: "OPT",
+    options: "OPT",
     put: "OPT",
     puts: "OPT",
     call: "OPT",

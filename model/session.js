@@ -6,6 +6,8 @@ const Events = require("events"),
       Orders = require("./accounting/orders"),
       Trades = require("./accounting/trades"),
       Account = require("./accounting/account"),
+      Curve = require("./marketdata/curve"),
+      Chain = require("./marketdata/chain"),
       contract = require("./marketdata/contract"),
       securities = require("./marketdata/security");
 
@@ -115,6 +117,20 @@ class Session extends Events {
     
     securities(description, cb) {
         securities(this, description, cb);
+    }
+    
+    curve(description, cb) {
+        securities(this, description, (err, securities) => {
+            if (err) cb(err);
+            else cb(null, new Curve(this, securities));
+        });
+    }
+    
+    chain(description, cb) {
+        securities(this, description, (err, securities) => {
+            if (err) cb(err);
+            else cb(null, new Chain(this, securities));
+        });
     }
     
 }
