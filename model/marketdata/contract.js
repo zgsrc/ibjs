@@ -140,7 +140,7 @@ class Contract extends RealTime {
                     advances++;
                     now.addDays(1);
                     today = schedule[now.format("{Mon}{dd}")];
-                    if (today && today.end.every(end => end.isBefore(Date.create()))) {
+                    if (today && today.end.every(end => end.isPast())) {
                         today = null;
                     }
                 }
@@ -149,25 +149,49 @@ class Contract extends RealTime {
             }
         });
         
-        Object.defineProperty(this, 'schedule', { 
-            value: schedule 
-        });
+        Object.defineProperty(this, 'schedule', { value: schedule });
         
         delete this.tradingHours;
         delete this.liquidHours;
         
-        Object.keys(schedule).forEach(key => {
-            let day = schedule[key];
-            day.start.forEach(start => this._timers.push(notify(start, () => this.emit("start"))));
-            day.open.forEach(open => this._timers.push(notify(open, () => this.emit("open"))));
-            day.close.forEach(close => this._timers.push(notify(close, () => this.emit("close"))));
-            day.end.forEach(end => this._timers.push(notify(end, () => this.emit("end"))));
+        Object.values(schedule).map(day => {            
+            day.start.forEach(start => {
+                if (start.isFuture()) {
+                    this._timers.push(notify(start, () => this.emit("startOfDay")));
+                    this._timers.push(notify(start.addSeconds(-5), () => this.emit("beforeStartOfDay")));
+                    this._timers.push(notify(start.addSeconds(10), () => this.emit("afterStartOfDay")));
+                }
+            });
+            
+            day.open.forEach(open => {
+                if (open.isFuture()) {
+                    this._timers.push(notify(open, () => this.emit("marketOpen")));
+                    this._timers.push(notify(open.addSeconds(-5), () => this.emit("beforeMarketOpen")));
+                    this._timers.push(notify(open.addSeconds(10), () => this.emit("afterMarketOpen")));
+                }
+            });
+            
+            day.close.forEach(close => {
+                if (close.isFuture()) {
+                    this._timers.push(notify(close, () => this.emit("marketClose")));
+                    this._timers.push(notify(close.addSeconds(-5), () => this.emit("beforeMarketClose")));
+                    this._timers.push(notify(close.addSeconds(10), () => this.emit("afterMarketClose")));
+                }
+            });
+            
+            day.end.forEach(end => {
+                if (end.isFuture()) {
+                    this._timers.push(notify(end, () => this.emit("endOfDay")));
+                    this._timers.push(notify(end.addSeconds(-5), () => this.emit("beforeEndOfDay")));
+                    this._timers.push(notify(end.addSeconds(10), () => this.emit("afterEndOfDay")));
+                }
+            });
         });
     }
     
     get nextOpen() {
         if (this.marketsOpen) return Date.create();
-        else return this.schedule.next.start.find(start => start.isAfter(Date.create()));
+        else return this.schedule.next.start.find(start => start.isFuture());
     }
     
     get marketsOpen() {
