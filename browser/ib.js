@@ -6,7 +6,7 @@ window.ib = {
     session: () => new Session(new Proxy(socket)),
     flags: require("../model/flags")
 };
-},{"../model/flags":7,"../model/session":18,"../service/proxy":20}],2:[function(require,module,exports){
+},{"../model/flags":7,"../model/session":20,"../service/proxy":22}],2:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -86,7 +86,7 @@ class Account extends RealTime {
 }
 
 module.exports = Account;
-},{"../realtime":17}],3:[function(require,module,exports){
+},{"../realtime":19}],3:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime"),
@@ -155,7 +155,7 @@ class Accounts extends RealTime {
 }
 
 module.exports = Accounts;
-},{"../flags":7,"../realtime":17}],4:[function(require,module,exports){
+},{"../flags":7,"../realtime":19}],4:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -192,7 +192,7 @@ class Orders extends RealTime {
 }
 
 module.exports = Orders;
-},{"../realtime":17}],5:[function(require,module,exports){
+},{"../realtime":19}],5:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -221,7 +221,7 @@ class Positions extends RealTime {
 }
 
 module.exports = Positions;
-},{"../realtime":17}],6:[function(require,module,exports){
+},{"../realtime":19}],6:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -263,7 +263,7 @@ class Trades extends RealTime {
 }
 
 module.exports = Trades;
-},{"../realtime":17}],7:[function(require,module,exports){
+},{"../realtime":19}],7:[function(require,module,exports){
 const HISTORICAL = {
     trades: "TRADES",
     midpoint: "MIDPOINT",
@@ -363,6 +363,7 @@ const SECURITY_TYPE = {
     stock: "STK",
     equity: "STK",
     option: "OPT",
+    options: "OPT",
     put: "OPT",
     puts: "OPT",
     call: "OPT",
@@ -649,7 +650,33 @@ function merge(oldBar, newBar) {
 }
 
 module.exports = Bars;
-},{"../flags":7,"./marketdata":12,"./studies":16}],9:[function(require,module,exports){
+},{"../flags":7,"./marketdata":14,"./studies":18}],9:[function(require,module,exports){
+"use strict";
+
+const MarketData = require("./marketdata");
+
+class Chain extends MarketData {
+    
+    constructor(session, securities, symbol) {
+        super(session, securities.sortBy(s => s.contract.expiry).map("contract"));
+        
+        let expirations = securities.groupBy(s => s.contract.summary.expiry);
+        
+        Object.keys(expirations).forEach(date => {
+            expirations[date] = {
+                calls: expirations[date].filter(s => s.contract.summary.right == "C").sortBy("strike"),
+                puts: expirations[date].filter(s => s.contract.summary.right == "P").sortBy("strike")
+            };
+        });
+        
+        Object.defineProperty(this, "expirations", { value: expirations });
+        Object.defineProperty(this, "symbol", { value: symbol || this.contract.first().summary.symbol + "_options" });
+    }
+    
+}
+
+module.exports = Chain;
+},{"./marketdata":14}],10:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -784,7 +811,7 @@ class Charts extends MarketData {
     }
     
     get(text) {
-        return this.all().find(f => f.barSize.text == text);
+        return this.all.find(f => f.barSize.text == text);
     }
     
     get all() {
@@ -838,7 +865,7 @@ class Charts extends MarketData {
 }
 
 module.exports = Charts;
-},{"../flags":7,"./bars":8,"./marketdata":12}],10:[function(require,module,exports){
+},{"../flags":7,"./bars":8,"./marketdata":14}],11:[function(require,module,exports){
 "use strict";
 
 const flags = require("../flags"),
@@ -853,10 +880,25 @@ function details(session, summary, cb) {
         .send();
 }
 
+function notify(time, cb) {
+    if (time.isPast() || time.secondsFromNow() < 10) cb();
+    else {
+        return setTimeout(() => {
+            setTimeout(() => {
+                cb();
+            }, time.millisecondsFromNow() - 5);
+        }, time.millisecondsFromNow() - 5000);
+    }
+}
+
 class Contract extends RealTime {
     
     constructor(session, data) {
         super(session);
+        
+        this._timers = [ ];
+        this._exclude.push("_timers");
+        
         this.merge(data);
     } 
     
@@ -956,10 +998,44 @@ class Contract extends RealTime {
             }
         });
         
-        Object.defineProperty(this, 'schedule', { value: schedule });
+        Object.defineProperty(schedule, 'next', {
+            get: function() {
+                let now = Date.create(),
+                    today = schedule[now.format("{Mon}{dd}")],
+                    advances = 0;
+                
+                while (today == null && advances < 7) {
+                    advances++;
+                    now.addDays(1);
+                    today = schedule[now.format("{Mon}{dd}")];
+                    if (today && today.end.every(end => end.isBefore(Date.create()))) {
+                        today = null;
+                    }
+                }
+                
+                return today;
+            }
+        });
+        
+        Object.defineProperty(this, 'schedule', { 
+            value: schedule 
+        });
         
         delete this.tradingHours;
         delete this.liquidHours;
+        
+        Object.keys(schedule).forEach(key => {
+            let day = schedule[key];
+            day.start.forEach(start => this._timers.push(notify(start, () => this.emit("start"))));
+            day.open.forEach(open => this._timers.push(notify(open, () => this.emit("open"))));
+            day.close.forEach(close => this._timers.push(notify(close, () => this.emit("close"))));
+            day.end.forEach(end => this._timers.push(notify(end, () => this.emit("end"))));
+        });
+    }
+    
+    get nextOpen() {
+        if (this.marketsOpen) return Date.create();
+        else return this.schedule.next.start.find(start => start.isAfter(Date.create()));
     }
     
     get marketsOpen() {
@@ -984,15 +1060,10 @@ class Contract extends RealTime {
         return false;
     }
     
-    get nextOpen() {
-        
-    }
-    
-    get nextLiquid() {
-        
-    }
-    
     refresh(cb) {
+        this._timers.forEach(timer => clearTimeout(timer));
+        this._timers = [ ];
+    
         this.session.service.contractDetails(this.summary)
             .once("data", contract => merge(data))
             .once("error", err => cb(err, list))
@@ -1135,7 +1206,37 @@ function lookup(session, description, cb) {
 }
 
 exports.lookup = lookup;
-},{"../flags":7,"../realtime":17}],11:[function(require,module,exports){
+},{"../flags":7,"../realtime":19}],12:[function(require,module,exports){
+"use strict";
+
+const MarketData = require("./marketdata");
+
+class Curve extends MarketData {
+    
+    constructor(session, securities, symbol) {
+        super(session, securities.sortBy(s => s.contract.expiry).map("contract"));
+        Object.defineProperty(this, "securities", { value: securities.sortBy(s => s.contract.expiry) });
+        Object.defineProperty(this, "symbol", { value: symbol || this.contract.first().summary.symbol + "_curve" });
+    }
+    
+    stream() {
+        this.securities.map(s => {
+            s.quote.stream()
+                .on("error", err => this.emit("error", err))
+                .on("update", data => this.emit("update", data));
+        });
+    }
+    
+    cancel() {
+        this.securities.map(s => {
+            s.quote.cancel();
+        });
+    }
+    
+}
+
+module.exports = Curve;
+},{"./marketdata":14}],13:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata");
@@ -1224,7 +1325,7 @@ class Depth extends MarketData {
 }
 
 module.exports = Depth;
-},{"./marketdata":12}],12:[function(require,module,exports){
+},{"./marketdata":14}],14:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -1239,7 +1340,7 @@ class MarketData extends RealTime {
 }
 
 module.exports = MarketData;
-},{"../realtime":17}],13:[function(require,module,exports){
+},{"../realtime":19}],15:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -1513,7 +1614,7 @@ class Order extends MarketData {
 }
 
 module.exports = Order;
-},{"../flags":7,"./marketdata":12}],14:[function(require,module,exports){
+},{"../flags":7,"./marketdata":14}],16:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -1705,7 +1806,7 @@ class FieldBuffer extends MarketData {
 }
 
 module.exports = Quote;
-},{"../flags":7,"./marketdata":12}],15:[function(require,module,exports){
+},{"../flags":7,"./marketdata":14}],17:[function(require,module,exports){
 "use strict";
 
 const flags = require("../flags"),
@@ -1764,9 +1865,9 @@ function securities(session, description, cb) {
 }
 
 module.exports = securities;
-},{"../flags":7,"./charts":9,"./depth":11,"./marketdata":12,"./order":13,"./quote":14}],16:[function(require,module,exports){
+},{"../flags":7,"./charts":10,"./depth":13,"./marketdata":14,"./order":15,"./quote":16}],18:[function(require,module,exports){
 module.exports = { };
-},{}],17:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -1824,7 +1925,7 @@ class RealTime extends Events {
 }
 
 module.exports = RealTime;
-},{"events":23}],18:[function(require,module,exports){
+},{"events":25}],20:[function(require,module,exports){
 (function (process){
 "use strict";
 
@@ -1834,6 +1935,8 @@ const Events = require("events"),
       Orders = require("./accounting/orders"),
       Trades = require("./accounting/trades"),
       Account = require("./accounting/account"),
+      Curve = require("./marketdata/curve"),
+      Chain = require("./marketdata/chain"),
       contract = require("./marketdata/contract"),
       securities = require("./marketdata/security");
 
@@ -1945,11 +2048,25 @@ class Session extends Events {
         securities(this, description, cb);
     }
     
+    curve(description, cb) {
+        securities(this, description, (err, securities) => {
+            if (err) cb(err);
+            else cb(null, new Curve(this, securities));
+        });
+    }
+    
+    chain(description, cb) {
+        securities(this, description, (err, securities) => {
+            if (err) cb(err);
+            else cb(null, new Chain(this, securities));
+        });
+    }
+    
 }
 
 module.exports = Session;
 }).call(this,require('_process'))
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/contract":10,"./marketdata/security":15,"_process":24,"events":23}],19:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/chain":9,"./marketdata/contract":11,"./marketdata/curve":12,"./marketdata/security":17,"_process":26,"events":25}],21:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -2022,7 +2139,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":22}],20:[function(require,module,exports){
+},{"./request":24}],22:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -2149,7 +2266,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":19,"./relay":21}],21:[function(require,module,exports){
+},{"./dispatch":21,"./relay":23}],23:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -2192,7 +2309,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],22:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -2317,7 +2434,7 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":23}],23:[function(require,module,exports){
+},{"events":25}],25:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2621,7 +2738,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],24:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
