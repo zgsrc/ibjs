@@ -4,9 +4,10 @@ const MarketData = require("./marketdata");
 
 class Curve extends MarketData {
     
-    constructor(session, securities) {
+    constructor(session, securities, symbol) {
         super(session, securities.sortBy(s => s.contract.expiry).map("contract"));
         Object.defineProperty(this, "securities", { value: securities.sortBy(s => s.contract.expiry) });
+        Object.defineProperty(this, "symbol", { value: symbol || this.contract.first().summary.symbol + "_options" });
     }
     
     stream() {
