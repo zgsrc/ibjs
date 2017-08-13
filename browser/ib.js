@@ -661,7 +661,8 @@ module.exports = Bars;
 },{"../flags":7,"./marketdata":14,"./studies":18}],9:[function(require,module,exports){
 "use strict";
 
-const MarketData = require("./marketdata");
+const MarketData = require("./marketdata"),
+      Curve = require("./curve");
 
 class Chain extends MarketData {
     
@@ -686,10 +687,18 @@ class Chain extends MarketData {
         return Object.keys(this.dates);
     }
     
+    calls(strike) {
+        return this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike));
+    }
+    
+    puts(strike) {
+        return this.expirations.map(d => this.dates[d].puts.find(s => s.strike == strike));
+    }
+    
 }
 
 module.exports = Chain;
-},{"./marketdata":14}],10:[function(require,module,exports){
+},{"./curve":12,"./marketdata":14}],10:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),

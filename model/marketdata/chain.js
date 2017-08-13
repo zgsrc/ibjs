@@ -1,6 +1,7 @@
 "use strict";
 
-const MarketData = require("./marketdata");
+const MarketData = require("./marketdata"),
+      Curve = require("./curve");
 
 class Chain extends MarketData {
     
@@ -23,6 +24,14 @@ class Chain extends MarketData {
     
     get expirations() {
         return Object.keys(this.dates);
+    }
+    
+    calls(strike) {
+        return this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike));
+    }
+    
+    puts(strike) {
+        return this.expirations.map(d => this.dates[d].puts.find(s => s.strike == strike));
     }
     
 }
