@@ -1,6 +1,7 @@
 "use strict";
 
 const Events = require("events"),
+      flags = require("./flags"),
       Accounts = require("./accounting/accounts"),
       Positions = require("./accounting/positions"),
       Orders = require("./accounting/orders"),
