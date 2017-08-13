@@ -54,6 +54,7 @@ class Service {
         
         this.mktDataType = (type) => {
             ib.reqMarketDataType(type);
+            this.lastMktDataType = type;
         };
         
         this.mktDepth = instance("reqMktDepth", "cancelMktDepth", 10000, ib, dispatch);
