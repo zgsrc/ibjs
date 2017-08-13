@@ -32,11 +32,11 @@ class Chain extends MarketData {
     }
     
     calls(strike) {
-        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_calls");
+        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_calls_curve");
     }
     
     puts(strike) {
-        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_puts");
+        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_puts_curve");
     }
     
 }
