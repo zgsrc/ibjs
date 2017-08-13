@@ -1924,20 +1924,20 @@ class RealTime extends Events {
     
     constructor(session) {
         super();
-        this._exclude = [ ];
+        this._exclude = [ "cancel", "domain", "undefined", "null", "true", "false" ];
         Object.defineProperty(this, 'session', { value: session });
         Object.defineProperty(this, 'service', { value: session.service });
     }
     
     get fields() {
-        return Object.keys(this).exclude(/\_.*/).subtract(this._exclude).exclude("cancel").exclude("domain");
+        return Object.keys(this).exclude(/\_.*/).subtract(this._exclude);
     }
     
     get snapshot() {
         let obj = Object.select(this, this.fields);
         for (let prop in obj) {
             let snapshot = null;
-            if (snapshot = obj[prop].snapshot) {
+            if (obj[prop] && (snapshot = obj[prop].snapshot)) {
                 obj[prop] = snapshot;
             }
         }
