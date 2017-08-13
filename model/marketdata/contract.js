@@ -7,7 +7,7 @@ function details(session, summary, cb) {
     let list = [ ];
     session.service.contractDetails(summary)
         .on("data", contract => list.push(new Contract(session, contract)))
-        .once("error", err => cb(err, list))
+        .once("error", err => cb(err, list.sortBy("contract.expiry")))
         .once("end", () => cb(null, list))
         .send();
 }

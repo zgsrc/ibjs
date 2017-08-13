@@ -10,8 +10,12 @@ class Quote extends MarketData {
     
     constructor(session, contract) {
         super(session, contract);
+        
+        this.loaded = false;
+        this.streaming = false;
+        
         this._fieldTypes = Array.create();
-        this._exclude.push("_fieldTypes");
+        this._exclude.push("_fieldTypes", "loaded", "streaming");
     }
     
     addFieldTypes(fieldTypes) {
@@ -84,9 +88,13 @@ class Quote extends MarketData {
     stream() {
         let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false, false);
         
-        this.cancel = () => req.cancel();
+        this.cancel = () => {
+            req.cancel();
+            this.streaming = false;
+        };
         
         req.on("data", datum  => {
+            this.streaming = true;
             datum = parseQuotePart(datum);
             if (this[datum.key] && !this.loaded) {
                 this.loaded = true;
@@ -97,6 +105,7 @@ class Quote extends MarketData {
             this[datum.key] = datum.value;
             this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
         }).on("error", err => {
+            this.streaming = false;
             this.emit("error", err);
         }).send();
         

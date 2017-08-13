@@ -666,10 +666,11 @@ const MarketData = require("./marketdata");
 class Chain extends MarketData {
     
     constructor(session, securities, symbol) {
-        super(session, securities.sortBy(s => s.contract.expiry).map("contract"));
+        super(session, securities[0].contract);
+        
+        Object.defineProperty(this, "count", { value: securities.length });
         
         let expirations = securities.groupBy(s => s.contract.summary.expiry);
-        
         Object.keys(expirations).forEach(date => {
             expirations[date] = {
                 calls: expirations[date].filter(s => s.contract.summary.right == "C").sortBy("strike"),
@@ -677,8 +678,12 @@ class Chain extends MarketData {
             };
         });
         
-        Object.defineProperty(this, "expirations", { value: expirations });
+        Object.defineProperty(this, "dates", { value: expirations });
         Object.defineProperty(this, "symbol", { value: symbol || this.contract.first().summary.symbol + "_options" });
+    }
+    
+    get expirations() {
+        return Object.keys(this.dates);
     }
     
 }
@@ -883,7 +888,7 @@ function details(session, summary, cb) {
     let list = [ ];
     session.service.contractDetails(summary)
         .on("data", contract => list.push(new Contract(session, contract)))
-        .once("error", err => cb(err, list))
+        .once("error", err => cb(err, list.sortBy("contract.expiry")))
         .once("end", () => cb(null, list))
         .send();
 }
@@ -1246,33 +1251,20 @@ const MarketData = require("./marketdata");
 class Curve extends MarketData {
     
     constructor(session, securities, symbol) {
-        super(session, securities.sortBy(s => s.contract.expiry).map("contract"));
-        Object.defineProperty(this, "securities", { value: securities.sortBy(s => s.contract.expiry) });
-        Object.defineProperty(this, "symbol", { value: symbol || this.contract.first().summary.symbol + "_curve" });
+        super(session, securities[0].contract);
+        Object.defineProperty(this, "securities", { value: securities });
+        Object.defineProperty(this, "symbol", { value: symbol || this.contract.summary.symbol + "_curve" });
     }
     
     get points() {
-        let p = this.securities.map(s => {
-            return {
-                expiry: s.contract.expiry, 
-                timestamp: s.quote.lastTimestamp,
-                last: s.quote.last
-            };
-        });
-        
-        p[0].spread = 0;
-        for (let i = 1; i < p.length; i++) {
-            p[i].spread = p[i].last - p[i - 1].last;
-        }
-        
-        return p;
+        return this.securities.map(s => Object.merge(s.quote.snapshot, { expiry: s.contract.expiry }));
     }
     
     stream() {
         this.securities.map(s => {
-            s.quote.stream()
-                .on("error", err => this.emit("error", err))
-                .on("update", data => this.emit("update", data));
+            if (!s.quote.streaming) {
+                s.quote.stream().on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
+            }
         });
     }
     
@@ -1674,8 +1666,12 @@ class Quote extends MarketData {
     
     constructor(session, contract) {
         super(session, contract);
+        
+        this.loaded = false;
+        this.streaming = false;
+        
         this._fieldTypes = Array.create();
-        this._exclude.push("_fieldTypes");
+        this._exclude.push("_fieldTypes", "loaded", "streaming");
     }
     
     addFieldTypes(fieldTypes) {
@@ -1748,9 +1744,13 @@ class Quote extends MarketData {
     stream() {
         let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false, false);
         
-        this.cancel = () => req.cancel();
+        this.cancel = () => {
+            req.cancel();
+            this.streaming = false;
+        };
         
         req.on("data", datum  => {
+            this.streaming = true;
             datum = parseQuotePart(datum);
             if (this[datum.key] && !this.loaded) {
                 this.loaded = true;
@@ -1761,6 +1761,7 @@ class Quote extends MarketData {
             this[datum.key] = datum.value;
             this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
         }).on("error", err => {
+            this.streaming = false;
             this.emit("error", err);
         }).send();
         
