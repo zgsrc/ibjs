@@ -1977,6 +1977,7 @@ module.exports = RealTime;
 "use strict";
 
 const Events = require("events"),
+      flags = require("./flags"),
       Accounts = require("./accounting/accounts"),
       Positions = require("./accounting/positions"),
       Orders = require("./accounting/orders"),
@@ -2121,7 +2122,7 @@ class Session extends Events {
 
 module.exports = Session;
 }).call(this,require('_process'))
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./marketdata/chain":9,"./marketdata/contract":11,"./marketdata/curve":12,"./marketdata/security":17,"_process":26,"events":25}],21:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":7,"./marketdata/chain":9,"./marketdata/contract":11,"./marketdata/curve":12,"./marketdata/security":17,"_process":26,"events":25}],21:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
