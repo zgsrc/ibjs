@@ -46,8 +46,8 @@ class Contract extends RealTime {
         }
         
         let timeZoneId = this.timeZoneId,
-            tradingHours = (this.tradingHours || "").split(';').map(d => d.split(':')),
-            liquidHours = (this.liquidHours || "").split(';').map(d => d.split(':'));
+            tradingHours = (this.tradingHours || "").split(';').compact(true).map(d => d.split(':')),
+            liquidHours = (this.liquidHours || "").split(';').compact(true).map(d => d.split(':'));
         
         let schedule = { };
         tradingHours.forEach(arr => {
@@ -154,6 +154,7 @@ class Contract extends RealTime {
         delete this.tradingHours;
         delete this.liquidHours;
         
+        /*
         Object.values(schedule).map(day => {            
             day.start.forEach(start => {
                 if (start.isFuture()) {
@@ -187,6 +188,7 @@ class Contract extends RealTime {
                 }
             });
         });
+        */
     }
     
     get nextOpen() {

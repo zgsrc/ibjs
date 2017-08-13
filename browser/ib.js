@@ -679,7 +679,7 @@ class Chain extends MarketData {
         });
         
         Object.defineProperty(this, "dates", { value: expirations });
-        Object.defineProperty(this, "symbol", { value: symbol || this.contract.first().summary.symbol + "_options" });
+        Object.defineProperty(this, "symbol", { value: symbol || this.contract.summary.symbol + "_options" });
     }
     
     get expirations() {
@@ -927,8 +927,8 @@ class Contract extends RealTime {
         }
         
         let timeZoneId = this.timeZoneId,
-            tradingHours = (this.tradingHours || "").split(';').map(d => d.split(':')),
-            liquidHours = (this.liquidHours || "").split(';').map(d => d.split(':'));
+            tradingHours = (this.tradingHours || "").split(';').compact(true).map(d => d.split(':')),
+            liquidHours = (this.liquidHours || "").split(';').compact(true).map(d => d.split(':'));
         
         let schedule = { };
         tradingHours.forEach(arr => {
@@ -1035,6 +1035,7 @@ class Contract extends RealTime {
         delete this.tradingHours;
         delete this.liquidHours;
         
+        /*
         Object.values(schedule).map(day => {            
             day.start.forEach(start => {
                 if (start.isFuture()) {
@@ -1068,6 +1069,7 @@ class Contract extends RealTime {
                 }
             });
         });
+        */
     }
     
     get nextOpen() {
@@ -2009,9 +2011,19 @@ class Session extends Events {
         
         this.service.socket.on("connected", () => {
             this.service.system().on("data", data => {
-                if (data.code >= 2103 || data.code <= 2106) {
+                if (data.code >= 2103 && data.code <= 2106) {
                     let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
                     name = name.split(":");
+
+                    let status = name[0];
+                    name = name[1];
+
+                    this.connectivity[name] = { status: status, time: Date.create() };   
+                    this.emit("connectivity", this.connectivity[name]);
+                }
+                else if (data.code == 2107) {
+                    let name = data.message.trim();
+                    name = name.split(".");
 
                     let status = name[0];
                     name = name[1];

@@ -32,9 +32,19 @@ class Session extends Events {
         
         this.service.socket.on("connected", () => {
             this.service.system().on("data", data => {
-                if (data.code >= 2103 || data.code <= 2106) {
+                if (data.code >= 2103 && data.code <= 2106) {
                     let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
                     name = name.split(":");
+
+                    let status = name[0];
+                    name = name[1];
+
+                    this.connectivity[name] = { status: status, time: Date.create() };   
+                    this.emit("connectivity", this.connectivity[name]);
+                }
+                else if (data.code == 2107) {
+                    let name = data.message.trim();
+                    name = name.split(".");
 
                     let status = name[0];
                     name = name[1];

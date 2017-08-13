@@ -18,7 +18,7 @@ class Chain extends MarketData {
         });
         
         Object.defineProperty(this, "dates", { value: expirations });
-        Object.defineProperty(this, "symbol", { value: symbol || this.contract.first().summary.symbol + "_options" });
+        Object.defineProperty(this, "symbol", { value: symbol || this.contract.summary.symbol + "_options" });
     }
     
     get expirations() {

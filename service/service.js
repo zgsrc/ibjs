@@ -40,13 +40,13 @@ class Service {
         
         this.currentTime = singleton("currentTime", "reqCurrentTime", null, 1000, ib, dispatch);
         
-        this.contractDetails = instance("reqContractDetails", null, 5000, ib, dispatch);
+        this.contractDetails = instance("reqContractDetails", null, 10000, ib, dispatch);
 
         this.fundamentalData = instance("reqFundamentalData", null, 10000, ib, dispatch);
         
         this.historicalData = instance("reqHistoricalData", null, 10000, ib, dispatch);
         
-        this.headTimestamp = instance("reqHeadTimestamp", null, 5000, ib, dispatch);
+        this.headTimestamp = instance("reqHeadTimestamp", null, 10000, ib, dispatch);
         
         this.realTimeBars = instance("reqRealTimeBars", "cancelRealTimeBars", 10000, ib, dispatch);
         
@@ -59,25 +59,25 @@ class Service {
         
         this.mktDepth = instance("reqMktDepth", "cancelMktDepth", 10000, ib, dispatch);
 
-        this.scannerParameters = singleton("scannerParameters", "reqScannerParameters", null, 5000, ib, dispatch);
+        this.scannerParameters = singleton("scannerParameters", "reqScannerParameters", null, 10000, ib, dispatch);
         
-        this.scannerSubscription = instance("reqScannerSubscription", "cancelScannerSubscription", 5000, ib, dispatch);
+        this.scannerSubscription = instance("reqScannerSubscription", "cancelScannerSubscription", 10000, ib, dispatch);
 
-        this.managedAccounts = singleton("managedAccounts", "reqManagedAccts", null, 5000, ib, dispatch);
+        this.managedAccounts = singleton("managedAccounts", "reqManagedAccts", null, 10000, ib, dispatch);
         
-        this.accountSummary = instance("reqAccountSummary", "cancelAccountSummary", 5000, ib, dispatch);
+        this.accountSummary = instance("reqAccountSummary", "cancelAccountSummary", 10000, ib, dispatch);
         
         this.accountUpdates = accountCode => {
             return dispatch.singleton(
                 `accountUpdates(${ accountCode })`,
                 req => ib.reqAccountUpdates(true, accountCode), 
                 req => ib.reqAccountUpdates(false, accountCode),
-                5000,
+                10000,
                 "accountUpdates"
             );
         };
         
-        this.executions = instance("reqExecutions", null, 5000, ib, dispatch);
+        this.executions = instance("reqExecutions", null, 10000, ib, dispatch);
         
         this.commissions = () => {
             return dispatch.singleton(
@@ -89,11 +89,11 @@ class Service {
             );
         };
         
-        this.openOrders = instance("orders", "reqOpenOrders", null, 5000, ib, dispatch);
+        this.openOrders = instance("orders", "reqOpenOrders", null, 10000, ib, dispatch);
         
-        this.allOpenOrders = singleton("orders", "reqAllOpenOrders", null, 5000, ib, dispatch);
+        this.allOpenOrders = singleton("orders", "reqAllOpenOrders", null, 10000, ib, dispatch);
         
-        this.positions = singleton("positions", "reqPositions", "cancelPositions", 5000, ib, dispatch);
+        this.positions = singleton("positions", "reqPositions", "cancelPositions", 10000, ib, dispatch);
         
         this.orderIds = singleton("orderId", "reqIDs", null, 1000, ib, dispatch);
         
