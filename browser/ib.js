@@ -447,6 +447,14 @@ const OCA_TYPE = {
 
 exports.OCA_TYPE = OCA_TYPE;
 
+const MARKET_DATA_TYPE = {
+    live: 1,
+    frozen: 2,
+    delayed: 3
+};
+
+exports.MARKET_DATA_TYPE = MARKET_DATA_TYPE;
+
 },{}],8:[function(require,module,exports){
 "use strict";
 
@@ -2047,6 +2055,14 @@ class Session extends Events {
     
     get clientId() {
         return this.service.socket.clientId;
+    }
+    
+    get frozen() {
+        return this.service.lastMktDataType == flags.MARKET_DATA_TYPE.frozen;
+    }
+    
+    set frozen(value) {
+        this.service.mktDataType(value ? flags.MARKET_DATA_TYPE.frozen : flags.MARKET_DATA_TYPE.live);
     }
     
     close(exit) {

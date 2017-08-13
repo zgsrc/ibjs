@@ -81,6 +81,14 @@ class Session extends Events {
         return this.service.socket.clientId;
     }
     
+    get frozen() {
+        return this.service.lastMktDataType == flags.MARKET_DATA_TYPE.frozen;
+    }
+    
+    set frozen(value) {
+        this.service.mktDataType(value ? flags.MARKET_DATA_TYPE.frozen : flags.MARKET_DATA_TYPE.live);
+    }
+    
     close(exit) {
         this.service.socket.disconnect();
         if (exit) process.exit();
