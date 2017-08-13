@@ -10,28 +10,33 @@ class Chain extends MarketData {
         
         Object.defineProperty(this, "count", { value: securities.length });
         
-        let expirations = securities.groupBy(s => s.contract.summary.expiry);
-        Object.keys(expirations).forEach(date => {
-            expirations[date] = {
-                calls: expirations[date].filter(s => s.contract.summary.right == "C").sortBy("strike"),
-                puts: expirations[date].filter(s => s.contract.summary.right == "P").sortBy("strike")
+        let dates = securities.groupBy(s => s.contract.summary.expiry);
+        Object.keys(dates).forEach(date => {
+            dates[date] = {
+                calls: dates[date].filter(s => s.contract.summary.right == "C").sortBy("contract.summary.strike"),
+                puts: dates[date].filter(s => s.contract.summary.right == "P").sortBy("contract.summary.strike")
             };
         });
         
-        Object.defineProperty(this, "dates", { value: expirations });
+        Object.defineProperty(this, "dates", { value: dates });
         Object.defineProperty(this, "symbol", { value: symbol || this.contract.summary.symbol + "_options" });
-    }
-    
-    get expirations() {
-        return Object.keys(this.dates);
+        Object.defineProperty(this, "expirations", { value: Object.keys(dates) });
+        Object.defineProperty(this, "strikes", { 
+            value: this.expirations.map(e => {
+                return [ 
+                    this.dates[e].calls.map("contract.summary.strike"),
+                    this.dates[e].puts.map("contract.summary.strike")
+                ];
+            }).flatten().compact(true).unique().sortBy()
+        });
     }
     
     calls(strike) {
-        return this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike));
+        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_calls");
     }
     
     puts(strike) {
-        return this.expirations.map(d => this.dates[d].puts.find(s => s.strike == strike));
+        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_puts");
     }
     
 }
