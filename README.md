@@ -31,6 +31,10 @@ This package makes use of the [Sugar](https://sugarjs.com) library, which modifi
 
 The programming model is built on top of the [service](./docs/service.md) module, which makes interacting with the IB API pub/sub paradigm easier.
 
+## Resources
+
+* [Headless IB Gateway Installation on Ubuntu Server](https://github.com/roblav96/headless-ib-gateway-installation-ubuntu-server)
+
 ## License
 
 Copyright 2017 Jonathan Hollinger
