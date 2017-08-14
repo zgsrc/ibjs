@@ -8,6 +8,7 @@ class Chain extends MarketData {
     constructor(session, securities, symbol) {
         super(session, securities[0].contract);
         
+        Object.defineProperty(this, "securities", { value: securities });
         Object.defineProperty(this, "count", { value: securities.length });
         
         let dates = securities.groupBy(s => s.contract.summary.expiry);
@@ -29,6 +30,15 @@ class Chain extends MarketData {
                 ];
             }).flatten().compact(true).unique().sortBy()
         });
+    }
+    
+    get points() {
+        return this.securities.map(s => Object.merge(s.quote.snapshot, { expiry: s.contract.expiry }));
+    }
+    
+    types(values) {
+        if (!Array.isArray(values)) values = [ values ];
+        values.forEach(val => this.securities.map(s => s.quote[val]()));
     }
     
     calls(strike) {

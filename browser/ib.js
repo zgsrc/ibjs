@@ -6,7 +6,7 @@ window.ib = {
     session: () => new Session(new Proxy(socket)),
     flags: require("../model/flags")
 };
-},{"../model/flags":7,"../model/session":20,"../service/proxy":22}],2:[function(require,module,exports){
+},{"../model/flags":7,"../model/session":21,"../service/proxy":23}],2:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -669,6 +669,7 @@ class Chain extends MarketData {
     constructor(session, securities, symbol) {
         super(session, securities[0].contract);
         
+        Object.defineProperty(this, "securities", { value: securities });
         Object.defineProperty(this, "count", { value: securities.length });
         
         let dates = securities.groupBy(s => s.contract.summary.expiry);
@@ -690,6 +691,15 @@ class Chain extends MarketData {
                 ];
             }).flatten().compact(true).unique().sortBy()
         });
+    }
+    
+    get points() {
+        return this.securities.map(s => Object.merge(s.quote.snapshot, { expiry: s.contract.expiry }));
+    }
+    
+    types(values) {
+        if (!Array.isArray(values)) values = [ values ];
+        values.forEach(val => this.securities.map(s => s.quote[val]()));
     }
     
     calls(strike) {
@@ -896,7 +906,10 @@ module.exports = Charts;
 "use strict";
 
 const flags = require("../flags"),
-      RealTime = require("../realtime");
+      RealTime = require("../realtime"),
+      Scheduler = require("../scheduler");
+
+const schedule = new Scheduler();
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -907,25 +920,10 @@ function details(session, summary, cb) {
         .send();
 }
 
-function notify(time, cb) {
-    if (time.isPast() || time.secondsFromNow() < 10) cb();
-    else {
-        return setTimeout(() => {
-            setTimeout(() => {
-                cb();
-            }, time.millisecondsFromNow() - 5);
-        }, time.millisecondsFromNow() - 5000);
-    }
-}
-
 class Contract extends RealTime {
     
     constructor(session, data) {
         super(session);
-        
-        this._timers = [ ];
-        this._exclude.push("_timers");
-        
         this.merge(data);
     } 
     
@@ -1049,41 +1047,39 @@ class Contract extends RealTime {
         delete this.tradingHours;
         delete this.liquidHours;
         
-        /*
         Object.values(schedule).map(day => {            
             day.start.forEach(start => {
                 if (start.isFuture()) {
-                    this._timers.push(notify(start, () => this.emit("startOfDay")));
-                    this._timers.push(notify(start.addSeconds(-5), () => this.emit("beforeStartOfDay")));
-                    this._timers.push(notify(start.addSeconds(10), () => this.emit("afterStartOfDay")));
+                    scheduler.notify(start, () => this.emit("startOfDay"));
+                    scheduler.notify(start.addSeconds(-5), () => this.emit("beforeStartOfDay"));
+                    scheduler.notify(start.addSeconds(10), () => this.emit("afterStartOfDay"));
                 }
             });
             
             day.open.forEach(open => {
                 if (open.isFuture()) {
-                    this._timers.push(notify(open, () => this.emit("marketOpen")));
-                    this._timers.push(notify(open.addSeconds(-5), () => this.emit("beforeMarketOpen")));
-                    this._timers.push(notify(open.addSeconds(10), () => this.emit("afterMarketOpen")));
+                    scheduler.notify(open, () => this.emit("marketOpen"));
+                    scheduler.notify(open.addSeconds(-5), () => this.emit("beforeMarketOpen"));
+                    scheduler.notify(open.addSeconds(10), () => this.emit("afterMarketOpen"));
                 }
             });
             
             day.close.forEach(close => {
                 if (close.isFuture()) {
-                    this._timers.push(notify(close, () => this.emit("marketClose")));
-                    this._timers.push(notify(close.addSeconds(-5), () => this.emit("beforeMarketClose")));
-                    this._timers.push(notify(close.addSeconds(10), () => this.emit("afterMarketClose")));
+                    scheduler.notify(close, () => this.emit("marketClose"));
+                    scheduler.notify(close.addSeconds(-5), () => this.emit("beforeMarketClose"));
+                    scheduler.notify(close.addSeconds(10), () => this.emit("afterMarketClose"));
                 }
             });
             
             day.end.forEach(end => {
                 if (end.isFuture()) {
-                    this._timers.push(notify(end, () => this.emit("endOfDay")));
-                    this._timers.push(notify(end.addSeconds(-5), () => this.emit("beforeEndOfDay")));
-                    this._timers.push(notify(end.addSeconds(10), () => this.emit("afterEndOfDay")));
+                    scheduler.notify(end, () => this.emit("endOfDay"));
+                    scheduler.notify(end.addSeconds(-5), () => this.emit("beforeEndOfDay"));
+                    scheduler.notify(end.addSeconds(10), () => this.emit("afterEndOfDay"));
                 }
             });
         });
-        */
     }
     
     get nextOpen() {
@@ -1114,9 +1110,6 @@ class Contract extends RealTime {
     }
     
     refresh(cb) {
-        this._timers.forEach(timer => clearTimeout(timer));
-        this._timers = [ ];
-    
         this.session.service.contractDetails(this.summary)
             .once("data", contract => merge(data))
             .once("error", err => cb(err, list))
@@ -1259,7 +1252,7 @@ function lookup(session, description, cb) {
 }
 
 exports.lookup = lookup;
-},{"../flags":7,"../realtime":19}],12:[function(require,module,exports){
+},{"../flags":7,"../realtime":19,"../scheduler":20}],12:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata");
@@ -1269,21 +1262,38 @@ class Curve extends MarketData {
     constructor(session, securities, symbol) {
         super(session, securities[0].contract);
         Object.defineProperty(this, "securities", { value: securities });
-        Object.defineProperty(this, "symbol", { value: symbol || this.contract.summary.symbol + "_curve" });
+        Object.defineProperty(this, "symbol", { value: symbol || this.contract.summary.symbol + "_" + this.constructor.name.toLowerCase() });
     }
     
     get points() {
         return this.securities.map(s => Object.merge(s.quote.snapshot, { expiry: s.contract.expiry }));
     }
     
+    types(values) {
+        if (!Array.isArray(values)) values = [ values ];
+        values.forEach(val => this.securities.map(s => s.quote[val]()));
+    }
+    
     stream() {
-        this.securities.map(s => {
-            if (!s.quote.streaming) {
-                s.quote.stream()
-                    .on("error", err => this.emit("error", err))
-                    .on("update", data => this.emit("update", data));
-            }
-        });
+        let count = this.securities.count("quote.streaming");
+        if (count == this.securities.length){
+            this.emit("load");
+        }
+        else {
+            this.securities.map(s => {
+                if (!s.quote.streaming) {
+                    s.quote.stream()
+                        .on("error", err => this.emit("error", err))
+                        .on("update", data => this.emit("update", data))
+                        .on("load", () => {
+                            count--;
+                            if (count == 0) {
+                                this.emit("load");
+                            }
+                        });
+                }
+            });
+        }
     }
     
     cancel() {
@@ -1991,7 +2001,40 @@ class RealTime extends Events {
 }
 
 module.exports = RealTime;
-},{"events":25}],20:[function(require,module,exports){
+},{"events":26}],20:[function(require,module,exports){
+"use strict";
+
+class Scheduler {
+    
+    constructor() {
+        super();
+        this.timers = { };
+    }
+    
+    notify(time, cb) {
+        if (time.isPast() || time.secondsFromNow() < 10) cb();
+        else {
+            if (this.timers[time.getTime()]) {
+                this.timers[time.getTime()].callbacks.push(cb);
+            }
+            else {
+                this.timers[time.getTime()] = {
+                    callbacks: [ cb ],
+                    timer: setTimeout(() => {
+                        setTimeout(() => {
+                            this.timers[time.getTime()].callbacks.forEach(cb => cb());
+                            delete this.timers[time.getTime()];
+                        }, time.millisecondsFromNow() - 5);
+                    }, time.millisecondsFromNow() - 5000)
+                }
+            }
+        }
+    }
+    
+}
+
+module.exports = Scheduler;
+},{}],21:[function(require,module,exports){
 (function (process){
 "use strict";
 
@@ -2151,7 +2194,7 @@ class Session extends Events {
 
 module.exports = Session;
 }).call(this,require('_process'))
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":7,"./marketdata/chain":9,"./marketdata/contract":11,"./marketdata/curve":12,"./marketdata/security":17,"_process":26,"events":25}],21:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":7,"./marketdata/chain":9,"./marketdata/contract":11,"./marketdata/curve":12,"./marketdata/security":17,"_process":27,"events":26}],22:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -2224,7 +2267,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":24}],22:[function(require,module,exports){
+},{"./request":25}],23:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -2351,7 +2394,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":21,"./relay":23}],23:[function(require,module,exports){
+},{"./dispatch":22,"./relay":24}],24:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -2394,7 +2437,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -2519,7 +2562,7 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":25}],25:[function(require,module,exports){
+},{"events":26}],26:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2823,7 +2866,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],26:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 

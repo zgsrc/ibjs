@@ -1,7 +1,10 @@
 "use strict";
 
 const flags = require("../flags"),
-      RealTime = require("../realtime");
+      RealTime = require("../realtime"),
+      Scheduler = require("../scheduler");
+
+const schedule = new Scheduler();
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -12,25 +15,10 @@ function details(session, summary, cb) {
         .send();
 }
 
-function notify(time, cb) {
-    if (time.isPast() || time.secondsFromNow() < 10) cb();
-    else {
-        return setTimeout(() => {
-            setTimeout(() => {
-                cb();
-            }, time.millisecondsFromNow() - 5);
-        }, time.millisecondsFromNow() - 5000);
-    }
-}
-
 class Contract extends RealTime {
     
     constructor(session, data) {
         super(session);
-        
-        this._timers = [ ];
-        this._exclude.push("_timers");
-        
         this.merge(data);
     } 
     
@@ -154,41 +142,39 @@ class Contract extends RealTime {
         delete this.tradingHours;
         delete this.liquidHours;
         
-        /*
         Object.values(schedule).map(day => {            
             day.start.forEach(start => {
                 if (start.isFuture()) {
-                    this._timers.push(notify(start, () => this.emit("startOfDay")));
-                    this._timers.push(notify(start.addSeconds(-5), () => this.emit("beforeStartOfDay")));
-                    this._timers.push(notify(start.addSeconds(10), () => this.emit("afterStartOfDay")));
+                    scheduler.notify(start, () => this.emit("startOfDay"));
+                    scheduler.notify(start.addSeconds(-5), () => this.emit("beforeStartOfDay"));
+                    scheduler.notify(start.addSeconds(10), () => this.emit("afterStartOfDay"));
                 }
             });
             
             day.open.forEach(open => {
                 if (open.isFuture()) {
-                    this._timers.push(notify(open, () => this.emit("marketOpen")));
-                    this._timers.push(notify(open.addSeconds(-5), () => this.emit("beforeMarketOpen")));
-                    this._timers.push(notify(open.addSeconds(10), () => this.emit("afterMarketOpen")));
+                    scheduler.notify(open, () => this.emit("marketOpen"));
+                    scheduler.notify(open.addSeconds(-5), () => this.emit("beforeMarketOpen"));
+                    scheduler.notify(open.addSeconds(10), () => this.emit("afterMarketOpen"));
                 }
             });
             
             day.close.forEach(close => {
                 if (close.isFuture()) {
-                    this._timers.push(notify(close, () => this.emit("marketClose")));
-                    this._timers.push(notify(close.addSeconds(-5), () => this.emit("beforeMarketClose")));
-                    this._timers.push(notify(close.addSeconds(10), () => this.emit("afterMarketClose")));
+                    scheduler.notify(close, () => this.emit("marketClose"));
+                    scheduler.notify(close.addSeconds(-5), () => this.emit("beforeMarketClose"));
+                    scheduler.notify(close.addSeconds(10), () => this.emit("afterMarketClose"));
                 }
             });
             
             day.end.forEach(end => {
                 if (end.isFuture()) {
-                    this._timers.push(notify(end, () => this.emit("endOfDay")));
-                    this._timers.push(notify(end.addSeconds(-5), () => this.emit("beforeEndOfDay")));
-                    this._timers.push(notify(end.addSeconds(10), () => this.emit("afterEndOfDay")));
+                    scheduler.notify(end, () => this.emit("endOfDay"));
+                    scheduler.notify(end.addSeconds(-5), () => this.emit("beforeEndOfDay"));
+                    scheduler.notify(end.addSeconds(10), () => this.emit("afterEndOfDay"));
                 }
             });
         });
-        */
     }
     
     get nextOpen() {
@@ -219,9 +205,6 @@ class Contract extends RealTime {
     }
     
     refresh(cb) {
-        this._timers.forEach(timer => clearTimeout(timer));
-        this._timers = [ ];
-    
         this.session.service.contractDetails(this.summary)
             .once("data", contract => merge(data))
             .once("error", err => cb(err, list))
