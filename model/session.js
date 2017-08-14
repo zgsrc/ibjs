@@ -37,17 +37,17 @@ class Session extends Events {
                     name = name.split(":");
 
                     let status = name[0];
-                    name = name[1];
+                    name = name.from(1).join(":");
 
                     this.connectivity[name] = { status: status, time: Date.create() };   
                     this.emit("connectivity", this.connectivity[name]);
                 }
-                else if (data.code == 2107) {
+                else if (data.code >= 2107 && data.code <= 2108) {
                     let name = data.message.trim();
                     name = name.split(".");
 
                     let status = name[0];
-                    name = name[1];
+                    name = name.from(1).join(".");
 
                     this.connectivity[name] = { status: status, time: Date.create() };   
                     this.emit("connectivity", this.connectivity[name]);

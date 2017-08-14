@@ -693,11 +693,11 @@ class Chain extends MarketData {
     }
     
     calls(strike) {
-        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_calls");
+        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_calls_curve");
     }
     
     puts(strike) {
-        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_puts");
+        return new Curve(session, this.expirations.map(d => this.dates[d].calls.find(s => s.strike == strike)), this.symbol + "_" + strike.toString() + "_puts_curve");
     }
     
 }
@@ -1279,7 +1279,9 @@ class Curve extends MarketData {
     stream() {
         this.securities.map(s => {
             if (!s.quote.streaming) {
-                s.quote.stream().on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
+                s.quote.stream()
+                    .on("error", err => this.emit("error", err))
+                    .on("update", data => this.emit("update", data));
             }
         });
     }
@@ -2030,17 +2032,17 @@ class Session extends Events {
                     name = name.split(":");
 
                     let status = name[0];
-                    name = name[1];
+                    name = name.from(1).join(":");
 
                     this.connectivity[name] = { status: status, time: Date.create() };   
                     this.emit("connectivity", this.connectivity[name]);
                 }
-                else if (data.code == 2107) {
+                else if (data.code >= 2107 && data.code <= 2108) {
                     let name = data.message.trim();
                     name = name.split(".");
 
                     let status = name[0];
-                    name = name[1];
+                    name = name.from(1).join(".");
 
                     this.connectivity[name] = { status: status, time: Date.create() };   
                     this.emit("connectivity", this.connectivity[name]);

@@ -17,7 +17,9 @@ class Curve extends MarketData {
     stream() {
         this.securities.map(s => {
             if (!s.quote.streaming) {
-                s.quote.stream().on("error", err => this.emit("error", err)).on("update", data => this.emit("update", data));
+                s.quote.stream()
+                    .on("error", err => this.emit("error", err))
+                    .on("update", data => this.emit("update", data));
             }
         });
     }
