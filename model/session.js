@@ -21,13 +21,12 @@ class Session extends Events {
         
         this.connectivity = { };
         this.bulletins = [ ];
-        this.state = "initializing";
+        this.state = "disconnected";
         this.displayGroups = [ ];
         this.validOrderIds = [ ];
         
         this.service.socket.once("managedAccounts", data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
-            this.state = "ready";
             this.emit("ready", this);
         });
         
@@ -104,6 +103,9 @@ class Session extends Events {
                 });
             }).send();
             
+            this.service.autoOpenOrders(true);
+            Object.defineProperty(this, 'orders', { value: new Orders(this) });
+            
             this.emit("connected", this.service.socket);
             this.state = "connected";
         }).on("disconnected", () => {
@@ -156,10 +158,6 @@ class Session extends Events {
     
     positions(options) {
         return new Positions(this, options);
-    }
-    
-    orders(options) {
-        return new Orders(this, options);
     }
 
     trades(options) {

@@ -402,42 +402,20 @@ function attach(ib, dispatch) {
     });
     
     ib.on('openOrder', function(orderId, contract, order, orderState) {
-        dispatch.data("order" + orderId, {
-            orderId: orderId, 
-            contract: contract, 
-            order: order, 
-            orderState: orderState 
-        });
-        
         dispatch.data("orders", {
             orderId: orderId, 
-            contract: contract, 
-            order: order, 
-            orderState: orderState 
+            contract: { summary: contract }, 
+            ticket: order, 
+            state: orderState 
         });
     }).on('openOrderEnd', function() {
         dispatch.end("orders");
     });
         
     ib.on('orderStatus', function(id, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld) {
-        dispatch.data("order" + id, {
-            orderId: id, 
-            orderState: {
-                status: status, 
-                filled: filled, 
-                remaining: remaining, 
-                avgFillPrice: avgFillPrice, 
-                permId: permId, 
-                parentId: parentId, 
-                lastFillPrice: lastFillPrice, 
-                clientId: clientId, 
-                whyHeld: whyHeld 
-            } 
-        });
-        
         dispatch.data("orders", {
             orderId: id, 
-            orderState: {
+            state: {
                 status: status, 
                 filled: filled, 
                 remaining: remaining, 

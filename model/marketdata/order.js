@@ -5,21 +5,32 @@ const MarketData = require("./marketdata"),
 
 class Order extends MarketData {
     
-    constructor(session, contract) {
+    constructor(session, contract, data) {
         super(session, contract);
+        
         Object.defineProperty(this, "children", { value: [ ] });
         
-        this.ticket = { 
+        this.ticket = (data ? data.ticket : null) || { 
             tif: flags.TIME_IN_FORCE.day,
             totalQuantity: 1,
             action: flags.SIDE.buy,
             orderType: flags.ORDER_TYPE.market
         };
         
-        session.nextOrderId((err, id) => {
-            if (err) this.emit("error", err);
-            else this.orderId = id;
-        });
+        this.state = data ? data.state : null;
+        
+        if (data && data.orderId) {
+            this.orderId = data.orderId;
+        }
+        else {
+            session.nextOrderId((err, id) => {
+                if (err) this.emit("error", err);
+                else {
+                    this.orderId = id;
+                    session.orders.add(this);
+                }
+            });
+        }
     }
     
     or(cb) {

@@ -158,31 +158,40 @@ module.exports = Accounts;
 },{"../flags":7,"../realtime":19}],4:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("../realtime");
+const RealTime = require("../realtime"),
+      Order = require("../marketdata/order");
 
 class Orders extends RealTime {
     
-    constructor(session, options) {
+    constructor(session) {
         super(session);
-
-        if (options == null) {
-            options = { all: true };
+        
+        this.subscription = this.service.allOpenOrders().on("data", data => {
+            if (this[data.orderId] == null) {
+                this[data.orderId] = new Order(session, data.contract, data);
+            }
+            else {
+                this[data.orderId].ticket = data.ticket;
+                this[data.orderId].state = data.state;
+                this[data.orderId].emit("update");
+            }
+            
+            this.emit("update", data);
+        }).on("end", () => this.emit("load")).on("error", err => this.emit("error", err));
+        
+        this.cancel = () => subscription.cancel();
+    }
+    
+    stream() {
+        this.subscription.send();
+    }
+    
+    add(order) {
+        if (this[order.orderId] == null) {
+            this[order.orderId] = order;
+            this.emit("update", order);
         }
-        
-        if (options.autoOpen) {
-            this.service.autoOpenOrders(options.autoOpen ? true : false);
-        }
-        
-        let orders = options.all ? this.service.allOpenOrders() : this.service.openOrders();
-        this.cancel = () => orders.cancel();
-        
-        orders.on("data", data => {
-            this[data.orderId] = data;
-        }).on("end", () => {
-            this.emit("load");
-        }).on("error", err => {
-            this.emit("error", err);
-        }).send();
+        else throw new Error("Order already exists");
     }
     
     cancelAllOrders() {
@@ -192,7 +201,7 @@ class Orders extends RealTime {
 }
 
 module.exports = Orders;
-},{"../realtime":19}],5:[function(require,module,exports){
+},{"../marketdata/order":15,"../realtime":19}],5:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -1415,21 +1424,32 @@ const MarketData = require("./marketdata"),
 
 class Order extends MarketData {
     
-    constructor(session, contract) {
+    constructor(session, contract, data) {
         super(session, contract);
+        
         Object.defineProperty(this, "children", { value: [ ] });
         
-        this.ticket = { 
+        this.ticket = (data ? data.ticket : null) || { 
             tif: flags.TIME_IN_FORCE.day,
             totalQuantity: 1,
             action: flags.SIDE.buy,
             orderType: flags.ORDER_TYPE.market
         };
         
-        session.nextOrderId((err, id) => {
-            if (err) this.emit("error", err);
-            else this.orderId = id;
-        });
+        this.state = data ? data.state : null;
+        
+        if (data && data.orderId) {
+            this.orderId = data.orderId;
+        }
+        else {
+            session.nextOrderId((err, id) => {
+                if (err) this.emit("error", err);
+                else {
+                    this.orderId = id;
+                    session.orders.add(this);
+                }
+            });
+        }
     }
     
     or(cb) {
@@ -2051,13 +2071,12 @@ class Session extends Events {
         
         this.connectivity = { };
         this.bulletins = [ ];
-        this.state = "initializing";
+        this.state = "disconnected";
         this.displayGroups = [ ];
         this.validOrderIds = [ ];
         
         this.service.socket.once("managedAccounts", data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
-            this.state = "ready";
             this.emit("ready", this);
         });
         
@@ -2134,6 +2153,9 @@ class Session extends Events {
                 });
             }).send();
             
+            this.service.autoOpenOrders(true);
+            Object.defineProperty(this, 'orders', { value: new Orders(this) });
+            
             this.emit("connected", this.service.socket);
             this.state = "connected";
         }).on("disconnected", () => {
@@ -2186,10 +2208,6 @@ class Session extends Events {
     
     positions(options) {
         return new Positions(this, options);
-    }
-    
-    orders(options) {
-        return new Orders(this, options);
     }
 
     trades(options) {

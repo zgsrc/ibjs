@@ -1,30 +1,39 @@
 "use strict";
 
-const RealTime = require("../realtime");
+const RealTime = require("../realtime"),
+      Order = require("../marketdata/order");
 
 class Orders extends RealTime {
     
-    constructor(session, options) {
+    constructor(session) {
         super(session);
-
-        if (options == null) {
-            options = { all: true };
+        
+        this.subscription = this.service.allOpenOrders().on("data", data => {
+            if (this[data.orderId] == null) {
+                this[data.orderId] = new Order(session, data.contract, data);
+            }
+            else {
+                this[data.orderId].ticket = data.ticket;
+                this[data.orderId].state = data.state;
+                this[data.orderId].emit("update");
+            }
+            
+            this.emit("update", data);
+        }).on("end", () => this.emit("load")).on("error", err => this.emit("error", err));
+        
+        this.cancel = () => subscription.cancel();
+    }
+    
+    stream() {
+        this.subscription.send();
+    }
+    
+    add(order) {
+        if (this[order.orderId] == null) {
+            this[order.orderId] = order;
+            this.emit("update", order);
         }
-        
-        if (options.autoOpen) {
-            this.service.autoOpenOrders(options.autoOpen ? true : false);
-        }
-        
-        let orders = options.all ? this.service.allOpenOrders() : this.service.openOrders();
-        this.cancel = () => orders.cancel();
-        
-        orders.on("data", data => {
-            this[data.orderId] = data;
-        }).on("end", () => {
-            this.emit("load");
-        }).on("error", err => {
-            this.emit("error", err);
-        }).send();
+        else throw new Error("Order already exists");
     }
     
     cancelAllOrders() {
