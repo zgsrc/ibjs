@@ -242,7 +242,9 @@ class Order extends MarketData {
     }
     
     save() {
-        this.session.orders.add(this);
+        if (this.orderId == null) {
+            this.session.orders.assign(this);
+        }
         
         if (this.children.length) {
             this.children.forEach(child => {
@@ -259,7 +261,7 @@ class Order extends MarketData {
     
     transmit() {
         this.ticket.transmit = true;
-        this.setup();
+        this.save();
     }
     
     cancel() {

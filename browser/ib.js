@@ -168,7 +168,7 @@ class Orders extends RealTime {
         
         this.nextOrderId = null;
         
-        this.subscription = this.service.allOpenOrders().on("data", data => {
+        this._subscription = this.service.allOpenOrders().on("data", data => {
             let id = data.orderId;
             if (id == 0) {
                 if (data.state) id = data.state.permId;
@@ -192,18 +192,24 @@ class Orders extends RealTime {
             this.emit("update", data);
         }).on("end", () => this.emit("load")).on("error", err => this.emit("error", err));
         
+        this._exclude.push("_subscription");
+        
         this.cancel = () => subscription.cancel();
     }
     
     stream() {
-        this.subscription.send();
+        this._subscription.send();
     }
     
-    add(order) {
+    assign(order) {
         if (order.orderId == null) {
             order.orderId = this.nextOrderId;
             this[order.orderId] = order;
         }
+    }
+    
+    cancel() {
+        this._subscription.cancel();
     }
     
     cancelAllOrders() {
@@ -1673,7 +1679,9 @@ class Order extends MarketData {
     }
     
     save() {
-        this.session.orders.add(this);
+        if (this.orderId == null) {
+            this.session.orders.assign(this);
+        }
         
         if (this.children.length) {
             this.children.forEach(child => {
@@ -1690,7 +1698,7 @@ class Order extends MarketData {
     
     transmit() {
         this.ticket.transmit = true;
-        this.setup();
+        this.save();
     }
     
     cancel() {
