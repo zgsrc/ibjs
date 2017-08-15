@@ -169,13 +169,24 @@ class Orders extends RealTime {
         this.nextOrderId = null;
         
         this.subscription = this.service.allOpenOrders().on("data", data => {
-            if (this[data.orderId] == null) {
-                this[data.orderId] = new Order(session, data.contract, data);
+            let id = data.orderId;
+            if (id == 0) {
+                if (data.state) id = data.state.permId;
+                if (data.ticket) id = data.ticket.permId;
+                id = id + "_readonly";
+            }
+            
+            if (this[id] == null) {
+                this[id] = new Order(session, data.contract, data);
             }
             else {
-                this[data.orderId].ticket = data.ticket;
-                this[data.orderId].state = data.state;
-                this[data.orderId].emit("update");
+                if (data.ticket) this[id].ticket = data.ticket;
+                Object.merge(this[id].state, data.state);
+                this[id].emit("update");
+            }
+            
+            if (data.orderId == 0) {
+                this[id].readOnly = true;
             }
             
             this.emit("update", data);
@@ -1434,10 +1445,11 @@ class Order extends MarketData {
             tif: flags.TIME_IN_FORCE.day,
             totalQuantity: 1,
             action: flags.SIDE.buy,
-            orderType: flags.ORDER_TYPE.market
+            orderType: flags.ORDER_TYPE.market,
+            transmit: false
         };
         
-        this.state = data ? data.state : null;
+        this.state = data ? data.state : { };
         this.orderId = data ? data.orderId : null;
     }
     
@@ -1660,7 +1672,7 @@ class Order extends MarketData {
         return this;
     }
     
-    setup() {
+    save() {
         this.session.orders.add(this);
         
         if (this.children.length) {
@@ -1670,9 +1682,7 @@ class Order extends MarketData {
             });
         }
         
-        let request = this.service.placeOrder(this.orderId, this.contract.summary, this.ticket);
-        this.cancel = () => request.cancel();
-        request.on("error", err => {
+        this.service.placeOrder(this.orderId, this.contract.summary, this.ticket).on("error", err => {
             this.error = err;
             this.emit("error", err);
         }).send();
@@ -1681,6 +1691,10 @@ class Order extends MarketData {
     transmit() {
         this.ticket.transmit = true;
         this.setup();
+    }
+    
+    cancel() {
+        this.service.cancelOrder(this.orderId);
     }
     
 }
@@ -2069,7 +2083,7 @@ class Session extends Events {
         this.service.socket.on("connected", () => {
             this.service.system().on("data", data => {
                 if (data.orderId && this.orders) {
-                    this.orders.nextOrderId = data;
+                    this.orders.nextOrderId = data.orderId;
                 }
                 else if (data.code == 321) {
                     if (!this.readOnly && data.message.indexOf("Read-Only") > 0) {
@@ -2160,18 +2174,6 @@ class Session extends Events {
     
     set frozen(value) {
         this.service.mktDataType(value ? flags.MARKET_DATA_TYPE.frozen : flags.MARKET_DATA_TYPE.live);
-    }
-    
-    nextOrderId(cb) {
-        if (this.readOnly) cb(new Error("API is in read-only mode. Orders cannot be placed."));
-        else if (this.validOrderIds.length) {
-            cb(null, this.validOrderIds.shift());
-            this.service.orderIds(1);
-        }
-        else {
-            this.service.orderIds(1);
-            setImmediate(() => this.nextOrderId(cb));
-        }
     }
     
     close(exit) {

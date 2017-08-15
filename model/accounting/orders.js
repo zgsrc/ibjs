@@ -11,13 +11,24 @@ class Orders extends RealTime {
         this.nextOrderId = null;
         
         this.subscription = this.service.allOpenOrders().on("data", data => {
-            if (this[data.orderId] == null) {
-                this[data.orderId] = new Order(session, data.contract, data);
+            let id = data.orderId;
+            if (id == 0) {
+                if (data.state) id = data.state.permId;
+                if (data.ticket) id = data.ticket.permId;
+                id = id + "_readonly";
+            }
+            
+            if (this[id] == null) {
+                this[id] = new Order(session, data.contract, data);
             }
             else {
-                this[data.orderId].ticket = data.ticket;
-                this[data.orderId].state = data.state;
-                this[data.orderId].emit("update");
+                if (data.ticket) this[id].ticket = data.ticket;
+                Object.merge(this[id].state, data.state);
+                this[id].emit("update");
+            }
+            
+            if (data.orderId == 0) {
+                this[id].readOnly = true;
             }
             
             this.emit("update", data);

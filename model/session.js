@@ -33,7 +33,7 @@ class Session extends Events {
         this.service.socket.on("connected", () => {
             this.service.system().on("data", data => {
                 if (data.orderId && this.orders) {
-                    this.orders.nextOrderId = data;
+                    this.orders.nextOrderId = data.orderId;
                 }
                 else if (data.code == 321) {
                     if (!this.readOnly && data.message.indexOf("Read-Only") > 0) {
@@ -124,18 +124,6 @@ class Session extends Events {
     
     set frozen(value) {
         this.service.mktDataType(value ? flags.MARKET_DATA_TYPE.frozen : flags.MARKET_DATA_TYPE.live);
-    }
-    
-    nextOrderId(cb) {
-        if (this.readOnly) cb(new Error("API is in read-only mode. Orders cannot be placed."));
-        else if (this.validOrderIds.length) {
-            cb(null, this.validOrderIds.shift());
-            this.service.orderIds(1);
-        }
-        else {
-            this.service.orderIds(1);
-            setImmediate(() => this.nextOrderId(cb));
-        }
     }
     
     close(exit) {

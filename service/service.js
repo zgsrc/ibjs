@@ -105,11 +105,17 @@ class Service {
             );
         };
         
-        this.openOrders = instance("orders", "reqOpenOrders", null, 10000, ib, dispatch);
+        this.openOrders = singleton("orders", "reqOpenOrders", null, 10000, ib, dispatch);
         
         this.allOpenOrders = singleton("orders", "reqAllOpenOrders", null, 10000, ib, dispatch);
         
-        this.placeOrder = instance("placeOrder", "cancelOrder", 5000, ib, dispatch);
+        this.placeOrder = (orderId, contract, ticket) => {
+            this.socket.placeOrder(orderId, contract, ticket);
+        }
+        
+        this.cancelOrder = orderId => {
+            this.socket.cancelOrder(orderId);
+        };
         
         this.exerciseOptions = instance("exerciseOptions", "cancelOrder", 5000, ib, dispatch);
         
@@ -411,9 +417,9 @@ function attach(ib, dispatch) {
         dispatch.end("orders");
     });
         
-    ib.on('orderStatus', function(id, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld) {
+    ib.on('orderStatus', function(orderId, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld) {
         dispatch.data("orders", {
-            orderId: id, 
+            orderId: orderId, 
             state: {
                 status: status, 
                 filled: filled, 

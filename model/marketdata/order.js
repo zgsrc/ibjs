@@ -14,10 +14,11 @@ class Order extends MarketData {
             tif: flags.TIME_IN_FORCE.day,
             totalQuantity: 1,
             action: flags.SIDE.buy,
-            orderType: flags.ORDER_TYPE.market
+            orderType: flags.ORDER_TYPE.market,
+            transmit: false
         };
         
-        this.state = data ? data.state : null;
+        this.state = data ? data.state : { };
         this.orderId = data ? data.orderId : null;
     }
     
@@ -240,7 +241,7 @@ class Order extends MarketData {
         return this;
     }
     
-    setup() {
+    save() {
         this.session.orders.add(this);
         
         if (this.children.length) {
@@ -250,9 +251,7 @@ class Order extends MarketData {
             });
         }
         
-        let request = this.service.placeOrder(this.orderId, this.contract.summary, this.ticket);
-        this.cancel = () => request.cancel();
-        request.on("error", err => {
+        this.service.placeOrder(this.orderId, this.contract.summary, this.ticket).on("error", err => {
             this.error = err;
             this.emit("error", err);
         }).send();
@@ -261,6 +260,10 @@ class Order extends MarketData {
     transmit() {
         this.ticket.transmit = true;
         this.setup();
+    }
+    
+    cancel() {
+        this.service.cancelOrder(this.orderId);
     }
     
 }
