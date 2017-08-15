@@ -32,8 +32,8 @@ class Session extends Events {
         
         this.service.socket.on("connected", () => {
             this.service.system().on("data", data => {
-                if (data.orderIds) {
-                    this.validOrderIds.append(data.orderIds);
+                if (data.orderId && this.orders) {
+                    this.orders.nextOrderId = data;
                 }
                 else if (data.code == 321) {
                     if (!this.readOnly && data.message.indexOf("Read-Only") > 0) {

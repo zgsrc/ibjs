@@ -8,6 +8,8 @@ class Orders extends RealTime {
     constructor(session) {
         super(session);
         
+        this.nextOrderId = null;
+        
         this.subscription = this.service.allOpenOrders().on("data", data => {
             if (this[data.orderId] == null) {
                 this[data.orderId] = new Order(session, data.contract, data);
@@ -29,11 +31,10 @@ class Orders extends RealTime {
     }
     
     add(order) {
-        if (this[order.orderId] == null) {
+        if (order.orderId == null) {
+            order.orderId = this.nextOrderId;
             this[order.orderId] = order;
-            this.emit("update", order);
         }
-        else throw new Error("Order already exists");
     }
     
     cancelAllOrders() {

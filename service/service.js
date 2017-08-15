@@ -156,9 +156,8 @@ function attach(ib, dispatch) {
         }
     });
     
-    ib.on("nextValidId", function(orderIds) {
-        if (!Array.isArray(orderIds)) orderIds = [ orderIds ];
-        dispatch.data("system", { orderIds: orderIds });
+    ib.on("nextValidId", function(orderId) {
+        dispatch.data("system", { orderId: orderId });
     });
     
     ib.once("currentTime", function(time) {

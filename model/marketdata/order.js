@@ -18,19 +18,7 @@ class Order extends MarketData {
         };
         
         this.state = data ? data.state : null;
-        
-        if (data && data.orderId) {
-            this.orderId = data.orderId;
-        }
-        else {
-            session.nextOrderId((err, id) => {
-                if (err) this.emit("error", err);
-                else {
-                    this.orderId = id;
-                    session.orders.add(this);
-                }
-            });
-        }
+        this.orderId = data ? data.orderId : null;
     }
     
     or(cb) {
@@ -253,21 +241,18 @@ class Order extends MarketData {
     }
     
     setup() {
+        this.session.orders.add(this);
+        
         if (this.children.length) {
             this.children.forEach(child => {
-                child.parentId = id;
+                child.parentId = this.orderId;
                 delete child.parent;
             });
         }
-
-        console.log("Placing order");
-        console.log(this.contract.summary);
-        console.log(this.ticket);
         
         let request = this.service.placeOrder(this.orderId, this.contract.summary, this.ticket);
         this.cancel = () => request.cancel();
-
-        request.on("data", data => Object.merge(me, data)).on("error", err => {
+        request.on("error", err => {
             this.error = err;
             this.emit("error", err);
         }).send();

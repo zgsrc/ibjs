@@ -166,6 +166,8 @@ class Orders extends RealTime {
     constructor(session) {
         super(session);
         
+        this.nextOrderId = null;
+        
         this.subscription = this.service.allOpenOrders().on("data", data => {
             if (this[data.orderId] == null) {
                 this[data.orderId] = new Order(session, data.contract, data);
@@ -187,11 +189,10 @@ class Orders extends RealTime {
     }
     
     add(order) {
-        if (this[order.orderId] == null) {
+        if (order.orderId == null) {
+            order.orderId = this.nextOrderId;
             this[order.orderId] = order;
-            this.emit("update", order);
         }
-        else throw new Error("Order already exists");
     }
     
     cancelAllOrders() {
@@ -1437,19 +1438,7 @@ class Order extends MarketData {
         };
         
         this.state = data ? data.state : null;
-        
-        if (data && data.orderId) {
-            this.orderId = data.orderId;
-        }
-        else {
-            session.nextOrderId((err, id) => {
-                if (err) this.emit("error", err);
-                else {
-                    this.orderId = id;
-                    session.orders.add(this);
-                }
-            });
-        }
+        this.orderId = data ? data.orderId : null;
     }
     
     or(cb) {
@@ -1672,21 +1661,18 @@ class Order extends MarketData {
     }
     
     setup() {
+        this.session.orders.add(this);
+        
         if (this.children.length) {
             this.children.forEach(child => {
-                child.parentId = id;
+                child.parentId = this.orderId;
                 delete child.parent;
             });
         }
-
-        console.log("Placing order");
-        console.log(this.contract.summary);
-        console.log(this.ticket);
         
         let request = this.service.placeOrder(this.orderId, this.contract.summary, this.ticket);
         this.cancel = () => request.cancel();
-
-        request.on("data", data => Object.merge(me, data)).on("error", err => {
+        request.on("error", err => {
             this.error = err;
             this.emit("error", err);
         }).send();
@@ -2082,8 +2068,8 @@ class Session extends Events {
         
         this.service.socket.on("connected", () => {
             this.service.system().on("data", data => {
-                if (data.orderIds) {
-                    this.validOrderIds.append(data.orderIds);
+                if (data.orderId && this.orders) {
+                    this.orders.nextOrderId = data;
                 }
                 else if (data.code == 321) {
                     if (!this.readOnly && data.message.indexOf("Read-Only") > 0) {
