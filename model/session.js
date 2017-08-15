@@ -23,6 +23,7 @@ class Session extends Events {
         this.bulletins = [ ];
         this.state = "initializing";
         this.displayGroups = [ ];
+        this.validOrderIds = [ ];
         
         this.service.socket.once("managedAccounts", data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
@@ -32,7 +33,28 @@ class Session extends Events {
         
         this.service.socket.on("connected", () => {
             this.service.system().on("data", data => {
-                if (data.code >= 2103 && data.code <= 2106) {
+                if (data.orderIds) {
+                    this.validOrderIds.append(data.orderIds);
+                }
+                else if (data.code == 321) {
+                    if (!this.readOnly && data.message.indexOf("Read-Only") > 0) {
+                        this.readOnly = true;
+                        this.emit("connectivity", "API is in read-only mode. Orders cannot be placed.");
+                    }
+                }
+                else if (data.code == 1100 || data.code == 2110) {
+                    this.state = "disconnected";
+                    this.emit("connectivity", data.message);
+                }
+                else if (data.code == 1101 || data.code == 1102) {
+                    this.state = "connected";
+                    this.emit("connectivity", data.message);
+                }
+                else if (data.code == 1300) {
+                    this.state = "disconnected";
+                    this.emit("disconnected");
+                }
+                else if (data.code >= 2103 && data.code <= 2106) {
                     let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
                     name = name.split(":");
 
@@ -56,6 +78,8 @@ class Session extends Events {
                     this.emit("error", data);    
                 }
             });
+            
+            this.service.orderIds(1);
             
             this.service.newsBulletins(true).on("data", data => {
                 this.bulletins.push(data);
@@ -98,6 +122,18 @@ class Session extends Events {
     
     set frozen(value) {
         this.service.mktDataType(value ? flags.MARKET_DATA_TYPE.frozen : flags.MARKET_DATA_TYPE.live);
+    }
+    
+    nextOrderId(cb) {
+        if (this.readOnly) cb(new Error("API is in read-only mode. Orders cannot be placed."));
+        else if (this.validOrderIds.length) {
+            cb(null, this.validOrderIds.shift());
+            this.service.orderIds(1);
+        }
+        else {
+            this.service.orderIds(1);
+            setImmediate(() => this.nextOrderId(cb));
+        }
     }
     
     close(exit) {

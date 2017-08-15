@@ -13,8 +13,13 @@ class Order extends MarketData {
             tif: flags.TIME_IN_FORCE.day,
             totalQuantity: 1,
             action: flags.SIDE.buy,
-            type: flags.ORDER_TYPE.market
+            orderType: flags.ORDER_TYPE.market
         };
+        
+        session.nextOrderId((err, id) => {
+            if (err) this.emit("error", err);
+            else this.orderId = id;
+        });
     }
     
     or(cb) {
@@ -103,48 +108,48 @@ class Order extends MarketData {
     // PRICE
     ////////////////////////////////////////
     type(orderType) {
-        this.ticket.type = orderType;
+        this.ticket.orderType = orderType;
     }
     
     market() {
-        this.ticket.type = flags.ORDER_TYPE.market;
+        this.ticket.orderType = flags.ORDER_TYPE.market;
         return this;
     }
     
     marketProtect() {
-        this.ticket.type = flags.ORDER_TYPE.marketProtect;
+        this.ticket.orderType = flags.ORDER_TYPE.marketProtect;
         return this;
     }
     
     marketToLimit() {
-        this.ticket.type = flags.ORDER_TYPE.marketToLimit;
+        this.ticket.orderType = flags.ORDER_TYPE.marketToLimit;
         return this;
     }
     
     auction() {
-        this.ticket.type = flags.ORDER_TYPE.marketToLimit;
+        this.ticket.orderType = flags.ORDER_TYPE.marketToLimit;
         this.ticket.tif = flags.TIME_IN_FORCE.auction;
     }
     
     marketIfTouched(price) {
-        this.ticket.type = flags.ORDER_TYPE.marketIfTouched;
+        this.ticket.orderType = flags.ORDER_TYPE.marketIfTouched;
         this.ticket.auxPrice = price;
         return this;
     }
     
     marketOnClose() {
-        this.ticket.type = flags.ORDER_TYPE.marketOnClose;
+        this.ticket.orderType = flags.ORDER_TYPE.marketOnClose;
         return this;
     }
     
     marketOnOpen() {
-        this.ticket.type = flags.ORDER_TYPE.market;
+        this.ticket.orderType = flags.ORDER_TYPE.market;
         this.ticket.tif = flags.TIME_IN_FORCE.open;
         return this;
     }
     
     limit(price, discretionaryAmount) {
-        this.ticket.type = flags.ORDER_TYPE.limit;
+        this.ticket.orderType = flags.ORDER_TYPE.limit;
         this.ticket.lmtPrice = price;
         if (discretionaryAmount) {
             this.ticket.discretionaryAmt = discretionaryAmount;
@@ -154,39 +159,39 @@ class Order extends MarketData {
     }
     
     limitIfTouched(trigger, limit) {
-        this.ticket.type = flags.ORDER_TYPE.limitIfTouched;
+        this.ticket.orderType = flags.ORDER_TYPE.limitIfTouched;
         this.ticket.auxPrice = trigger;
         this.ticket.lmtPrice = limit;
         return this;
     }
     
     limitOnClose(price) {
-        this.ticket.type = flags.ORDER_TYPE.limitOnClose;
+        this.ticket.orderType = flags.ORDER_TYPE.limitOnClose;
         this.ticket.lmtPrice = price;
         return this;
     }
     
     limitOnOpen(price) {
-        this.ticket.type = flags.ORDER_TYPE.limit;
+        this.ticket.orderType = flags.ORDER_TYPE.limit;
         this.ticket.tif = flags.TIME_IN_FORCE.open;
         this.ticket.lmtPrice = price;
         return this;
     }
     
     stop(trigger) {
-        this.ticket.type = flags.ORDER_TYPE.stop;
+        this.ticket.orderType = flags.ORDER_TYPE.stop;
         this.ticket.auxPrice = trigger;
         return this;
     }
     
     stopProtect(trigger) {
-        this.ticket.type = flags.ORDER_TYPE.stopProtect;
+        this.ticket.orderType = flags.ORDER_TYPE.stopProtect;
         this.ticket.auxPrice = trigger;
         return this;
     }
     
     stopLimit(trigger, limit) {
-        this.ticket.type = flags.ORDER_TYPE.stopLimit;
+        this.ticket.orderType = flags.ORDER_TYPE.stopLimit;
         this.ticket.auxPrice = trigger;
         this.ticket.lmtPrice = limit;            
         return this;
@@ -237,30 +242,24 @@ class Order extends MarketData {
     }
     
     setup() {
-        let me = this, 
-            nextId = this.service.nextValidId(1);
+        if (this.children.length) {
+            this.children.forEach(child => {
+                child.parentId = id;
+                delete child.parent;
+            });
+        }
+
+        console.log("Placing order");
+        console.log(this.contract.summary);
+        console.log(this.ticket);
         
-        nextId.on("data", id => {
-            nextId.cancel();
-            
-            this.ticket.orderId = id;
-            if (this.children.length) {
-                this.children.forEach(child => {
-                    child.parentId = id;
-                    delete child.parent;
-                });
-            }
-            
-            let request = this.service.placeOrder(this.contract, this.ticket);
-            me.cancel = () => request.cancel();
-            
-            request.on("data", data => {
-                Object.merge(me, data, { resolve: true });
-            }).on("error", err => {
-                me.error = err;
-                me.emit("error", err);
-            }).send();
-        }).on("error", err => cb(err)).send();
+        let request = this.service.placeOrder(this.orderId, this.contract.summary, this.ticket);
+        this.cancel = () => request.cancel();
+
+        request.on("data", data => Object.merge(me, data)).on("error", err => {
+            this.error = err;
+            this.emit("error", err);
+        }).send();
     }
     
     transmit() {

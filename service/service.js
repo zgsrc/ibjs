@@ -20,8 +20,17 @@ class Service {
         
         this.relay = socket => relay(this, socket);
         
+        this.mktDataType = (type) => {
+            ib.reqMarketDataType(type);
+            this.lastMktDataType = type;
+        };
+        
         this.autoOpenOrders = autoBind => {
             this.socket.reqAutoOpenOrders(autoBind || false);
+        };
+        
+        this.orderIds = count => {
+            this.socket.reqIds(count);
         };
         
         this.globalCancel = () => {
@@ -38,6 +47,16 @@ class Service {
             );
         };
         
+        this.newsBulletins = singleton("news", "reqNewsBulletins", "cancelNewsBulletins", null, ib, dispatch);
+        
+        this.queryDisplayGroups = instance("queryDisplayGroups", null, 5000, ib, dispatch);
+        
+        this.subscribeToGroupEvents = instance("subscribeToGroupEvents", "unsubscribeFromGroupEvents", 5000, ib, dispatch);
+        
+        this.updateDisplayGroup = (reqId, contract) => {
+            ib.updateDisplayGroup(reqId, contract);
+        };
+        
         this.currentTime = singleton("currentTime", "reqCurrentTime", null, 1000, ib, dispatch);
         
         this.contractDetails = instance("reqContractDetails", null, 10000, ib, dispatch);
@@ -51,11 +70,6 @@ class Service {
         this.realTimeBars = instance("reqRealTimeBars", "cancelRealTimeBars", 10000, ib, dispatch);
         
         this.mktData = instance("reqMktData", "cancelMktData", 10000, ib, dispatch);
-        
-        this.mktDataType = (type) => {
-            ib.reqMarketDataType(type);
-            this.lastMktDataType = type;
-        };
         
         this.mktDepth = instance("reqMktDepth", "cancelMktDepth", 10000, ib, dispatch);
 
@@ -77,6 +91,8 @@ class Service {
             );
         };
         
+        this.positions = singleton("positions", "reqPositions", "cancelPositions", 10000, ib, dispatch);
+        
         this.executions = instance("reqExecutions", null, 10000, ib, dispatch);
         
         this.commissions = () => {
@@ -93,23 +109,9 @@ class Service {
         
         this.allOpenOrders = singleton("orders", "reqAllOpenOrders", null, 10000, ib, dispatch);
         
-        this.positions = singleton("positions", "reqPositions", "cancelPositions", 10000, ib, dispatch);
-        
-        this.orderIds = singleton("orderId", "reqIDs", null, 1000, ib, dispatch);
-        
         this.placeOrder = instance("placeOrder", "cancelOrder", 5000, ib, dispatch);
         
         this.exerciseOptions = instance("exerciseOptions", "cancelOrder", 5000, ib, dispatch);
-        
-        this.newsBulletins = singleton("news", "reqNewsBulletins", "cancelNewsBulletins", null, ib, dispatch);
-        
-        this.queryDisplayGroups = instance("queryDisplayGroups", null, 5000, ib, dispatch);
-        
-        this.subscribeToGroupEvents = instance("subscribeToGroupEvents", "unsubscribeFromGroupEvents", 5000, ib, dispatch);
-        
-        this.updateDisplayGroup = (reqId, contract) => {
-            ib.updateDisplayGroup(reqId, contract);
-        };
         
     }
     
@@ -152,6 +154,11 @@ function attach(ib, dispatch) {
             args.message = err.message;
             dispatch.data("system", args);
         }
+    });
+    
+    ib.on("nextValidId", function(orderIds) {
+        if (!Array.isArray(orderIds)) orderIds = [ orderIds ];
+        dispatch.data("system", { orderIds: orderIds });
     });
     
     ib.once("currentTime", function(time) {
@@ -395,6 +402,13 @@ function attach(ib, dispatch) {
     });
     
     ib.on('openOrder', function(orderId, contract, order, orderState) {
+        dispatch.data("order" + orderId, {
+            orderId: orderId, 
+            contract: contract, 
+            order: order, 
+            orderState: orderState 
+        });
+        
         dispatch.data("orders", {
             orderId: orderId, 
             contract: contract, 
@@ -404,24 +418,40 @@ function attach(ib, dispatch) {
     }).on('openOrderEnd', function() {
         dispatch.end("orders");
     });
-    
-    ib.on("nextValidId", function(orderId) {
-        dispatch.data("orderId", orderId);
-    })
         
     ib.on('orderStatus', function(id, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld) {
-        dispatch.data(id, {
-            status: status, 
-            filled: filled, 
-            remaining: remaining, 
-            avgFillPrice: avgFillPrice, 
-            permId: permId, 
-            parentId: parentId, 
-            lastFillPrice: lastFillPrice, 
-            clientId: clientId, 
-            whyHeld: whyHeld 
+        dispatch.data("order" + id, {
+            orderId: id, 
+            orderState: {
+                status: status, 
+                filled: filled, 
+                remaining: remaining, 
+                avgFillPrice: avgFillPrice, 
+                permId: permId, 
+                parentId: parentId, 
+                lastFillPrice: lastFillPrice, 
+                clientId: clientId, 
+                whyHeld: whyHeld 
+            } 
         });
-    }).on('commissionReport', function(commissionReport) {
+        
+        dispatch.data("orders", {
+            orderId: id, 
+            orderState: {
+                status: status, 
+                filled: filled, 
+                remaining: remaining, 
+                avgFillPrice: avgFillPrice, 
+                permId: permId, 
+                parentId: parentId, 
+                lastFillPrice: lastFillPrice, 
+                clientId: clientId, 
+                whyHeld: whyHeld 
+            } 
+        });
+    });
+    
+    ib.on('commissionReport', function(commissionReport) {
         dispatch.data("commissions", commissionReport);
     });
     

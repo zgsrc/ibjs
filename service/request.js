@@ -60,7 +60,13 @@ class Request extends Events {
                     });
                 }
                 
-                send(this);
+                try {
+                    send(this);
+                }
+                catch (ex) {
+                    this.emit("error", ex);
+                }
+                
                 return this;
             };
         }
