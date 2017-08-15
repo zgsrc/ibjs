@@ -1,6 +1,6 @@
 {
   "name": "ib-sdk",
-  "version": "0.9.7",
+  "version": "0.10.0",
   "description": "Interactive Brokers SDK framework build atop the native javascript API.",
   "main": "index.js",
   "directories": {
@@ -10,7 +10,7 @@
   "dependencies": {
     "ib": "^0.2.1",
     "sugar": "^2.0.4",
-    "xml2js": "^0.4.17"
+    "xml2js": "^0.4.18"
   },
   "keywords": [
     "interactive brokers",
