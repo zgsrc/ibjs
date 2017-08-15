@@ -20,7 +20,7 @@ class Service {
         
         this.relay = socket => relay(this, socket);
         
-        this.mktDataType = (type) => {
+        this.mktDataType = type => {
             ib.reqMarketDataType(type);
             this.lastMktDataType = type;
         };

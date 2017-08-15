@@ -29,12 +29,26 @@ class Proxy {
         
         this.relay = socket => relay(this, socket);
         
+        this.mktDataType = type => {
+            socket.emit("command", {
+                fn: "mktDataType",
+                args: [ type ]
+            });
+        };
+        
         this.autoOpenOrders = autoBind => {
             socket.emit("command", {
                 fn: "autoOpenOrders",
                 args: [ autoBind ]
             });
         };
+        
+        this.orderIds = () => {
+            socket.emit("command", {
+                fn: "orderIds",
+                args: [  ]
+            });
+        }
         
         this.globalCancel = () => {
             socket.emit("command", {
@@ -44,6 +58,20 @@ class Proxy {
         };
         
         this.system = request("system", null, socket, dispatch);
+        
+        this.newsBulletins = request("newsBulletins", null, socket, dispatch);
+        
+        this.queryDisplayGroups = request("queryDisplayGroups", 10000, socket, dispatch);
+        
+        this.subscribeToGroupEvents = request("subscribeToGroupEvents", 10000, socket, dispatch);
+        
+        this.updateDisplayGroup = function(ref, contract) {
+            socket.emit("request", {
+                fn: "updateDisplayGroup",
+                args: [ contract ],
+                ref: ref
+            });
+        };
         
         this.currentTime = request("currentTime", 2000, socket, dispatch);
         
@@ -65,9 +93,13 @@ class Proxy {
         
         this.scannerSubscription = request("scannerSubscription", 10000, socket, dispatch);
 
+        this.managedAccounts = request("managedAccounts", 10000, socket, dispatch);
+        
         this.accountSummary = request("accountSummary", 10000, socket, dispatch);
         
         this.accountUpdates = request("accountUpdates", 10000, socket, dispatch);
+        
+        this.positions = request("positions", 10000, socket, dispatch);
         
         this.executions = request("executions", 10000, socket, dispatch);
         
@@ -75,27 +107,21 @@ class Proxy {
         
         this.allOpenOrders = request("allOpenOrders", 10000, socket, dispatch);
         
-        this.positions = request("positions", 10000, socket, dispatch);
-        
-        this.orderIds = request("orderIds", 10000, socket, dispatch);
-        
-        this.placeOrder = request("placeOrder", 10000, socket, dispatch);
-        
-        this.exerciseOptions = request("exerciseOptions", 10000, socket, dispatch);
-        
-        this.newsBulletins = request("newsBulletins", null, socket, dispatch);
-        
-        this.queryDisplayGroups = request("queryDisplayGroups", 10000, socket, dispatch);
-        
-        this.subscribeToGroupEvents = request("subscribeToGroupEvents", 10000, socket, dispatch);
-        
-        this.updateDisplayGroup = function(ref, contract) {
-            socket.emit("request", {
-                fn: "updateDisplayGroup",
-                args: [ contract ],
-                ref: ref
+        this.placeOrder = (orderId, contract, ticket) => {
+            socket.emit("command", {
+                fn: "placeOrder",
+                args: [ orderId, contract, ticket ]
             });
         };
+        
+        this.cancelOrder = orderId => {
+            socket.emit("command", {
+                fn: "cancelOrder",
+                args: [ orderId ]
+            });
+        };
+
+        this.exerciseOptions = request("exerciseOptions", 10000, socket, dispatch);
         
     }
     

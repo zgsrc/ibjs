@@ -10,9 +10,7 @@ class Account extends RealTime {
         
         if (typeof options == "string") {
             options = { 
-                id: options,
-                orders: true,
-                trades: true
+                id: options
             };
         }
         
@@ -55,21 +53,7 @@ class Account extends RealTime {
             this.emit("error", err);
         }).send();
         
-        let orders = null;
-        if (options.orders) {
-            this.orders = this.session.orders({ all: true, autoOpen: true, account: options.id });
-        }
-        
-        let trades = null;
-        if (options.trades) {
-            this.trades = this.session.trades({ account: options.id });
-        }
-        
-        this.cancel = () => {
-            account.cancel();
-            if (orders) orders.cancel();
-            if (trades) trades.cancel();
-        };
+        this.cancel = () => account.cancel();
         
         setTimeout(() => this.emit("load"), 500);
     }
