@@ -1679,6 +1679,10 @@ class Order extends MarketData {
     }
     
     save() {
+        if (this.readOnly) {
+            throw new Error("Cannot modify read-only trade.");
+        }
+        
         if (this.orderId == null) {
             this.session.orders.assign(this);
         }
@@ -1702,7 +1706,8 @@ class Order extends MarketData {
     }
     
     cancel() {
-        this.service.cancelOrder(this.orderId);
+        if (!this.readOnly) this.service.cancelOrder(this.orderId);
+        else throw new Error("Cannot cancel read-only trade.");
     }
     
 }
