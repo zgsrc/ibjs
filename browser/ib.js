@@ -909,7 +909,7 @@ const flags = require("../flags"),
       RealTime = require("../realtime"),
       Scheduler = require("../scheduler");
 
-const schedule = new Scheduler();
+const scheduler = new Scheduler();
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -2007,26 +2007,19 @@ module.exports = RealTime;
 class Scheduler {
     
     constructor() {
-        super();
         this.timers = { };
     }
     
     notify(time, cb) {
-        if (time.isPast() || time.secondsFromNow() < 10) cb();
+        if (time.isPast() || time.secondsFromNow() < 1) {
+            cb();
+        }
         else {
-            if (this.timers[time.getTime()]) {
-                this.timers[time.getTime()].callbacks.push(cb);
-            }
+            let name = time.getTime();
+            if (this.timers[name]) this.timers[name].callbacks.push(cb);
             else {
-                this.timers[time.getTime()] = {
-                    callbacks: [ cb ],
-                    timer: setTimeout(() => {
-                        setTimeout(() => {
-                            this.timers[time.getTime()].callbacks.forEach(cb => cb());
-                            delete this.timers[time.getTime()];
-                        }, time.millisecondsFromNow() - 5);
-                    }, time.millisecondsFromNow() - 5000)
-                }
+                this.timers[name] = { callbacks: [ cb ] };
+                setTimeout(() => this.timers[name].callbacks.forEach(cb => cb()), time.millisecondsFromNow() - 10);
             }
         }
     }

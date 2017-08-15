@@ -4,7 +4,7 @@ const flags = require("../flags"),
       RealTime = require("../realtime"),
       Scheduler = require("../scheduler");
 
-const schedule = new Scheduler();
+const scheduler = new Scheduler();
 
 function details(session, summary, cb) {
     let list = [ ];
