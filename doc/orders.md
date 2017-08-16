@@ -58,8 +58,14 @@ Order transmission can be performed in a single transaction or in parts.
 order.overridePercentageConstraints();
 
 // Will open the order without transmitting it.
-order.open();
+order.save();
 
 // Will open the order and trasmit it.
 order.transmit();
+
+// Will update existing order.
+order.save();
+
+// Will cancel order.
+order.cancel();
 ```
