@@ -19,17 +19,17 @@ The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to m
 
 ## Programming
 
-Each session is associated with one or more accounts.  The most common case is access to a single [account](./examples/account.js).  Other use cases can benefit from the lightweight [account summary](./examples/summary.js) model.
+Each session is associated with one or more accounts.  The most common case is access to a single [account](./example/account.js).  Other use cases can benefit from the lightweight [account summary](./example/summary.js) model.
 
-Use the SDK's [symbol](./docs/symbols.md) syntax to create [security](./examples/security.js) objects from which you can access market data and initiate [orders](./docs/orders.md).
+Use the SDK's [symbol](./doc/symbols.md) syntax to create [security](./example/security.js) objects from which you can access market data and initiate [orders](./doc/orders.md).
 
-Manage [system](./examples/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interact with display groups.
+Manage [system](./example/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interact with display groups.
 
 This package makes use of the [Sugar](https://sugarjs.com) library, which modifies javascript prototypes (at least the way it is used in this case).  In the end, this is a design decision about how trading system logic can most effectively be expressed and implemented.
 
 ## Advanced
 
-The programming model is built on top of the [service](./docs/service.md) module, which makes interacting with the IB API pub/sub paradigm easier.
+The programming model is built on top of the [service](./doc/service.md) module, which makes interacting with the IB API pub/sub paradigm easier.
 
 ## License
 
