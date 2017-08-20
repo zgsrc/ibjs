@@ -1,10 +1,7 @@
 "use strict";
 
 const flags = require("../flags"),
-      RealTime = require("../realtime"),
-      Scheduler = require("../scheduler");
-
-const scheduler = new Scheduler();
+      RealTime = require("../realtime");
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -141,40 +138,6 @@ class Contract extends RealTime {
         
         delete this.tradingHours;
         delete this.liquidHours;
-        
-        Object.values(schedule).map(day => {            
-            day.start.forEach(start => {
-                if (start.isFuture()) {
-                    scheduler.notify(start, () => this.emit("startOfDay"));
-                    scheduler.notify(start.addSeconds(-5), () => this.emit("beforeStartOfDay"));
-                    scheduler.notify(start.addSeconds(10), () => this.emit("afterStartOfDay"));
-                }
-            });
-            
-            day.open.forEach(open => {
-                if (open.isFuture()) {
-                    scheduler.notify(open, () => this.emit("marketOpen"));
-                    scheduler.notify(open.addSeconds(-5), () => this.emit("beforeMarketOpen"));
-                    scheduler.notify(open.addSeconds(10), () => this.emit("afterMarketOpen"));
-                }
-            });
-            
-            day.close.forEach(close => {
-                if (close.isFuture()) {
-                    scheduler.notify(close, () => this.emit("marketClose"));
-                    scheduler.notify(close.addSeconds(-5), () => this.emit("beforeMarketClose"));
-                    scheduler.notify(close.addSeconds(10), () => this.emit("afterMarketClose"));
-                }
-            });
-            
-            day.end.forEach(end => {
-                if (end.isFuture()) {
-                    scheduler.notify(end, () => this.emit("endOfDay"));
-                    scheduler.notify(end.addSeconds(-5), () => this.emit("beforeEndOfDay"));
-                    scheduler.notify(end.addSeconds(10), () => this.emit("afterEndOfDay"));
-                }
-            });
-        });
     }
     
     get nextOpen() {

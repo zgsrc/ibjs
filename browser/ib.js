@@ -6,7 +6,7 @@ window.ib = {
     session: () => new Session(new Proxy(socket)),
     flags: require("../model/flags")
 };
-},{"../model/flags":7,"../model/session":21,"../service/proxy":23}],2:[function(require,module,exports){
+},{"../model/flags":7,"../model/session":20,"../service/proxy":22}],2:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -910,10 +910,7 @@ module.exports = Charts;
 "use strict";
 
 const flags = require("../flags"),
-      RealTime = require("../realtime"),
-      Scheduler = require("../scheduler");
-
-const scheduler = new Scheduler();
+      RealTime = require("../realtime");
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -1050,40 +1047,6 @@ class Contract extends RealTime {
         
         delete this.tradingHours;
         delete this.liquidHours;
-        
-        Object.values(schedule).map(day => {            
-            day.start.forEach(start => {
-                if (start.isFuture()) {
-                    scheduler.notify(start, () => this.emit("startOfDay"));
-                    scheduler.notify(start.addSeconds(-5), () => this.emit("beforeStartOfDay"));
-                    scheduler.notify(start.addSeconds(10), () => this.emit("afterStartOfDay"));
-                }
-            });
-            
-            day.open.forEach(open => {
-                if (open.isFuture()) {
-                    scheduler.notify(open, () => this.emit("marketOpen"));
-                    scheduler.notify(open.addSeconds(-5), () => this.emit("beforeMarketOpen"));
-                    scheduler.notify(open.addSeconds(10), () => this.emit("afterMarketOpen"));
-                }
-            });
-            
-            day.close.forEach(close => {
-                if (close.isFuture()) {
-                    scheduler.notify(close, () => this.emit("marketClose"));
-                    scheduler.notify(close.addSeconds(-5), () => this.emit("beforeMarketClose"));
-                    scheduler.notify(close.addSeconds(10), () => this.emit("afterMarketClose"));
-                }
-            });
-            
-            day.end.forEach(end => {
-                if (end.isFuture()) {
-                    scheduler.notify(end, () => this.emit("endOfDay"));
-                    scheduler.notify(end.addSeconds(-5), () => this.emit("beforeEndOfDay"));
-                    scheduler.notify(end.addSeconds(10), () => this.emit("afterEndOfDay"));
-                }
-            });
-        });
     }
     
     get nextOpen() {
@@ -1256,7 +1219,7 @@ function lookup(session, description, cb) {
 }
 
 exports.lookup = lookup;
-},{"../flags":7,"../realtime":19,"../scheduler":20}],12:[function(require,module,exports){
+},{"../flags":7,"../realtime":19}],12:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata");
@@ -2010,33 +1973,7 @@ class RealTime extends Events {
 }
 
 module.exports = RealTime;
-},{"events":26}],20:[function(require,module,exports){
-"use strict";
-
-class Scheduler {
-    
-    constructor() {
-        this.timers = { };
-    }
-    
-    notify(time, cb) {
-        if (time.isPast() || time.secondsFromNow() < 1) {
-            cb();
-        }
-        else {
-            let name = time.getTime();
-            if (this.timers[name]) this.timers[name].callbacks.push(cb);
-            else {
-                this.timers[name] = { callbacks: [ cb ] };
-                setTimeout(() => this.timers[name].callbacks.forEach(cb => cb()), time.millisecondsFromNow() - 10);
-            }
-        }
-    }
-    
-}
-
-module.exports = Scheduler;
-},{}],21:[function(require,module,exports){
+},{"events":25}],20:[function(require,module,exports){
 (function (process){
 "use strict";
 
@@ -2218,7 +2155,7 @@ class Session extends Events {
 
 module.exports = Session;
 }).call(this,require('_process'))
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":7,"./marketdata/chain":9,"./marketdata/contract":11,"./marketdata/curve":12,"./marketdata/security":17,"_process":27,"events":26}],22:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":7,"./marketdata/chain":9,"./marketdata/contract":11,"./marketdata/curve":12,"./marketdata/security":17,"_process":26,"events":25}],21:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -2291,7 +2228,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":25}],23:[function(require,module,exports){
+},{"./request":24}],22:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -2444,7 +2381,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":22,"./relay":24}],24:[function(require,module,exports){
+},{"./dispatch":21,"./relay":23}],23:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -2487,7 +2424,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],25:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -2618,7 +2555,7 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":26}],26:[function(require,module,exports){
+},{"events":25}],25:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2922,7 +2859,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],27:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
