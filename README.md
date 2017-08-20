@@ -22,10 +22,11 @@ The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to m
 ## Getting Started
 
 Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software.
-    * The API and SDK expect to connect to an authenticated user session.
-    * The IB software must be configured to accept API connections.
-    * The SDK connects over `tcp://localhost:4001` by default.
-    * Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if so desired.
+
+* The API and SDK expect to connect to an authenticated user session.
+* The IB software must be configured to accept API connections.
+* The SDK connects over `tcp://localhost:4001` by default.
+* Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if so desired.
 
 The main interface of the SDK is the `session` object returned by the `sdk.open` method callback.
 
