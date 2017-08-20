@@ -19,7 +19,7 @@ sdk.open((err, session) => {
                     else console.log(report);
                 });
                 
-                AAPL.quote.snapshot((err, quote) => {
+                AAPL.quote.query((err, quote) => {
                     if (err) console.log(err);
                     else console.log(quote);
                 });
