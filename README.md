@@ -21,7 +21,7 @@ The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to m
 
 ## Getting Started
 
-The main interfce is the `session` object returned by the `open` method callback.
+The main interface is the `session` object returned by the `sdk.open` method callback.
 
 ```javascript
 require("ib-sdk").open({
@@ -34,7 +34,7 @@ require("ib-sdk").open({
 });
 ```
 
-Invoke `session.close()` to trigger disconnect logic and generally be a good person, but if you don't it's probably okay.
+Invoke `session.close()` to trigger disconnect logic and generally be a good person, but if you don't it will probably be okay.
 
 ## Use Cases
 
