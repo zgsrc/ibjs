@@ -41,7 +41,7 @@ require("ib-sdk").open({
 });
 ```
 
-Invoke `session.close()` to trigger disconnect logic and generally be a good person, but if you don't it will probably be okay.
+Invoke `session.close()` to trigger disconnect logic and generally be a good person (but if you don't it will probably be okay).
 
 ## Use Cases
 
