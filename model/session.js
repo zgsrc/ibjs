@@ -144,8 +144,8 @@ class Session extends Events {
         return new Accounts(this, options);
     }
     
-    positions(options) {
-        return new Positions(this, options);
+    positions() {
+        return new Positions(this);
     }
 
     trades(options) {
