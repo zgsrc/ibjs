@@ -210,7 +210,7 @@ const RealTime = require("../realtime");
 
 class Positions extends RealTime {
     
-    constructor(session, options) {
+    constructor(session) {
         super(session);
 
         let positions = this.service.positions().on("data", data => {
@@ -2121,8 +2121,8 @@ class Session extends Events {
         return new Accounts(this, options);
     }
     
-    positions(options) {
-        return new Positions(this, options);
+    positions() {
+        return new Positions(this);
     }
 
     trades(options) {
