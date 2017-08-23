@@ -153,12 +153,23 @@ function attach(ib, dispatch) {
     }).on("disconnected", function() {
         dispatch.disconnected();
     }).on("error", function(err, args) {
-        if (args && args.id && args.id > 0) {
-            dispatch.error(args.id, err);
+        if (args) {
+            if (args.id > 0) {
+                dispatch.error(args.id, err);
+            }
+            else if (args.id < -1) {
+                args.orderId = args.id;
+                delete args.id;
+                dispatch.error("order", args);
+            }
+            else {
+                args.message = err.message;
+                dispatch.data("system", args);
+            }
         }
-        else if (args) {
-            args.message = err.message;
-            dispatch.data("system", args);
+        else if (err) {
+            console.log("UNCAUGHT ERROR MESSAGE");
+            console.log(err);
         }
     });
     

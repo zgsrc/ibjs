@@ -23,7 +23,6 @@ class Session extends Events {
         this.bulletins = [ ];
         this.state = "disconnected";
         this.displayGroups = [ ];
-        this.validOrderIds = [ ];
         
         this.service.socket.once("managedAccounts", data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
@@ -72,6 +71,10 @@ class Session extends Events {
 
                     this.connectivity[name] = { status: status, time: Date.create() };   
                     this.emit("connectivity", this.connectivity[name]);
+                }
+                else if (data.code == 2148) {
+                    this.bulletins.push(data);
+                    this.emit("bulletin", data);
                 }
                 else {
                     this.emit("error", data);    
