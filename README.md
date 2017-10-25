@@ -51,7 +51,7 @@ Use the SDK's [symbol](./doc/symbols.md) syntax to create [security](./example/s
 
 Manage [system](./example/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interact with display groups.
 
-This package makes use of the [Sugar](https://sugarjs.com) library, which modifies javascript prototypes (at least the way it is used in this case).  In the end, this is a design decision about how trading system logic can most effectively be expressed and implemented.
+This package makes use of the [Sugar](https://sugarjs.com) library, which modifies javascript prototypes (at least the way it is used in this case).
 
 The programming model is built on top of the [service](./doc/service.md) module, which makes interacting with the IB API pub/sub paradigm easier and enables [remoting](./doc/remoting.md).
 
