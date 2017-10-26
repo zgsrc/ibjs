@@ -167,7 +167,7 @@ function attach(ib, dispatch) {
                 dispatch.data("system", args);
             }
         }
-        else if (err) {
+        else if (err && err.syscall != "connect") {
             console.log("UNCAUGHT ERROR MESSAGE");
             console.log(err);
         }

@@ -1146,7 +1146,12 @@ function parse(definition) {
                     if (year.length == 2) year = "20" + year;
                     if (year == "") year = Date.create().fullYear();
 
-                    date = Date.create(month + " " + year);
+                    try {
+                        date = Date.create(month + " " + year);
+                    }
+                    catch (ex) {
+                        throw new Error("Invalid date " + month + " " + year + " in " + definition);
+                    }
                 }
                 
                 date = date.format("{yyyy}{MM}");
