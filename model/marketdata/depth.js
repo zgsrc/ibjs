@@ -44,6 +44,7 @@ class Depth extends MarketData {
             }).send();
             
             this._subscriptions.push(req);
+            this.streaming = true;
         }
         
         return this;
@@ -60,6 +61,10 @@ class Depth extends MarketData {
         delete this.bids[exchange];
         delete this.offers[exchange];
         
+        if (this.exchanges.length == 0) {
+            this.streaming = false;
+        }
+        
         return this;
     }
     
@@ -70,7 +75,11 @@ class Depth extends MarketData {
         }
         
         if (exchanges == null) {
-            exchanges = this.validExchanges;
+            if (this.exchanges.length) {
+                exchanges = this.exchanges;
+                this.exchanges = [ ];
+            }
+            else exchanges = this.validExchanges;
         }
         
         exchanges.forEach(exchange => {
@@ -83,7 +92,7 @@ class Depth extends MarketData {
     cancel() {
         this._subscriptions.map("cancel");
         this._subscriptions = [ ];
-        this.exchanges = [ ];
+        this.streaming = false;
     }
     
 }
