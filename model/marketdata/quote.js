@@ -21,6 +21,7 @@ class Quote extends MarketData {
     addFieldTypes(fieldTypes) {
         if (fieldTypes) {
             this._fieldTypes.append(fieldTypes);
+            this._fieldTypes = this._fieldTypes.unique().compact(true);
         }
         
         return this;
@@ -28,41 +29,49 @@ class Quote extends MarketData {
 
     ticks() {
         this._fieldTypes.append(TICKS.realTimeVolume);
+        this._fieldTypes = this._fieldTypes.unique().compact(true);
         return this;
     }
     
     stats() {
         this._fieldTypes.append([ TICKS.tradeCount, TICKS.tradeRate, TICKS.volumeRate, TICKS.priceRange ]);
+        this._fieldTypes = this._fieldTypes.unique().compact(true);
         return this;
     }
     
     fundamentals() {
         this._fieldTypes.append(TICKS.fundamentalRatios);
+        this._fieldTypes = this._fieldTypes.unique().compact(true);
         return this;
     }
     
     volatility() {
         this._fieldTypes.append([ TICKS.historicalVolatility, TICKS.optionImpliedVolatility ]);
+        this._fieldTypes = this._fieldTypes.unique().compact(true);
         return this;
     }
     
     options() {
         this._fieldTypes.append([ TICKS.optionVolume, TICKS.optionOpenInterest ]);
+        this._fieldTypes = this._fieldTypes.unique().compact(true);
         return this;
     }
     
     futures() {
         this._fieldTypes.append(TICKS.futuresOpenInterest);
+        this._fieldTypes = this._fieldTypes.unique().compact(true);
         return this;
     }
     
     short() {
         this._fieldTypes.append(TICKS.shortable);
+        this._fieldTypes = this._fieldTypes.unique().compact(true);
         return this;
     }
     
     news() {
         this._fieldTypes.append(TICKS.news);
+        this._fieldTypes = this._fieldTypes.unique().compact(true);
         return this;
     }
     

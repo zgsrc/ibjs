@@ -140,11 +140,6 @@ class Contract extends RealTime {
         delete this.liquidHours;
     }
     
-    get nextOpen() {
-        if (this.marketsOpen) return Date.create();
-        else return this.schedule.next.start.find(start => start.isFuture());
-    }
-    
     get marketsOpen() {
         let now = Date.create(), hours = this.schedule.today;
         if (hours && hours.start && hours.end) {
@@ -165,6 +160,22 @@ class Contract extends RealTime {
         }
         
         return false;
+    }
+    
+    get nextStartOfDay() {
+        return this.schedule.next.start.find(start => start.isFuture());
+    }
+    
+    get nextOpen() {
+        return this.schedule.next.open.find(open => open.isFuture());
+    }
+    
+    get nextClose() {
+        return this.schedule.next.close.find(close => close.isFuture());
+    }
+    
+    get nextEndOfDay() {
+        return this.schedule.next.end.find(end => end.isFuture());
     }
     
     refresh(cb) {

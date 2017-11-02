@@ -32,6 +32,7 @@ class Depth extends MarketData {
             let req = this.session.service.mktDepth(copy, rows || 5).on("data", datum => {
                 if (datum.side == 1) this.bids[exchange][datum.position] = datum;
                 else this.offers[exchange][datum.position] = datum;
+                this.lastUpdate = Date.create();
                 this.emit("update", datum);
             }).on("error", (err, cancel) => {
                 this.emit("error", this.contract.summary.localSymbol + " level 2 quotes on " + exchange + " failed.");
@@ -81,6 +82,8 @@ class Depth extends MarketData {
     
     cancel() {
         this._subscriptions.map("cancel");
+        this._subscriptions = [ ];
+        this.exchanges = [ ];
     }
     
 }
