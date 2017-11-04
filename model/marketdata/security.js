@@ -16,6 +16,9 @@ class Security extends MarketData {
         this.depth = new Depth(session, contract);
         this.charts = new Charts(session, contract, flags.HISTORICAL.trades);
         this.reports = { };
+        
+        this._pending = [ ];
+        this._exclude.append("pending");
     }
     
     fundamentals(type, cb) {
@@ -40,7 +43,14 @@ class Security extends MarketData {
         return new Order(this.session, this.contract);
     }
     
+    delay(call, millis) {
+        this._pending.append(setTimeout(call, millis));
+    }
+    
     cancel() {
+        this._pending.forEach(t => clearTimeout(t));
+        this._pending = [ ];
+        
         if (this.quote) this.quote.cancel();
         if (this.depth) this.depth.cancel();
         if (this.charts) this.charts.cancel();
