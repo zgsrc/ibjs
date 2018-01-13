@@ -8,7 +8,8 @@
     "example": "example"
   },
   "dependencies": {
-    "ib": "^0.2.1",
+    "ib": "^0.2.4",
+    "luxon": "^0.3.0",
     "sugar": "^2.0.4",
     "xml2js": "^0.4.19"
   },

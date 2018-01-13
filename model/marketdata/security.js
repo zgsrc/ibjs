@@ -18,7 +18,7 @@ class Security extends MarketData {
         this.reports = { };
         
         this._pending = [ ];
-        this._exclude.append("pending");
+        this._exclude.append("_pending");
     }
     
     fundamentals(type, cb) {

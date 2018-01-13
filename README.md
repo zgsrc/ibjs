@@ -2,7 +2,9 @@
 
 # Interactive Brokers SDK
 
-Interactive Brokers SDK is a high-level object model build atop the [native javascript API](https://github.com/pilwon/node-ib).  It is all about straightforward programmatic access to your portfolio and market data subscriptions.
+Interactive Brokers SDK is a high-level object model build atop the [native javascript API](https://github.com/pilwon/node-ib).  It is all about straightforward programmatic access to your portfolio and market data subscriptions.  
+
+This is an open source project that has nothing to do with Interactive Brokers itself.
 
 #### Prerequisites
 
@@ -26,7 +28,7 @@ Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trade
 * The SDK expects to connect to an authenticated user session.
 * The IB software must be configured to accept API connections.
 * The SDK connects over `tcp://localhost:4001` by default.
-* Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if so desired.
+* Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if necessary.
 
 The main interface of the SDK is the `session` object returned by the `sdk.open` method callback.
 
@@ -41,7 +43,7 @@ require("ib-sdk").open({
 });
 ```
 
-Invoke `session.close()` to trigger disconnect logic and generally be a good person (but if you don't it will probably be okay).
+Invoke `session.close()` to trigger disconnect logic.
 
 ## Use Cases
 
@@ -51,9 +53,9 @@ Use the SDK's [symbol](./doc/symbols.md) syntax to create [security](./example/s
 
 Manage [system](./example/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interact with display groups.
 
-This package makes use of the [Sugar](https://sugarjs.com) library, which modifies javascript prototypes (at least the way it is used in this case).
+This package uses [Sugar](https://sugarjs.com) in extended mode, which modifies javascript prototypes.
 
-The programming model is built on top of the [service](./doc/service.md) module, which makes interacting with the IB API pub/sub paradigm easier and enables [remoting](./doc/remoting.md).
+The [service](./doc/service.md) module makes interacting with the IB API pub/sub paradigm easier and enables [remoting](./doc/remoting.md) from other processes or the browser.
 
 ## License
 
