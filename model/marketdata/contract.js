@@ -13,6 +13,12 @@ function details(session, summary, cb) {
         .send();
 }
 
+function datetime(date, time, timezone, future) {
+    return DateTime.fromHTTP(
+        Date.create(date + " " + (time || "00:00:00")).format("{Weekday}, {dd} {Mon} {yyyy} {HH}:{mm}:{ss}") + " " + (timezone || "")
+    ).toJSDate();
+}
+
 class Contract extends RealTime {
     
     constructor(session, data) {
@@ -28,7 +34,7 @@ class Contract extends RealTime {
         this.validExchanges = this.validExchanges.split(",").compact();
 
         if (this.summary.expiry) {
-            this.expiry = Date.create(Date.create(this.summary.expiry).format("{Month} {dd}, {yyyy}") + " 00:00:00 " + this.timeZoneId);
+            this.expiry = Date.create(datetime(this.summary.expiry, "00:00:00", this.timeZoneId));
         }
         
         let timeZoneId = this.timeZoneId,
@@ -50,8 +56,10 @@ class Contract extends RealTime {
             schedule[label].end = [ ];
             
             times.forEach(time => {
-                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
-                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
+                let start = datetime(date, time[0] + "00", timeZoneId);
+                
+                let start = Date.create(datetime(date, time[0] + ":00", timeZoneId), { future: true }),
+                    end = Date.create(datetime(date, time[1] + ":00", timeZoneId), { future: true });
 
                 if (end.isBefore(start)) start.addDays(-1);
 
