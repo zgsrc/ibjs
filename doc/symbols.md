@@ -41,7 +41,7 @@ For example:
     Jun18
     Sep'2018
 
-Alternatively, the "Front" syntax can be used to reference the front contract.  This format is composed of the word "Front", followed by a cutoff day of month (i.e. the last safe day to trade before rolling over to the next contract), and an optional month offset.  If the cutoff day is omitted, it is assumed to be 15.
+Alternatively, the "Front" syntax can be used to reference the front contract.  This format is composed of the word "Front" (or "First"), followed by a cutoff day of month (i.e. the last safe day to trade before rolling over to the next contract), and an optional month offset.  If the cutoff day is omitted, it is assumed to be 15.
 
 For example:
 

@@ -2,9 +2,7 @@
 
 # Interactive Brokers SDK
 
-Interactive Brokers SDK is a high-level object model build atop the [native javascript API](https://github.com/pilwon/node-ib).  It is all about straightforward programmatic access to your portfolio and market data subscriptions.  
-
-This is an open source project that has nothing to do with Interactive Brokers itself.
+Interactive Brokers SDK is a high-level object model build atop the [native javascript API](https://github.com/pilwon/node-ib).  It is all about straightforward programmatic access to your portfolio and market data subscriptions.  This is an open source project that has nothing to do with Interactive Brokers itself.
 
 #### Prerequisites
 
