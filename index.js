@@ -76,6 +76,10 @@ const open = exports.open = (options, cb) => {
 };
 
 const start = exports.start = options => {
+    if (Object.isNumber(options)) {
+        options = { port: options };
+    }
+    
     return new Promise((yes, no) => {
         open(options, (err, session) => {
             if (err) no(err);
@@ -85,6 +89,10 @@ const start = exports.start = options => {
 }
 
 const account = exports.account = options => {
+    if (Object.isString(options)) {
+        options = { account: options };
+    }
+    
     return start(options).then(session => session.account(options ? options.account : null));
 };
 

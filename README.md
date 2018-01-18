@@ -28,42 +28,21 @@ Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trade
 * The SDK connects over `tcp://localhost:4001` by default.
 * Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if necessary.
 
-The main interface of the SDK is the `session` object returned by the `sdk.open` method callback.
+The main interface of the SDK is the `session` object returned by the `sdk.start` promise.
 
 ```javascript
-require("ib-sdk").open({
-    host: "localhost",
-    port: 4001,
-    clientId: 0
-}, (err, session) => {
-    if (err) console.log(err);
-    else session.close();
-});
-```
-
-Invoke `session.close()` to trigger disconnect logic.
-
-## async/await
-
-Use the async/await interface to get setup without a lot of nested code.
-
-```javascript
-require("ib-sdk").setup(4001, async function(ib) {
+require('ib-sdk').start(4001).then(async session => {
     let account = await ib.account();
     let accountSummary = await ib.accountSummary();
     let positions = await ib.positions();
     let trades = await ib.trades();
     let AAPL = await ib.securities("AAPL stock")[0];
-    
-    return AAPL;
-}).then(AAPL => {
 
-});
+    session.close();
+}).catch(console.log);
 ```
 
-```javascript
-
-```
+Invoke `session.close()` to trigger disconnect logic.
 
 ## Use Cases
 
