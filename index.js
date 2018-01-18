@@ -16,7 +16,27 @@ const id = exports.id = 0,
       RealTime = exports.RealTime = require("./model/realtime"),
       MarketData = exports.MarketData = require("./model/marketdata/marketdata");
 
-exports.open = (options, cb) => {
+const session = exports.session = options => {
+    options = options || { };
+
+    let ib = options.ib || new IB({
+        clientId: options.id || exports.id++,
+        host: options.host || "127.0.0.1",
+        port: options.port || 4001
+    });
+    
+    if (options.trace && typeof options.trace == "function") {
+        ib.on("all", options.trace);
+    }
+    
+    return new Session(new Service(ib, options.dispatch || new Dispatch()));
+};
+
+const proxy = exports.proxy = (socket, dispatch) => {
+    return new Session(new Proxy(socket), dispatch);
+};
+
+const open = exports.open = (options, cb) => {
     if (typeof options == "function" && cb == null) {
         cb = options;
         options = { };
@@ -40,6 +60,12 @@ exports.open = (options, cb) => {
             cb(null, sess);
             cb = null;
         }
+    }).once("error", err => {
+        clearTimeout(timeout);
+        if (cb) {
+            cb(err);
+            cb = null;
+        }
     }).service.socket.once("error", err => {
         clearTimeout(timeout);
         if (cb) {
@@ -49,22 +75,19 @@ exports.open = (options, cb) => {
     }).connect();
 };
 
-const session = exports.session = options => {
-    options = options || { };
-
-    let ib = options.ib || new IB({
-        clientId: options.id || exports.id++,
-        host: options.host || "127.0.0.1",
-        port: options.port || 4001
+const start = exports.start = options => {
+    return new Promise((yes, no) => {
+        open(options, (err, session) => {
+            if (err) no(err);
+            else yes(session);
+        });
     });
-    
-    if (options.trace && typeof options.trace == "function") {
-        ib.on("all", options.trace);
-    }
-    
-    return new Session(new Service(ib, options.dispatch || new Dispatch()));
+}
+
+const account = exports.account = options => {
+    return start(options).then(session => session.account(options ? options.account : null));
 };
 
-const proxy = exports.proxy = (socket, dispatch) => {
-    return new Session(new Proxy(socket), dispatch);
+const accounts = exports.accounts = options => {
+    return start(options).then(session => session.accounts(options ? options.accounts : null));
 };

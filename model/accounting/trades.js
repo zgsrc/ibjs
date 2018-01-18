@@ -24,7 +24,11 @@ class Trades extends RealTime {
             if (!this[data.exec.permId]) this[data.exec.permId] = { };
             this[data.exec.permId][data.exec.execId] = data;
             this.emit("update", data);
-        }).on("error", err => this.emit("error", err)).on("end", () => this.emit("load")).send();
+        }).on("error", err => {
+            this.emit("error", err);
+        }).on("end", () => {
+            this.emit("load");
+        }).send();
         
         this.cancel = () => trades.cancel();
     }

@@ -32,7 +32,12 @@ class Orders extends RealTime {
             }
             
             this.emit("update", data);
-        }).on("end", () => this.emit("load")).on("error", err => this.emit("error", err));
+        }).on("end", () => {
+            this.loaded = true;
+            this.emit("load");
+        }).on("error", err => {
+            this.emit("error", err);
+        });
         
         this._exclude.push("_subscription");
         
@@ -41,6 +46,7 @@ class Orders extends RealTime {
     
     stream() {
         this._subscription.send();
+        return this;
     }
     
     assign(order) {

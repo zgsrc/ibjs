@@ -77,7 +77,7 @@ class Session extends Events {
                     this.emit("bulletin", data);
                 }
                 else {
-                    this.emit("error", data);    
+                    this.emit("error", data);
                 }
             });
             
@@ -134,46 +134,83 @@ class Session extends Events {
         if (exit) process.exit();
     }
     
-    account(options) {
-        if (options === true) options = { };
-        if (options && !options.id) {
-            options.id = this.managedAccounts.first();
-        }
-        
-        return new Account(this, options || this.managedAccounts.first());
+    async account(options) {
+        let account = new Account(this, options || this.managedAccounts.first());
+        return new Promise((resolve, reject) => {
+            let errHandler = err => reject(err);
+            account.once("error", errHandler).once("load", () => {
+                account.removeListener("error", errHandler);
+                resolve(account);
+            });
+        });
     }
 
-    accountSummary(options) {
-        return new Accounts(this, options);
-    }
-    
-    positions() {
-        return new Positions(this);
-    }
-
-    trades(options) {
-        return new Trades(this, options);
-    }
-
-    details(description, cb) {
-        contract.lookup(this, description, cb);
-    }
-    
-    securities(description, cb) {
-        securities(this, description, cb);
-    }
-    
-    curve(description, cb) {
-        securities(this, description, (err, securities) => {
-            if (err) cb(err);
-            else cb(null, new Curve(this, securities));
+    async accounts(options) {
+        let accounts = new Accounts(this, options);
+        return new Promise((resolve, reject) => {
+            let errHandler = err => reject(err);
+            accounts.once("error", errHandler).once("load", () => {
+                accounts.removeListener("error", errHandler);
+                resolve(accounts);
+            });
         });
     }
     
-    chain(description, cb) {
-        securities(this, description, (err, securities) => {
-            if (err) cb(err);
-            else cb(null, new Chain(this, securities));
+    async positions() {
+        let positions = new Positions(this);
+        return new Promise((resolve, reject) => {
+            let errHandler = err => reject(err);
+            positions.once("error", errHandler).once("load", () => {
+                positions.removeListener("error", errHandler);
+                resolve(positions);
+            });
+        });
+    }
+
+    async trades(options) {
+        let trades = new Trades(this, options);
+        return new Promise((resolve, reject) => {
+            let errHandler = err => reject(err);
+            trades.once("error", errHandler).once("load", () => {
+                trades.removeListener("error", errHandler);
+                resolve(trades);
+            });
+        });
+    }
+
+    async lookup(description) {
+        return new Promise((resolve, reject) => {
+            contract.lookup(this, description, (err, contracts) => {
+                if (err) reject(err);
+                else resolve(contracts);
+            });
+        });
+    }
+    
+    async securities(description) {
+        return new Promise((resolve, reject) => {
+            securities(this, description, (err, secs) => {
+                if (err) reject(err);
+                else resolve(secs);
+            });
+        });
+    }
+    
+    async curve(description) {
+        return new Promise((resolve, reject) => {
+            securities(this, description, (err, securities) => {
+                if (err) reject(err);
+                else resolve(new Curve(this, secs));
+            });
+        });
+    }
+    
+    async options(description) {
+        return new Promise((resolve, reject) => {
+            securities(this, description, (err, secs) => {
+                if (err) reject(err);
+                else resolve(new Chain(this, secs));
+            });
         });
     }
     

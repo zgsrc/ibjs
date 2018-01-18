@@ -2,37 +2,35 @@
 
 const sdk = require("..");
 
-sdk.open((err, session) => {
-    if (err) {
-        console.log(err);
-    }
-    else {
-        // By default, the first value in session.managedAccounts array is used.
-        let account = session.account();
-        
-        // Otherwise you can supply options manually
-        account = session.account({
-            id: session.managedAccounts[0],
-            orders: true,
-            trades: true
-        });
-        
-        // Best effort (timer-based) to let a consistent initial state load.
-        account.on("load", () => {
-            console.log("Account:");
-            account.each((value, name) => console.log(`${name}: ${value}`));
+sdk.account().then(async account => {
+    
+    account.session.on("error", console.log);
 
-            console.log("Positions:");
-            account.positions.each(position => console.log(position));
+    /*
+    console.log("Balances:");
+    account.balances.each((value, name) => console.log(`${name}: ${value}`));
 
-            console.log("Orders:");
-            account.orders.each(order => console.log(order));
+    console.log("Positions:");
+    account.positions.each(position => console.log(position));
 
-            console.log("Trades:");
-            account.trades.each(trade => console.log(trade));
+    console.log("Orders:");
+    account.orders.each(order => console.log(order));
 
-            // Close connection and fire 'disconnect' event
-            session.close();
-        }); 
-    }
-});
+    console.log("Trades:");
+    account.trades.each(trade => console.log(trade));
+    */
+    
+    
+    let AAPL = await account.session.securities("AAPL stock");
+    console.log("AAPL Stock:");
+    console.log(AAPL.contract);
+    
+    /*
+    let financials = await AAPL.fundamental(sdk.flags.FUNDAMENTALS_REPORTS.financials);
+    console.log("Financials:");
+    console.log(financials);
+    */
+    
+    account.session.close();
+    
+}).catch(err => console.log("ERROR: " + err.message));

@@ -28,11 +28,8 @@ class Bars extends MarketData {
                 data.synthetic = true;
                 data.date = bd;
                 data.timestamp = bd.getTime();
-                
-                this.emit("old", this.series.last());
                 this.series.push(data);
                 this.emit("update", this.series.last());
-                this.emit("new", this.series.last());
             }
         });
     }
@@ -158,6 +155,7 @@ class Bars extends MarketData {
         
         return this;
     }
+    
 }
 
 function barDate(size, date) {

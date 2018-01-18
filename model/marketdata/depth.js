@@ -19,6 +19,27 @@ class Depth extends MarketData {
         return this.contract.validExchanges;
     }
     
+    stream(exchanges, rows) {
+        if (typeof exchanges == "number") {
+            rows = exchanges;
+            exchanges = null;
+        }
+        
+        if (exchanges == null) {
+            if (this.exchanges.length) {
+                exchanges = this.exchanges;
+                this.exchanges = [ ];
+            }
+            else exchanges = this.validExchanges;
+        }
+        
+        exchanges.forEach(exchange => {
+            this.streamExchange(exchange, rows);
+        });
+        
+        return this;
+    }
+    
     streamExchange(exchange, rows) {
         if (this.exchanges.indexOf(exchange) < 0) {
             this.exchanges.push(exchange);
@@ -64,27 +85,6 @@ class Depth extends MarketData {
         if (this.exchanges.length == 0) {
             this.streaming = false;
         }
-        
-        return this;
-    }
-    
-    stream(exchanges, rows) {
-        if (typeof exchanges == "number") {
-            rows = exchanges;
-            exchanges = null;
-        }
-        
-        if (exchanges == null) {
-            if (this.exchanges.length) {
-                exchanges = this.exchanges;
-                this.exchanges = [ ];
-            }
-            else exchanges = this.validExchanges;
-        }
-        
-        exchanges.forEach(exchange => {
-            this.streamExchange(exchange, rows);
-        });
         
         return this;
     }

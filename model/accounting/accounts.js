@@ -1,7 +1,8 @@
 "use strict";
 
 const RealTime = require("../realtime"),
-      flags = require("../flags");
+      flags = require("../flags"),
+      Currency = require("../currency");
 
 class Accounts extends RealTime {
     
@@ -10,8 +11,13 @@ class Accounts extends RealTime {
         super(session);
 
         if (options == null) {
-            options = { positions: true };
+            options = { 
+                positions: true,
+                trades: true
+            };
         }
+        
+        this.orders = session.orders.stream();
         
         let positions = null, summary = this.service.accountSummary(
             options.group || "All", 
@@ -20,7 +26,10 @@ class Accounts extends RealTime {
             if (datum.account && datum.tag) {
                 let id = datum.account;
                 if (this[id] == null) {
-                    this[id] = { positions: { } };
+                    this[id] = { 
+                        balances: new RealTime(session),
+                        positions: new RealTime(session) 
+                    };
                 }
 
                 if (datum.tag) {
@@ -29,13 +38,16 @@ class Accounts extends RealTime {
                     else if (value == "true") value = true;
                     else if (value == "false") value = false;
 
+                    
                     if (datum.currency && datum.currency != "") {
-                        value = { currency: datum.currency, value: value };
+                        if (datum.currency != value) {
+                            value = new Currency(datum.currency, value);
+                        }
                     }
 
                     var key = datum.tag.camelize(false);
-                    this[id][key] = value;
-                    this.emit("update", { field: key, value: value });
+                    this[id].balances[key] = value;
+                    this.emit("update", { type: "balance", field: key, value: value });
                 }
             }
         }).on("end", cancel => {
@@ -45,13 +57,15 @@ class Accounts extends RealTime {
                     this[data.accountName].positions[data.contract.conId] = data;
                     this.emit("update", { type: "position", field: data.contract.conId, value: data });
                 }).on("end", cancel => {
-                    this.emit("load");
+                    if (this.orders.loaded) this.emit("load");
+                    else this.orders.on("load", () => this.emit("load"));
                 }).on("error", err => {
                     this.emit("error", err);
                 }).send();
             }
             else {
-                this.emit("load");
+                if (this.orders.loaded) this.emit("load");
+                else this.orders.on("load", () => this.emit("load"));
             }
         }).on("error", err => {
             this.emit("error", err);
@@ -60,6 +74,7 @@ class Accounts extends RealTime {
         this.cancel = () => {
             summary.cancel();
             if (positions) positions.cancel();
+            if (this.trades) this.trades.cancel();
         };
     }
     

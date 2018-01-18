@@ -43,6 +43,28 @@ require("ib-sdk").open({
 
 Invoke `session.close()` to trigger disconnect logic.
 
+## async/await
+
+Use the async/await interface to get setup without a lot of nested code.
+
+```javascript
+require("ib-sdk").setup(4001, async function(ib) {
+    let account = await ib.account();
+    let accountSummary = await ib.accountSummary();
+    let positions = await ib.positions();
+    let trades = await ib.trades();
+    let AAPL = await ib.securities("AAPL stock")[0];
+    
+    return AAPL;
+}).then(AAPL => {
+
+});
+```
+
+```javascript
+
+```
+
 ## Use Cases
 
 Each `session` is associated with one or more accounts.  The most common case is access to a single [account](./example/account.js).  Other use cases can benefit from the lightweight [account summary](./example/summary.js) model.

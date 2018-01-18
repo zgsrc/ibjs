@@ -1,46 +1,42 @@
 "use strict";
 
-const RealTime = require("../realtime");
+const RealTime = require("../realtime"),
+      Currency = require("../currency");
 
 class Account extends RealTime {
     
-    /* string id, boolean orders, boolean trades */
+    /* string id, boolean trades */
     constructor(session, options) {
         super(session);
         
-        if (typeof options == "string") {
-            options = { 
-                id: options
-            };
-        }
+        if (typeof options == "string") options = { id: options, orders: true, trades: true };
+        if (typeof options.id != "string") throw new Error("Account id is required.");
         
-        if (typeof options.id != "string") {
-            throw new Error("Account id is required.");
-        }
-        
-        this._exclude.push("positions", "orders", "trades");
-        
+        this.balances = new RealTime(session);
         this.positions = new RealTime(session);
+        this.orders = session.orders.stream();
         
         let account = this.service.accountUpdates(options.id).on("data", data => {
             if (data.key) {
-                var value = data.value;
+                let value = data.value;
                 if (/^\-?[0-9]+(\.[0-9]+)?$/.test(value)) value = parseFloat(value);
                 else if (value == "true") value = true;
                 else if (value == "false") value = false;
 
                 if (data.currency && data.currency != "") {
-                    value = { currency: data.currency, value: value };
+                    if (data.currency != value) {
+                        value = new Currency(data.currency, value);
+                    }
                 }
 
-                var key = data.key.camelize(false);
-                this[key] = value;
-                this.emit("update", { type: "account", field: key, value: value });
+                let key = data.key.camelize(false);
+                this.balances[key] = value;
+                this.emit("update", { type: "balances", field: key, value: value });
             }
             else if (data.timestamp) {
-                var date = Date.create(data.timestamp);
+                let date = Date.create(data.timestamp);
                 this.timestamp = date;
-                this.emit("update", { type: "account", field: "timestamp", value: date });
+                this.emit("update", { type: "timestamp", field: "timestamp", value: date });
             }
             else if (data.contract) {
                 this.positions[data.contract.conId] = data;
@@ -49,13 +45,28 @@ class Account extends RealTime {
             else {
                 this.emit("error", "Unrecognized account update " + JSON.stringify(data));
             }
+        }).on("end", () => {
+            if (options.trades) {
+                session.trades({ account: options.id }).then(trades => {
+                    this.trades = trades;
+                    if (this.orders.loaded) this.emit("load");
+                    else this.orders.on("load", () => this.emit("load"));
+                });
+            }
+            else {
+                if (this.orders.loaded) this.emit("load");
+                else this.orders.on("load", () => this.emit("load"));
+            }
         }).on("error", err => {
             this.emit("error", err);
         }).send();
         
-        this.cancel = () => account.cancel();
-        
-        setTimeout(() => this.emit("load"), 500);
+        this.cancel = () => {
+            account.cancel();
+            if (this.trades) {
+                this.trades.cancel();
+            }
+        }
     }
     
 }

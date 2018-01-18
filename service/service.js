@@ -167,7 +167,7 @@ function attach(ib, dispatch) {
                 dispatch.data("system", args);
             }
         }
-        else if (err && err.syscall != "connect") {
+        else if (err && err.id != -1 && err.syscall != "connect" && err.code != "ECONNRESET") {
             console.log("UNCAUGHT ERROR MESSAGE");
             console.log(err);
         }
@@ -395,6 +395,8 @@ function attach(ib, dispatch) {
             realizedPNL: realizedPNL,
             accountName: accountName
         });
+    }).on('accountDownloadEnd', function(accountId) {
+        dispatch.end("accountUpdates");
     });
     
     ib.on('position', function(account, contract, pos, avgCost) {

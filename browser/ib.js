@@ -6,50 +6,46 @@ window.ib = {
     session: () => new Session(new Proxy(socket)),
     flags: require("../model/flags")
 };
-},{"../model/flags":7,"../model/session":20,"../service/proxy":23}],2:[function(require,module,exports){
+},{"../model/flags":8,"../model/session":21,"../service/proxy":24}],2:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("../realtime");
+const RealTime = require("../realtime"),
+      Currency = require("../currency");
 
 class Account extends RealTime {
     
-    /* string id, boolean orders, boolean trades */
+    /* string id, boolean trades */
     constructor(session, options) {
         super(session);
         
-        if (typeof options == "string") {
-            options = { 
-                id: options
-            };
-        }
+        if (typeof options == "string") options = { id: options, orders: true, trades: true };
+        if (typeof options.id != "string") throw new Error("Account id is required.");
         
-        if (typeof options.id != "string") {
-            throw new Error("Account id is required.");
-        }
-        
-        this._exclude.push("positions", "orders", "trades");
-        
+        this.balances = new RealTime(session);
         this.positions = new RealTime(session);
+        this.orders = session.orders;
         
         let account = this.service.accountUpdates(options.id).on("data", data => {
             if (data.key) {
-                var value = data.value;
+                let value = data.value;
                 if (/^\-?[0-9]+(\.[0-9]+)?$/.test(value)) value = parseFloat(value);
                 else if (value == "true") value = true;
                 else if (value == "false") value = false;
 
                 if (data.currency && data.currency != "") {
-                    value = { currency: data.currency, value: value };
+                    if (data.currency != value) {
+                        value = new Currency(data.currency, value);
+                    }
                 }
 
-                var key = data.key.camelize(false);
-                this[key] = value;
-                this.emit("update", { type: "account", field: key, value: value });
+                let key = data.key.camelize(false);
+                this.balances[key] = value;
+                this.emit("update", { type: "balances", field: key, value: value });
             }
             else if (data.timestamp) {
-                var date = Date.create(data.timestamp);
+                let date = Date.create(data.timestamp);
                 this.timestamp = date;
-                this.emit("update", { type: "account", field: "timestamp", value: date });
+                this.emit("update", { type: "timestamp", field: "timestamp", value: date });
             }
             else if (data.contract) {
                 this.positions[data.contract.conId] = data;
@@ -58,19 +54,34 @@ class Account extends RealTime {
             else {
                 this.emit("error", "Unrecognized account update " + JSON.stringify(data));
             }
+        }).on("end", () => {
+            if (options.trades) {
+                session.trades({ account: options.id }).then(trades => {
+                    this.trades = trades;
+                    if (this.orders.loaded) this.emit("load");
+                    else this.orders.on("load", () => this.emit("load"));
+                });
+            }
+            else {
+                if (this.orders.loaded) this.emit("load");
+                else this.orders.on("load", () => this.emit("load"));
+            }
         }).on("error", err => {
             this.emit("error", err);
         }).send();
         
-        this.cancel = () => account.cancel();
-        
-        setTimeout(() => this.emit("load"), 500);
+        this.cancel = () => {
+            account.cancel();
+            if (this.trades) {
+                this.trades.cancel();
+            }
+        }
     }
     
 }
 
 module.exports = Account;
-},{"../realtime":19}],3:[function(require,module,exports){
+},{"../currency":7,"../realtime":20}],3:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime"),
@@ -83,8 +94,13 @@ class Accounts extends RealTime {
         super(session);
 
         if (options == null) {
-            options = { positions: true };
+            options = { 
+                positions: true,
+                trades: true
+            };
         }
+        
+        this.orders = session.orders;
         
         let positions = null, summary = this.service.accountSummary(
             options.group || "All", 
@@ -93,7 +109,10 @@ class Accounts extends RealTime {
             if (datum.account && datum.tag) {
                 let id = datum.account;
                 if (this[id] == null) {
-                    this[id] = { positions: { } };
+                    this[id] = { 
+                        balances: new RealTime(session),
+                        positions: new RealTime(session) 
+                    };
                 }
 
                 if (datum.tag) {
@@ -107,8 +126,8 @@ class Accounts extends RealTime {
                     }
 
                     var key = datum.tag.camelize(false);
-                    this[id][key] = value;
-                    this.emit("update", { field: key, value: value });
+                    this[id].balances[key] = value;
+                    this.emit("update", { type: "balance", field: key, value: value });
                 }
             }
         }).on("end", cancel => {
@@ -118,13 +137,15 @@ class Accounts extends RealTime {
                     this[data.accountName].positions[data.contract.conId] = data;
                     this.emit("update", { type: "position", field: data.contract.conId, value: data });
                 }).on("end", cancel => {
-                    this.emit("load");
+                    if (this.orders.loaded) this.emit("load");
+                    else this.orders.on("load", () => this.emit("load"));
                 }).on("error", err => {
                     this.emit("error", err);
                 }).send();
             }
             else {
-                this.emit("load");
+                if (this.orders.loaded) this.emit("load");
+                else this.orders.on("load", () => this.emit("load"));
             }
         }).on("error", err => {
             this.emit("error", err);
@@ -133,13 +154,14 @@ class Accounts extends RealTime {
         this.cancel = () => {
             summary.cancel();
             if (positions) positions.cancel();
+            if (this.trades) this.trades.cancel();
         };
     }
     
 }
 
 module.exports = Accounts;
-},{"../flags":7,"../realtime":19}],4:[function(require,module,exports){
+},{"../flags":8,"../realtime":20}],4:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime"),
@@ -174,7 +196,12 @@ class Orders extends RealTime {
             }
             
             this.emit("update", data);
-        }).on("end", () => this.emit("load")).on("error", err => this.emit("error", err));
+        }).on("end", () => {
+            this.loaded = true;
+            this.emit("load");
+        }).on("error", err => {
+            this.emit("error", err);
+        });
         
         this._exclude.push("_subscription");
         
@@ -203,7 +230,7 @@ class Orders extends RealTime {
 }
 
 module.exports = Orders;
-},{"../marketdata/order":15,"../realtime":19}],5:[function(require,module,exports){
+},{"../marketdata/order":16,"../realtime":20}],5:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -232,7 +259,7 @@ class Positions extends RealTime {
 }
 
 module.exports = Positions;
-},{"../realtime":19}],6:[function(require,module,exports){
+},{"../realtime":20}],6:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -259,7 +286,11 @@ class Trades extends RealTime {
             if (!this[data.exec.permId]) this[data.exec.permId] = { };
             this[data.exec.permId][data.exec.execId] = data;
             this.emit("update", data);
-        }).on("error", err => this.emit("error", err)).on("end", () => this.emit("load")).send();
+        }).on("error", err => {
+            this.emit("error", err);
+        }).on("end", () => {
+            this.emit("load");
+        }).send();
         
         this.cancel = () => trades.cancel();
     }
@@ -267,7 +298,24 @@ class Trades extends RealTime {
 }
 
 module.exports = Trades;
-},{"../realtime":19}],7:[function(require,module,exports){
+},{"../realtime":20}],7:[function(require,module,exports){
+"use strict";
+
+class Currency {
+    
+    constructor(currency, amount) {
+        this.abbreviation = currency;
+        this.amount = amount;
+    }
+    
+    toString() {
+        return this.abbreviation + " " + this.amount.format(2);
+    }
+    
+}
+
+module.exports = Currency;
+},{}],8:[function(require,module,exports){
 const HISTORICAL = {
     trades: "TRADES",
     midpoint: "MIDPOINT",
@@ -459,7 +507,7 @@ const MARKET_DATA_TYPE = {
 
 exports.MARKET_DATA_TYPE = MARKET_DATA_TYPE;
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -490,11 +538,8 @@ class Bars extends MarketData {
                 data.synthetic = true;
                 data.date = bd;
                 data.timestamp = bd.getTime();
-                
-                this.emit("old", this.series.last());
                 this.series.push(data);
                 this.emit("update", this.series.last());
-                this.emit("new", this.series.last());
             }
         });
     }
@@ -620,6 +665,7 @@ class Bars extends MarketData {
         
         return this;
     }
+    
 }
 
 function barDate(size, date) {
@@ -662,7 +708,7 @@ function merge(oldBar, newBar) {
 }
 
 module.exports = Bars;
-},{"../flags":7,"./marketdata":14,"./studies":18}],9:[function(require,module,exports){
+},{"../flags":8,"./marketdata":15,"./studies":19}],10:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -717,7 +763,7 @@ class Chain extends MarketData {
 }
 
 module.exports = Chain;
-},{"./curve":12,"./marketdata":14}],10:[function(require,module,exports){
+},{"./curve":13,"./marketdata":15}],11:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -906,7 +952,7 @@ class Charts extends MarketData {
 }
 
 module.exports = Charts;
-},{"../flags":7,"./bars":8,"./marketdata":14}],11:[function(require,module,exports){
+},{"../flags":8,"./bars":9,"./marketdata":15}],12:[function(require,module,exports){
 "use strict";
 
 const { DateTime } = require('luxon'),
@@ -920,6 +966,12 @@ function details(session, summary, cb) {
         .once("error", err => cb(err, list.sortBy("contract.expiry")))
         .once("end", () => cb(null, list))
         .send();
+}
+
+function datetime(date, time, timezone, future) {
+    return DateTime.fromHTTP(
+        Date.create(date + " " + (time || "00:00:00")).format("{Weekday}, {dd} {Mon} {yyyy} {HH}:{mm}:{ss}") + " " + (timezone || "")
+    ).toJSDate();
 }
 
 class Contract extends RealTime {
@@ -937,7 +989,7 @@ class Contract extends RealTime {
         this.validExchanges = this.validExchanges.split(",").compact();
 
         if (this.summary.expiry) {
-            this.expiry = Date.create(Date.create(this.summary.expiry).format("{Month} {dd}, {yyyy}") + " 00:00:00 " + this.timeZoneId);
+            this.expiry = Date.create(datetime(this.summary.expiry, "00:00:00", this.timeZoneId));
         }
         
         let timeZoneId = this.timeZoneId,
@@ -959,8 +1011,8 @@ class Contract extends RealTime {
             schedule[label].end = [ ];
             
             times.forEach(time => {
-                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
-                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
+                let start = Date.create(datetime(date, time[0] + ":00", timeZoneId), { future: true }),
+                    end = Date.create(datetime(date, time[1] + ":00", timeZoneId), { future: true });
 
                 if (end.isBefore(start)) start.addDays(-1);
 
@@ -1236,7 +1288,7 @@ function lookup(session, description, cb) {
 }
 
 exports.lookup = lookup;
-},{"../flags":7,"../realtime":19,"luxon":21}],12:[function(require,module,exports){
+},{"../flags":8,"../realtime":20,"luxon":22}],13:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata");
@@ -1287,7 +1339,7 @@ class Curve extends MarketData {
 }
 
 module.exports = Curve;
-},{"./marketdata":14}],13:[function(require,module,exports){
+},{"./marketdata":15}],14:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata");
@@ -1307,6 +1359,27 @@ class Depth extends MarketData {
     
     get validExchanges() {
         return this.contract.validExchanges;
+    }
+    
+    stream(exchanges, rows) {
+        if (typeof exchanges == "number") {
+            rows = exchanges;
+            exchanges = null;
+        }
+        
+        if (exchanges == null) {
+            if (this.exchanges.length) {
+                exchanges = this.exchanges;
+                this.exchanges = [ ];
+            }
+            else exchanges = this.validExchanges;
+        }
+        
+        exchanges.forEach(exchange => {
+            this.streamExchange(exchange, rows);
+        });
+        
+        return this;
     }
     
     streamExchange(exchange, rows) {
@@ -1358,27 +1431,6 @@ class Depth extends MarketData {
         return this;
     }
     
-    stream(exchanges, rows) {
-        if (typeof exchanges == "number") {
-            rows = exchanges;
-            exchanges = null;
-        }
-        
-        if (exchanges == null) {
-            if (this.exchanges.length) {
-                exchanges = this.exchanges;
-                this.exchanges = [ ];
-            }
-            else exchanges = this.validExchanges;
-        }
-        
-        exchanges.forEach(exchange => {
-            this.streamExchange(exchange, rows);
-        });
-        
-        return this;
-    }
-    
     cancel() {
         this._subscriptions.map("cancel");
         this._subscriptions = [ ];
@@ -1388,7 +1440,7 @@ class Depth extends MarketData {
 }
 
 module.exports = Depth;
-},{"./marketdata":14}],14:[function(require,module,exports){
+},{"./marketdata":15}],15:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime");
@@ -1403,7 +1455,7 @@ class MarketData extends RealTime {
 }
 
 module.exports = MarketData;
-},{"../realtime":19}],15:[function(require,module,exports){
+},{"../realtime":20}],16:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -1682,7 +1734,7 @@ class Order extends MarketData {
 }
 
 module.exports = Order;
-},{"../flags":7,"./marketdata":14}],16:[function(require,module,exports){
+},{"../flags":8,"./marketdata":15}],17:[function(require,module,exports){
 "use strict";
 
 const MarketData = require("./marketdata"),
@@ -1892,11 +1944,12 @@ class FieldBuffer extends MarketData {
 }
 
 module.exports = Quote;
-},{"../flags":7,"./marketdata":14}],17:[function(require,module,exports){
+},{"../flags":8,"./marketdata":15}],18:[function(require,module,exports){
 "use strict";
 
 const flags = require("../flags"),
       MarketData = require("./marketdata"),
+      contract = require("./contract"),
       Quote = require("./quote"),
       Depth = require("./depth"),
       Charts = require("./charts"),
@@ -1906,46 +1959,32 @@ class Security extends MarketData {
     
     constructor(session, contract) {
         super(session, contract);
-        
         this.quote = new Quote(session, contract);
         this.depth = new Depth(session, contract);
         this.charts = new Charts(session, contract, flags.HISTORICAL.trades);
         this.reports = { };
-        
-        this._pending = [ ];
-        this._exclude.append("_pending");
     }
     
-    fundamentals(type, cb) {
-        this.service.fundamentalData(this.contract.summary, flags.FUNDAMENTALS_REPORTS[type] || type)
-            .once("data", data => {
-                let keys = Object.keys(data);
-                if (keys.length == 1) this.reports[type] = data[keys.first()];
-                else this.reports[type] = data;
-                
-                if (cb) cb(null, this.reports[type]);
-            })
-            .once("end", () => {
-                if (cb) cb(new Error("Could not load " + type + " fundamental data for " + this.contract.symbol + ". " + err.message))
-            })
-            .once("error", err => {
-                if (cb) cb(new Error("Could not load " + type + " fundamental data for " + this.contract.symbol + ". " + err.message))
-            })
-            .send();
+    async fundamentals(type) {
+        return new Promise((resolve, reject) => {
+            this.service.fundamentalData(this.contract.summary, flags.FUNDAMENTALS_REPORTS[type] || type)
+                .once("data", data => {
+                    let keys = Object.keys(data);
+                    if (keys.length == 1) this.reports[type] = data[keys.first()];
+                    else this.reports[type] = data;
+                    resolve(this.reports[type]);
+                })
+                .once("end", () => reject(new Error("Could not load " + type + " fundamental data for " + this.contract.symbol + ". " + err.message)))
+                .once("error", err => reject(new Error("Could not load " + type + " fundamental data for " + this.contract.symbol + ". " + err.message)))
+                .send();
+        });
     }
     
     order() {
         return new Order(this.session, this.contract);
     }
     
-    delay(call, millis) {
-        this._pending.append(setTimeout(call, millis));
-    }
-    
     cancel() {
-        this._pending.forEach(t => clearTimeout(t));
-        this._pending = [ ];
-        
         if (this.quote) this.quote.cancel();
         if (this.depth) this.depth.cancel();
         if (this.charts) this.charts.cancel();
@@ -1954,16 +1993,16 @@ class Security extends MarketData {
 }
 
 function securities(session, description, cb) {
-    session.details(description, (err, contracts) => {
+    contract.lookup(session, description, (err, contracts) => {
         if (err) cb(err);
         else cb(null, contracts.map(contract => new Security(session, contract)));
     });
 }
 
 module.exports = securities;
-},{"../flags":7,"./charts":10,"./depth":13,"./marketdata":14,"./order":15,"./quote":16}],18:[function(require,module,exports){
+},{"../flags":8,"./charts":11,"./contract":12,"./depth":14,"./marketdata":15,"./order":16,"./quote":17}],19:[function(require,module,exports){
 module.exports = { };
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -2021,7 +2060,7 @@ class RealTime extends Events {
 }
 
 module.exports = RealTime;
-},{"events":26}],20:[function(require,module,exports){
+},{"events":27}],21:[function(require,module,exports){
 (function (process){
 "use strict";
 
@@ -2159,46 +2198,83 @@ class Session extends Events {
         if (exit) process.exit();
     }
     
-    account(options) {
-        if (options === true) options = { };
-        if (options && !options.id) {
-            options.id = this.managedAccounts.first();
-        }
-        
-        return new Account(this, options || this.managedAccounts.first());
+    async account(options) {
+        let account = new Account(this, options || this.managedAccounts.first());
+        return new Promise((resolve, reject) => {
+            let errHandler = err => reject(err);
+            account.once("error", errHandler).once("load", () => {
+                account.removeListener("error", errHandler);
+                resolve(account);
+            });
+        });
     }
 
-    accountSummary(options) {
-        return new Accounts(this, options);
-    }
-    
-    positions() {
-        return new Positions(this);
-    }
-
-    trades(options) {
-        return new Trades(this, options);
-    }
-
-    details(description, cb) {
-        contract.lookup(this, description, cb);
-    }
-    
-    securities(description, cb) {
-        securities(this, description, cb);
-    }
-    
-    curve(description, cb) {
-        securities(this, description, (err, securities) => {
-            if (err) cb(err);
-            else cb(null, new Curve(this, securities));
+    async accounts(options) {
+        let accounts = new Accounts(this, options);
+        return new Promise((resolve, reject) => {
+            let errHandler = err => reject(err);
+            accounts.once("error", errHandler).once("load", () => {
+                accounts.removeListener("error", errHandler);
+                resolve(accounts);
+            });
         });
     }
     
-    chain(description, cb) {
-        securities(this, description, (err, securities) => {
-            if (err) cb(err);
-            else cb(null, new Chain(this, securities));
+    async positions() {
+        let positions = new Positions(this);
+        return new Promise((resolve, reject) => {
+            let errHandler = err => reject(err);
+            positions.once("error", errHandler).once("load", () => {
+                positions.removeListener("error", errHandler);
+                resolve(positions);
+            });
+        });
+    }
+
+    async trades(options) {
+        let trades = new Trades(this, options);
+        return new Promise((resolve, reject) => {
+            let errHandler = err => reject(err);
+            trades.once("error", errHandler).once("load", () => {
+                trades.removeListener("error", errHandler);
+                resolve(trades);
+            });
+        });
+    }
+
+    async lookup(description) {
+        return new Promise((resolve, reject) => {
+            contract.lookup(this, description, (err, contracts) => {
+                if (err) reject(err);
+                else resolve(contracts);
+            });
+        });
+    }
+    
+    async securities(description) {
+        return new Promise((resolve, reject) => {
+            securities(this, description, (err, secs) => {
+                if (err) reject(err);
+                else resolve(secs);
+            });
+        });
+    }
+    
+    async curve(description) {
+        return new Promise((resolve, reject) => {
+            securities(this, description, (err, securities) => {
+                if (err) reject(err);
+                else resolve(new Curve(this, secs));
+            });
+        });
+    }
+    
+    async options(description) {
+        return new Promise((resolve, reject) => {
+            securities(this, description, (err, secs) => {
+                if (err) reject(err);
+                else resolve(new Chain(this, secs));
+            });
         });
     }
     
@@ -2206,7 +2282,7 @@ class Session extends Events {
 
 module.exports = Session;
 }).call(this,require('_process'))
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":7,"./marketdata/chain":9,"./marketdata/contract":11,"./marketdata/curve":12,"./marketdata/security":17,"_process":27,"events":26}],21:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":8,"./marketdata/chain":10,"./marketdata/contract":12,"./marketdata/curve":13,"./marketdata/security":18,"_process":28,"events":27}],22:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -2625,15 +2701,6 @@ function partsOffset(dtf, date) {
   return filled;
 }
 
-function isValid(zone) {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: zone }).format();
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
 /**
  * @private
  */
@@ -2641,8 +2708,17 @@ function isValid(zone) {
 var IANAZone = function (_Zone) {
   inherits(IANAZone, _Zone);
 
-  IANAZone.isValidSpecier = function isValidSpecier(s) {
+  IANAZone.isValidSpecifier = function isValidSpecifier(s) {
     return s && s.match(/^[a-z_+-]{1,256}\/[a-z_+-]{1,256}$/i);
+  };
+
+  IANAZone.isValidZone = function isValidZone(zone) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: zone }).format();
+      return true;
+    } catch (e) {
+      return false;
+    }
   };
 
   // Etc/GMT+8 -> 480
@@ -2664,7 +2740,7 @@ var IANAZone = function (_Zone) {
     var _this = possibleConstructorReturn(this, _Zone.call(this));
 
     _this.zoneName = name;
-    _this.valid = isValid(name);
+    _this.valid = IANAZone.isValidZone(name);
     return _this;
   }
 
@@ -2804,6 +2880,60 @@ var FixedOffsetZone = function (_Zone) {
     }
   }]);
   return FixedOffsetZone;
+}(Zone);
+
+var singleton$2 = null;
+
+var InvalidZone = function (_Zone) {
+  inherits(InvalidZone, _Zone);
+
+  function InvalidZone() {
+    classCallCheck(this, InvalidZone);
+    return possibleConstructorReturn(this, _Zone.apply(this, arguments));
+  }
+
+  InvalidZone.prototype.offsetName = function offsetName() {
+    return null;
+  };
+
+  InvalidZone.prototype.offset = function offset() {
+    return NaN;
+  };
+
+  InvalidZone.prototype.equals = function equals() {
+    return false;
+  };
+
+  createClass(InvalidZone, [{
+    key: 'type',
+    get: function get$$1() {
+      return 'invalid';
+    }
+  }, {
+    key: 'name',
+    get: function get$$1() {
+      return null;
+    }
+  }, {
+    key: 'universal',
+    get: function get$$1() {
+      return false;
+    }
+  }, {
+    key: 'isValid',
+    get: function get$$1() {
+      return false;
+    }
+  }], [{
+    key: 'instance',
+    get: function get$$1() {
+      if (singleton$2 === null) {
+        singleton$2 = new InvalidZone();
+      }
+      return singleton$2;
+    }
+  }]);
+  return InvalidZone;
 }(Zone);
 
 /**
@@ -3655,7 +3785,7 @@ var PolyDateFormatter = function () {
     this.hasIntl = Util.hasIntl();
 
     var z = void 0;
-    if (dt.zone.universal) {
+    if (dt.zone.universal && this.hasIntl) {
       // if we have a fixed-offset zone that isn't actually UTC,
       // (like UTC+8), we need to make do with just displaying
       // the time in UTC; the formatter doesn't know how to handle UTC+8
@@ -4275,7 +4405,7 @@ var Util = function () {
       if (lowered === 'local') return LocalZone.instance;else if (lowered === 'utc') return FixedOffsetZone.utcInstance;else if ((offset = IANAZone.parseGMTOffset(input)) != null) {
         // handle Etc/GMT-4, which V8 chokes on
         return FixedOffsetZone.instance(offset);
-      } else if (IANAZone.isValidSpecier(lowered)) return new IANAZone(input);else return FixedOffsetZone.parseSpecifier(lowered) || Settings.defaultZone;
+      } else if (IANAZone.isValidSpecifier(lowered)) return new IANAZone(input);else return FixedOffsetZone.parseSpecifier(lowered) || InvalidZone.instance;
     } else if (Util.isNumber(input)) {
       return FixedOffsetZone.instance(input);
     } else if ((typeof input === 'undefined' ? 'undefined' : _typeof(input)) === 'object' && input.offset) {
@@ -4283,7 +4413,7 @@ var Util = function () {
       // so we're duck checking it
       return input;
     } else {
-      return Settings.defaultZone;
+      return InvalidZone.instance;
     }
   };
 
@@ -6043,6 +6173,17 @@ var Info = function () {
   };
 
   /**
+   * Return whether the specified zone is a valid IANA specifier.
+   * @param {string} zone - Zone to check
+   * @return {boolean}
+   */
+
+
+  Info.isValidIANAZone = function isValidIANAZone(zone) {
+    return !!IANAZone.isValidSpecifier(zone) && IANAZone.isValidZone(zone);
+  };
+
+  /**
    * Return an array of standalone month names.
    * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DateTimeFormat
    * @param {string} [length='long'] - the length of the month representation, such as "numeric", "2-digit", "narrow", "short", "long"
@@ -7352,7 +7493,7 @@ var DateTime = function () {
    * @example DateTime.fromISO('2016-05-25T09:08:34.123')
    * @example DateTime.fromISO('2016-05-25T09:08:34.123+06:00')
    * @example DateTime.fromISO('2016-05-25T09:08:34.123+06:00', {setZone: true})
-   * @example DateTime.fromISO('2016-05-25T09:08:34.123', {zone: 'utc')
+   * @example DateTime.fromISO('2016-05-25T09:08:34.123', {zone: 'utc'})
    * @example DateTime.fromISO('2016-W05-4')
    * @return {DateTime}
    */
@@ -8905,7 +9046,7 @@ exports.Zone = Zone;
 exports.Settings = Settings;
 
 
-},{}],22:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 "use strict";
 
 const Request = require("./request");
@@ -8978,7 +9119,7 @@ class Dispatch {
 }
 
 module.exports = Dispatch;
-},{"./request":25}],23:[function(require,module,exports){
+},{"./request":26}],24:[function(require,module,exports){
 "use strict";
 
 const Dispatch = require("./dispatch"),
@@ -9131,7 +9272,7 @@ function request(fn, timeout, socket, dispatch) {
 }
 
 module.exports = Proxy;
-},{"./dispatch":22,"./relay":24}],24:[function(require,module,exports){
+},{"./dispatch":23,"./relay":25}],25:[function(require,module,exports){
 "use strict";
 
 function relay(service, socket) {
@@ -9174,7 +9315,7 @@ function relay(service, socket) {
 }
 
 module.exports = relay;
-},{}],25:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 "use strict";
 
 const Events = require("events");
@@ -9305,7 +9446,7 @@ class Request extends Events {
 }
 
 module.exports = Request;
-},{"events":26}],26:[function(require,module,exports){
+},{"events":27}],27:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -9609,7 +9750,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],27:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
