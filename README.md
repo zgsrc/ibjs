@@ -11,9 +11,7 @@ Interactive Brokers SDK is a high-level object model build atop the [native java
 
 #### How It Works
 
-The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without dedicated communication infrastructure, there is no IB support for direct connections to their server tier.
-
-The SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a TCP socket connection from Node.js to an IB Gateway or TWS instance.
+The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without special infrastructure, there is no support for direct connections to IB servers.  So, the SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a TCP socket connection from Node.js to an IB Gateway or TWS instance.
 
 ## Installation
 
@@ -32,17 +30,27 @@ The main interface of the SDK is the `session` object returned by the `sdk.start
 
 ```javascript
 require('ib-sdk').start(4001).then(async session => {
+    
+    session.on("error", console.log);
+
     let account = await ib.account();
-    let accountSummary = await ib.accountSummary();
-    let positions = await ib.positions();
-    let trades = await ib.trades();
-    let AAPL = await ib.securities("AAPL stock")[0];
+    
+    console.log("Balances:");
+    account.balances.each((value, name) => console.log(`${name}: ${value}`));
+
+    console.log("Positions:");
+    account.positions.each(position => console.log(position));
+
+    console.log("Orders:");
+    account.orders.each(order => console.log(order));
+
+    console.log("Trades:");
+    account.trades.each(trade => console.log(trade));
 
     session.close();
+    
 }).catch(console.log);
 ```
-
-Invoke `session.close()` to trigger disconnect logic.
 
 ## Use Cases
 
