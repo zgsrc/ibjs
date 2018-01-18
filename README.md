@@ -26,13 +26,13 @@ Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trade
 * The SDK connects over `tcp://localhost:4001` by default.
 * Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if necessary.
 
-The main interface of the SDK is the `session` object returned by the `sdk.start` promise.
+The entry point is the `session` returned by the `sdk.start` promise.  Each `session` is associated with one or more accounts.  
+
+The most common case is access to a single [account](./example/account.js).
 
 ```javascript
-require('ib-sdk').start(4001).then(async session => {
+sdk.start(4001).then(async session => {
     
-    session.on("error", console.log);
-
     let account = await ib.account();
     
     console.log("Balances:");
@@ -54,7 +54,7 @@ require('ib-sdk').start(4001).then(async session => {
 
 ## Use Cases
 
-Each `session` is associated with one or more accounts.  The most common case is access to a single [account](./example/account.js).  Other use cases can benefit from the lightweight [account summary](./example/summary.js) model.
+Other use cases can benefit from the lightweight [account summary](./example/summary.js) model.
 
 Use the SDK's [symbol](./doc/symbols.md) syntax to create [security](./example/security.js) objects from which you can access market data and initiate [orders](./doc/orders.md).
 

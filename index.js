@@ -87,15 +87,3 @@ const start = exports.start = options => {
         });
     });
 }
-
-const account = exports.account = options => {
-    if (Object.isString(options)) {
-        options = { account: options };
-    }
-    
-    return start(options).then(session => session.account(options ? options.account : null));
-};
-
-const accounts = exports.accounts = options => {
-    return start(options).then(session => session.accounts(options ? options.accounts : null));
-};

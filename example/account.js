@@ -2,11 +2,12 @@
 
 const sdk = require("..");
 
-sdk.account().then(async account => {
+sdk.start().then(async session => {
     
-    account.session.on("error", console.log);
+    session.on("error", console.log);
+    
+    let account = await session.account();
 
-    /*
     console.log("Balances:");
     account.balances.each((value, name) => console.log(`${name}: ${value}`));
 
@@ -18,18 +19,6 @@ sdk.account().then(async account => {
 
     console.log("Trades:");
     account.trades.each(trade => console.log(trade));
-    */
-    
-    
-    let AAPL = await account.session.securities("AAPL stock");
-    console.log("AAPL Stock:");
-    console.log(AAPL.contract);
-    
-    /*
-    let financials = await AAPL.fundamental(sdk.flags.FUNDAMENTALS_REPORTS.financials);
-    console.log("Financials:");
-    console.log(financials);
-    */
     
     account.session.close();
     
