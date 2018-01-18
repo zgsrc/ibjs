@@ -3,9 +3,6 @@
 const sdk = require("..");
 
 sdk.start().then(async session => {
-    
-    session.on("error", console.log);
-    
     let account = await session.account();
 
     console.log("Balances:");
@@ -20,6 +17,5 @@ sdk.start().then(async session => {
     console.log("Trades:");
     account.trades.each(trade => console.log(trade));
     
-    account.session.close();
-    
-}).catch(err => console.log("ERROR: " + err.message));
+    session.close();
+}).catch(console.log);

@@ -31,10 +31,9 @@ The entry point is the `session` returned by the `sdk.start` promise.  Each `ses
 The most common case is access to a single [account](./example/account.js).
 
 ```javascript
-sdk.start(4001).then(async session => {
-    
-    let account = await ib.account();
-    
+sdk.start().then(async session => {
+    let account = await session.account();
+
     console.log("Balances:");
     account.balances.each((value, name) => console.log(`${name}: ${value}`));
 
@@ -46,23 +45,46 @@ sdk.start(4001).then(async session => {
 
     console.log("Trades:");
     account.trades.each(trade => console.log(trade));
-
-    session.close();
     
+    session.close();
 }).catch(console.log);
 ```
 
-## Use Cases
+For multiple managed accounts, the [accounts](./example/accounts.js) summary must be used.  Otherwise only one account can be subscribed to at a time.
 
-Other use cases can benefit from the lightweight [account summary](./example/summary.js) model.
+```javascript
+let accounts = await session.accounts();
+
+accounts.each(account => {
+    
+    console.log("Balances:");
+    account.balances.each((value, name) => console.log(`${name}: ${value}`));
+
+    console.log("Positions:");
+    account.positions.each(position => console.log(position));
+    
+});
+
+console.log("Orders:");
+accounts.orders.each(order => console.log(order));
+
+console.log("Trades:");
+accounts.trades.each(trade => console.log(trade));
+```
+
+## Market Data
 
 Use the SDK's [symbol](./doc/symbols.md) syntax to create [security](./example/security.js) objects from which you can access market data and initiate [orders](./doc/orders.md).
 
+## System
+
 Manage [system](./example/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interact with display groups.
 
-This package uses [Sugar](https://sugarjs.com) in extended mode, which modifies javascript prototypes.
+## Advanced
 
 The [service](./doc/service.md) module makes interacting with the IB API pub/sub paradigm easier and enables [remoting](./doc/remoting.md) from other processes or the browser.
+
+This package uses [Sugar](https://sugarjs.com) in extended mode, which modifies javascript prototypes.
 
 ## License
 
