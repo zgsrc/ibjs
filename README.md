@@ -26,9 +26,7 @@ Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trade
 * The SDK connects over `tcp://localhost:4001` by default.
 * Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if necessary.
 
-The entry point is the `session` returned by the `sdk.start` promise.  Each `session` is associated with one or more accounts.  
-
-The most common case is access to a single [account](./example/account.js).
+The entry point is the `session` returned by the `sdk.start` promise.  Each `session` is associated with one or more accounts.  The most common case is access to a single [account](./example/account.js).
 
 ```javascript
 sdk.start().then(async session => {
@@ -74,7 +72,13 @@ accounts.trades.each(trade => console.log(trade));
 
 ## Market Data
 
-Use the SDK's [symbol](./doc/symbols.md) syntax to create [security](./example/security.js) objects from which you can access market data and initiate [orders](./doc/orders.md).
+Use the SDK's [symbol](./doc/symbols.md) syntax to create `securities` from which you can access market data and initiate [orders](./doc/orders.md).
+
+```javascript
+let AAPL = await session.securities("AAPL stock");
+
+
+```
 
 ## System
 

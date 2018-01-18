@@ -1,28 +1,24 @@
 "use strict";
 
-const sdk = require("../index");
+const sdk = require("..");
 
-sdk.open({ port: 4001 }, (err, session) => {
-    if (err) {
-        console.log(err);
-    }
-    else {
-        // IB news bulletins (margin calls, special labelling, etc)
-        let bulletins = session.bulletins;
-        session.on("bulletin", data => console.log(data));
+sdk.start().then(session => {
+    
+    // IB news bulletins (margin calls, special labelling, etc)
+    let bulletins = session.bulletins;
+    session.on("bulletin", console.log);
 
-        // Market data farm connections
-        let connectivity = session.connectivity;
-        session.on("connectivity", data => console.log(data));
-        
-        // Access display groups
-        session.displayGroups.forEach(group => console.log(group.contract));
-        session.on("displayGroupUpdated", group => console.log(group.contract));
-        
-        // Update display group
-        session.displayGroups[0].update(8314);
+    // Market data farm connections
+    let connectivity = session.connectivity;
+    session.on("connectivity", console.log);
 
-        // Close connection and fire 'disconnect' event
-        setTimeout(() => session.close(), 2500);
-    }
+    // Access display groups
+    session.displayGroups.forEach(group => console.log(group.contract));
+    session.on("displayGroupUpdated", group => console.log(group.contract));
+
+    // Update display group
+    //session.displayGroups[0].update(8314);
+
+    setTimeout(() => session.close(), 5000);
+    
 });
