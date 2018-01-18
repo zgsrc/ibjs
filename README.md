@@ -77,6 +77,9 @@ Use the SDK's [symbol](./doc/symbols.md) syntax to create `securities` from whic
 ```javascript
 let AAPL = await session.securities("AAPL stock");
 
+let snapshot = await AAPL.fundamentals("snapshot");
+console.log("SNAPSHOT");
+console.log(snapshot);
 
 ```
 
