@@ -23,7 +23,7 @@ class Account extends RealTime {
         
         this.balances = new RealTime(session);
         this.positions = new RealTime(session);
-        this.orders = session.orders;
+        this.orders = session.orders.stream();
         
         let account = this.service.accountUpdates(options.id).on("data", data => {
             if (data.key) {
@@ -85,7 +85,8 @@ module.exports = Account;
 "use strict";
 
 const RealTime = require("../realtime"),
-      flags = require("../flags");
+      flags = require("../flags"),
+      Currency = require("../currency");
 
 class Accounts extends RealTime {
     
@@ -100,7 +101,7 @@ class Accounts extends RealTime {
             };
         }
         
-        this.orders = session.orders;
+        this.orders = session.orders.stream();
         
         let positions = null, summary = this.service.accountSummary(
             options.group || "All", 
@@ -121,8 +122,11 @@ class Accounts extends RealTime {
                     else if (value == "true") value = true;
                     else if (value == "false") value = false;
 
+                    
                     if (datum.currency && datum.currency != "") {
-                        value = { currency: datum.currency, value: value };
+                        if (datum.currency != value) {
+                            value = new Currency(datum.currency, value);
+                        }
                     }
 
                     var key = datum.tag.camelize(false);
@@ -161,7 +165,7 @@ class Accounts extends RealTime {
 }
 
 module.exports = Accounts;
-},{"../flags":8,"../realtime":20}],4:[function(require,module,exports){
+},{"../currency":7,"../flags":8,"../realtime":20}],4:[function(require,module,exports){
 "use strict";
 
 const RealTime = require("../realtime"),
@@ -210,6 +214,7 @@ class Orders extends RealTime {
     
     stream() {
         this._subscription.send();
+        return this;
     }
     
     assign(order) {
@@ -989,7 +994,7 @@ class Contract extends RealTime {
         this.validExchanges = this.validExchanges.split(",").compact();
 
         if (this.summary.expiry) {
-            this.expiry = Date.create(datetime(this.summary.expiry, "00:00:00", this.timeZoneId));
+            this.expiry = Date.create(Date.create(this.summary.expiry).format("{Month} {dd}, {yyyy}") + " 00:00:00 " + this.timeZoneId);
         }
         
         let timeZoneId = this.timeZoneId,
@@ -1011,8 +1016,8 @@ class Contract extends RealTime {
             schedule[label].end = [ ];
             
             times.forEach(time => {
-                let start = Date.create(datetime(date, time[0] + ":00", timeZoneId), { future: true }),
-                    end = Date.create(datetime(date, time[1] + ":00", timeZoneId), { future: true });
+                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
+                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
 
                 if (end.isBefore(start)) start.addDays(-1);
 
@@ -2141,7 +2146,7 @@ class Session extends Events {
                     this.emit("bulletin", data);
                 }
                 else {
-                    this.emit("error", data);    
+                    this.emit("error", data);
                 }
             });
             
