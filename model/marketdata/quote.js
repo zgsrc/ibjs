@@ -83,8 +83,8 @@ class Quote extends MarketData {
                     datum = parseQuotePart(datum);
                     this[datum.key] = state[datum.key] = datum.value;
                 })
-                .on("error", err => no(err))
-                .on("end", () => yes(state))
+                .once("error", err => no(err))
+                .once("end", () => yes(state))
                 .send();
         });
     }

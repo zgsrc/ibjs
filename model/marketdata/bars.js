@@ -49,7 +49,7 @@ class Bars extends MarketData {
         return this;
     }
     
-    history(cb, retry) {
+    async history(retry) {
         if (this.options.cursor == null && this.series.length) {
             this.options.cursor = this.series.first().date;
         }
@@ -65,42 +65,36 @@ class Bars extends MarketData {
             false
         );
         
-        let length = this.series.length;
-        
-        let min = Number.MAX_VALUE,
+        let length = this.series.length,
+            min = Number.MAX_VALUE,
             max = Number.MIN_VALUE;
         
-        req.on("data", record => {
-            record.date = Date.create(record.date);
-            record.timestamp = record.date.getTime();
-            
-            if (min > record.timestamp) min = record.timestamp;
-            if (max < record.timestamp) max = record.timestamp;
-            
-            let existing = this.series.find(r => r.timestamp == record.timestamp);
-            if (existing && existing.synthetic) {
-                Object.merge(existing, record);
-                delete existing.synthetic;
-            }
-            else {
-                this.series.push(record);
-            }
-        }).once("error", err => {
-            if (!retry && err.timeout) {
-                this.history(cb, true);
-            }
-            else {
-                if (cb) cb(err);
-                else this.emit("error", err);
-            }
-        }).once("end", () => {
-            this.series = this.series.sortBy("timestamp");
-            this.options.cursor = this.series.first().date;
-            this.emit("load", [ min, max ]);
-            if (cb) cb();
-        }).send();
-        
-        return this;
+        return new Promise((yes, no) => {
+            req.on("data", record => {
+                record.date = Date.create(record.date);
+                record.timestamp = record.date.getTime();
+
+                if (min > record.timestamp) min = record.timestamp;
+                if (max < record.timestamp) max = record.timestamp;
+
+                let existing = this.series.find(r => r.timestamp == record.timestamp);
+                if (existing && existing.synthetic) {
+                    Object.merge(existing, record);
+                    delete existing.synthetic;
+                }
+                else {
+                    this.series.push(record);
+                }
+            }).once("error", err => {
+                if (!retry && err.timeout) this.history(true).then(yes).catch(no);
+                else no(err);
+            }).once("end", () => {
+                this.series = this.series.sortBy("timestamp");
+                this.options.cursor = this.series.first().date;
+                this.emit("load", [ min, max ]);
+                yes(this);
+            }).send();
+        });
     }
     
     lookup(timestamp) { 

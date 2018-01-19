@@ -96,9 +96,9 @@ else {
         console.log(update);
     });
 
-    AAPL.depth.stream().on("update", update => {
-        console.log(update);
-    }).on("error", console.log);
+    let depth = (await AAPL.depth.stream())
+        .on("update", update => console.log(update))
+        .on("error", err => console.log(err));
     
     AAPL.charts.stream().on("update", update => {
         console.log(update);

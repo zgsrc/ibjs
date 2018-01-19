@@ -5,10 +5,10 @@ const sdk = require("..");
 sdk.start().then(async session => {
     
     let AAPL = (await session.securities("AAPL stock"))[0];
-    console.log(AAPL.contract);
+    //console.log(AAPL.contract);
 
     let snapshot = await AAPL.fundamentals("snapshot");
-    console.log(snapshot);
+    //console.log(snapshot);
 
     if (!AAPL.contract.marketsOpen) {
         session.frozen = true;
@@ -20,18 +20,17 @@ sdk.start().then(async session => {
         console.log(chart.series);
     }
     else {
-        AAPL.quote.stream().on("update", update => { 
-            console.log(update);
-        });
-
-        // Fast fail would be good
-        AAPL.depth.stream().on("update", update => {
-            console.log(update);
-        }).on("error", console.log);
-
-        AAPL.charts.stream().on("update", update => {
-            console.log(update);
-        });
+        //let quote = (await AAPL.quote.stream())
+        //    .on("update", update => console.log(update))
+        //    .on("error", err => console.log(err));
+        
+        let depth = (await AAPL.depth.stream())
+            .on("update", update => console.log(update))
+            .on("error", err => console.log(err));
+        
+        //let charts = (await AAPL.charts.stream())
+        //    .on("update", update => console.log(update))
+        //    .on("error", err => console.log(err));
     }
     
     setTimeout(() => session.close(), 10000);

@@ -630,7 +630,7 @@ class Bars extends MarketData {
         return this;
     }
     
-    history(cb, retry) {
+    async history(retry) {
         if (this.options.cursor == null && this.series.length) {
             this.options.cursor = this.series.first().date;
         }
@@ -646,42 +646,36 @@ class Bars extends MarketData {
             false
         );
         
-        let length = this.series.length;
-        
-        let min = Number.MAX_VALUE,
+        let length = this.series.length,
+            min = Number.MAX_VALUE,
             max = Number.MIN_VALUE;
         
-        req.on("data", record => {
-            record.date = Date.create(record.date);
-            record.timestamp = record.date.getTime();
-            
-            if (min > record.timestamp) min = record.timestamp;
-            if (max < record.timestamp) max = record.timestamp;
-            
-            let existing = this.series.find(r => r.timestamp == record.timestamp);
-            if (existing && existing.synthetic) {
-                Object.merge(existing, record);
-                delete existing.synthetic;
-            }
-            else {
-                this.series.push(record);
-            }
-        }).once("error", err => {
-            if (!retry && err.timeout) {
-                this.history(cb, true);
-            }
-            else {
-                if (cb) cb(err);
-                else this.emit("error", err);
-            }
-        }).once("end", () => {
-            this.series = this.series.sortBy("timestamp");
-            this.options.cursor = this.series.first().date;
-            this.emit("load", [ min, max ]);
-            if (cb) cb();
-        }).send();
-        
-        return this;
+        return new Promise((yes, no) => {
+            req.on("data", record => {
+                record.date = Date.create(record.date);
+                record.timestamp = record.date.getTime();
+
+                if (min > record.timestamp) min = record.timestamp;
+                if (max < record.timestamp) max = record.timestamp;
+
+                let existing = this.series.find(r => r.timestamp == record.timestamp);
+                if (existing && existing.synthetic) {
+                    Object.merge(existing, record);
+                    delete existing.synthetic;
+                }
+                else {
+                    this.series.push(record);
+                }
+            }).once("error", err => {
+                if (!retry && err.timeout) this.history(true).then(yes).catch(no);
+                else no(err);
+            }).once("end", () => {
+                this.series = this.series.sortBy("timestamp");
+                this.options.cursor = this.series.first().date;
+                this.emit("load", [ min, max ]);
+                yes(this);
+            }).send();
+        });
     }
     
     lookup(timestamp) { 
@@ -1427,61 +1421,47 @@ class Depth extends MarketData {
         return this.contract.validExchanges;
     }
     
-    stream(exchanges, rows) {
-        if (typeof exchanges == "number") {
-            rows = exchanges;
-            exchanges = null;
-        }
-        
-        if (exchanges == null) {
-            if (this.exchanges.length) {
-                exchanges = this.exchanges;
-                this.exchanges = [ ];
-            }
-            else exchanges = this.validExchanges;
-        }
-        
-        exchanges.forEach(exchange => {
-            this.streamExchange(exchange, rows);
-        });
-        
-        return this;
-    }
-    
-    streamExchange(exchange, rows) {
-        if (this.exchanges.indexOf(exchange) < 0) {
-            this.exchanges.push(exchange);
-            
-            let copy = Object.clone(this.contract.summary);
-            copy.exchange = exchange;
-            
-            this.bids[exchange] = { };
-            this.offers[exchange] = { };
+    async subscribe(exchange, rows) {
+        return new Promise((yes, no) => {
+            if (this.exchanges.indexOf(exchange) < 0) {
+                this.exchanges.push(exchange);
 
-            let req = this.session.service.mktDepth(copy, rows || 5).on("data", datum => {
-                if (datum.side == 1) this.bids[exchange][datum.position] = datum;
-                else this.offers[exchange][datum.position] = datum;
-                this.lastUpdate = Date.create();
-                this.emit("update", datum);
-            }).on("error", (err, cancel) => {
-                this.emit("error", this.contract.summary.localSymbol + " level 2 quotes on " + exchange + " failed.");
-                this._subscriptions.remove(req);
-                this.exchanges.remove(exchange);
-                delete this.bids[exchange];
-                delete this.offers[exchange];
-                cancel();
-            }).send();
-            
-            this._subscriptions.push(req);
-            this.streaming = true;
-        }
-        
-        return this;
+                let copy = Object.clone(this.contract.summary);
+                copy.exchange = exchange;
+
+                this.bids[exchange] = { };
+                this.offers[exchange] = { };
+
+                let fail = (err, cancel) => {
+                    this.unsubscribe(exchange);
+                    no(err);
+                };
+                
+                let req = this.session.service.mktDepth(copy, rows || 5);
+                this._subscriptions.push(req);
+                
+                req.on("data", datum => {
+                    if (datum.side == 1) this.bids[exchange][datum.position] = datum;
+                    else this.offers[exchange][datum.position] = datum;
+                    this.lastUpdate = Date.create();
+                    this.emit("update", datum);
+                    this.streaming = true;
+                }).once("data", () => {
+                    req.removeListener("error", fail);
+                    req.on("error", (err, cancel) => {
+                        this.emit("error", this.contract.summary.localSymbol + " level 2 quotes on " + exchange + " failed.");
+                        this.unsubscribe(exchange);
+                    });
+                    
+                    yes(this);
+                }).once("error", fail).send();
+            }
+        });
     }
     
-    cancelExchange(exchange) {
+    unsubscribe(exchange) {
         let idx = this.exchanges.indexOf(exchange),
-            req = this._subscriptions[i];
+            req = this._subscriptions[idx];
         
         req.cancel();
         
@@ -1492,6 +1472,34 @@ class Depth extends MarketData {
         
         if (this.exchanges.length == 0) {
             this.streaming = false;
+            setTimeout(() => this.streaming = false, 100);
+        }
+        
+        return this;
+    }
+    
+    async stream(exchanges, rows, swallow) {
+        if (typeof exchanges == "number") {
+            rows = exchanges;
+            exchanges = null;
+        }
+        
+        if (exchanges == null) {
+            swallow = true;
+            if (this.exchanges.length) {
+                exchanges = this.exchanges;
+                this.exchanges = [ ];
+            }
+            else exchanges = this.validExchanges;
+        }
+        
+        for (let i = 0; i < exchanges.length; i++) {
+            try {
+                await (this.subscribe(exchanges[i], rows));
+            }
+            catch (ex) {
+                if (!swallow) throw ex;
+            }
         }
         
         return this;
@@ -1878,32 +1886,22 @@ class Quote extends MarketData {
         return this;
     }
     
-    query(cb) {
+    async query() {
         let state = { };
-        this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true, false)
-            .on("data", datum => {
-                datum = parseQuotePart(datum);
-                this[datum.key] = state[datum.key] = datum.value;
-            }).on("error", (err, cancel) => {
-                cb(err, state);
-                cb = null;
-                cancel();
-            }).on("end", cancel => {
-                cb(null, state);
-                cb = null;
-                cancel();
-            }).send();
-        
-        return this;
+        return new Promise((yes, no) => {
+            this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true, false)
+                .on("data", datum => {
+                    datum = parseQuotePart(datum);
+                    this[datum.key] = state[datum.key] = datum.value;
+                })
+                .once("error", err => no(err))
+                .once("end", () => yes(state))
+                .send();
+        });
     }
     
     stream() {
         let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false, false);
-        
-        this.cancel = () => {
-            req.cancel();
-            this.streaming = false;
-        };
         
         req.on("data", datum  => {
             this.streaming = true;
@@ -1920,6 +1918,11 @@ class Quote extends MarketData {
             this.streaming = false;
             this.emit("error", err);
         }).send();
+        
+        this.cancel = () => {
+            req.cancel();
+            this.streaming = false;
+        };
         
         return this;
     }

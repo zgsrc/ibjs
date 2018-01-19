@@ -19,61 +19,47 @@ class Depth extends MarketData {
         return this.contract.validExchanges;
     }
     
-    stream(exchanges, rows) {
-        if (typeof exchanges == "number") {
-            rows = exchanges;
-            exchanges = null;
-        }
-        
-        if (exchanges == null) {
-            if (this.exchanges.length) {
-                exchanges = this.exchanges;
-                this.exchanges = [ ];
-            }
-            else exchanges = this.validExchanges;
-        }
-        
-        exchanges.forEach(exchange => {
-            this.streamExchange(exchange, rows);
-        });
-        
-        return this;
-    }
-    
-    streamExchange(exchange, rows) {
-        if (this.exchanges.indexOf(exchange) < 0) {
-            this.exchanges.push(exchange);
-            
-            let copy = Object.clone(this.contract.summary);
-            copy.exchange = exchange;
-            
-            this.bids[exchange] = { };
-            this.offers[exchange] = { };
+    async subscribe(exchange, rows) {
+        return new Promise((yes, no) => {
+            if (this.exchanges.indexOf(exchange) < 0) {
+                this.exchanges.push(exchange);
 
-            let req = this.session.service.mktDepth(copy, rows || 5).on("data", datum => {
-                if (datum.side == 1) this.bids[exchange][datum.position] = datum;
-                else this.offers[exchange][datum.position] = datum;
-                this.lastUpdate = Date.create();
-                this.emit("update", datum);
-            }).on("error", (err, cancel) => {
-                this.emit("error", this.contract.summary.localSymbol + " level 2 quotes on " + exchange + " failed.");
-                this._subscriptions.remove(req);
-                this.exchanges.remove(exchange);
-                delete this.bids[exchange];
-                delete this.offers[exchange];
-                cancel();
-            }).send();
-            
-            this._subscriptions.push(req);
-            this.streaming = true;
-        }
-        
-        return this;
+                let copy = Object.clone(this.contract.summary);
+                copy.exchange = exchange;
+
+                this.bids[exchange] = { };
+                this.offers[exchange] = { };
+
+                let fail = (err, cancel) => {
+                    this.unsubscribe(exchange);
+                    no(err);
+                };
+                
+                let req = this.session.service.mktDepth(copy, rows || 5);
+                this._subscriptions.push(req);
+                
+                req.on("data", datum => {
+                    if (datum.side == 1) this.bids[exchange][datum.position] = datum;
+                    else this.offers[exchange][datum.position] = datum;
+                    this.lastUpdate = Date.create();
+                    this.emit("update", datum);
+                    this.streaming = true;
+                }).once("data", () => {
+                    req.removeListener("error", fail);
+                    req.on("error", (err, cancel) => {
+                        this.emit("error", this.contract.summary.localSymbol + " level 2 quotes on " + exchange + " failed.");
+                        this.unsubscribe(exchange);
+                    });
+                    
+                    yes(this);
+                }).once("error", fail).send();
+            }
+        });
     }
     
-    cancelExchange(exchange) {
+    unsubscribe(exchange) {
         let idx = this.exchanges.indexOf(exchange),
-            req = this._subscriptions[i];
+            req = this._subscriptions[idx];
         
         req.cancel();
         
@@ -84,6 +70,34 @@ class Depth extends MarketData {
         
         if (this.exchanges.length == 0) {
             this.streaming = false;
+            setTimeout(() => this.streaming = false, 100);
+        }
+        
+        return this;
+    }
+    
+    async stream(exchanges, rows, swallow) {
+        if (typeof exchanges == "number") {
+            rows = exchanges;
+            exchanges = null;
+        }
+        
+        if (exchanges == null) {
+            swallow = true;
+            if (this.exchanges.length) {
+                exchanges = this.exchanges;
+                this.exchanges = [ ];
+            }
+            else exchanges = this.validExchanges;
+        }
+        
+        for (let i = 0; i < exchanges.length; i++) {
+            try {
+                await (this.subscribe(exchanges[i], rows));
+            }
+            catch (ex) {
+                if (!swallow) throw ex;
+            }
         }
         
         return this;
