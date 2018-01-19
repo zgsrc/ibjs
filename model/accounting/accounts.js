@@ -10,6 +10,8 @@ class Accounts extends RealTime {
     constructor(session, options) {
         super(session);
 
+        this._exclude.push("orders", "trades");
+        
         if (options == null) {
             options = { 
                 positions: true,
@@ -57,15 +59,33 @@ class Accounts extends RealTime {
                     this[data.accountName].positions[data.contract.conId] = data;
                     this.emit("update", { type: "position", field: data.contract.conId, value: data });
                 }).on("end", cancel => {
-                    if (this.orders.loaded) this.emit("load");
-                    else this.orders.on("load", () => this.emit("load"));
+                    if (options.trades) {
+                        this.session.trades().then(trades => {
+                            this.trades = trades;
+                            if (this.orders.loaded) this.emit("load");
+                            else this.orders.on("load", () => this.emit("load"));
+                        });
+                    }
+                    else {
+                        if (this.orders.loaded) this.emit("load");
+                        else this.orders.on("load", () => this.emit("load"));
+                    }
                 }).on("error", err => {
                     this.emit("error", err);
                 }).send();
             }
             else {
-                if (this.orders.loaded) this.emit("load");
-                else this.orders.on("load", () => this.emit("load"));
+                if (options.trades) {
+                    this.session.trades().then(trades => {
+                        this.trades = trades;
+                        if (this.orders.loaded) this.emit("load");
+                        else this.orders.on("load", () => this.emit("load"));
+                    });
+                }
+                else {
+                    if (this.orders.loaded) this.emit("load");
+                    else this.orders.on("load", () => this.emit("load"));
+                }
             }
         }).on("error", err => {
             this.emit("error", err);
