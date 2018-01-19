@@ -84,6 +84,8 @@ console.log(snapshot);
 
 ```
 
+NOTE: There is an issue with non-"EST" timezones.  Working on a fix.
+
 ## System
 
 Manage [system](./example/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interact with display groups.
