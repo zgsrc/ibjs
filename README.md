@@ -92,9 +92,9 @@ if (!AAPL.contract.marketsOpen) {
     console.log(chart.series);
 }
 else {
-    AAPL.quote.stream().on("update", update => { 
-        console.log(update);
-    });
+    let quote = (await AAPL.quote.stream())
+        .on("update", update => console.log(update))
+        .on("error", err => console.log(err));
 
     let depth = (await AAPL.depth.stream())
         .on("update", update => console.log(update))

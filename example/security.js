@@ -20,9 +20,9 @@ sdk.start().then(async session => {
         console.log(chart.series);
     }
     else {
-        //let quote = (await AAPL.quote.stream())
-        //    .on("update", update => console.log(update))
-        //    .on("error", err => console.log(err));
+        let quote = (await AAPL.quote.stream())
+            .on("update", update => console.log(update))
+            .on("error", err => console.log(err));
         
         let depth = (await AAPL.depth.stream())
             .on("update", update => console.log(update))

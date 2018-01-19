@@ -89,31 +89,36 @@ class Quote extends MarketData {
         });
     }
     
-    stream() {
+    async stream() {
         let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false, false);
-        
-        req.on("data", datum  => {
-            this.streaming = true;
-            datum = parseQuotePart(datum);
-            if (this[datum.key] && !this.loaded) {
-                this.loaded = true;
-                this.emit("load");
-            }
-            
-            let oldValue = this[datum.key];
-            this[datum.key] = datum.value;
-            this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
-        }).on("error", err => {
-            this.streaming = false;
-            this.emit("error", err);
-        }).send();
-        
         this.cancel = () => {
             req.cancel();
             this.streaming = false;
         };
         
-        return this;
+        return new Promise((yes, no) => {
+            let fail = err => {
+                this.streaming = false;
+                no(err);
+            };
+            
+            req.once("data", () => {
+                this.streaming = true;
+                req.removeListener("error", fail);
+                req.on("error", err => {
+                    this.streaming = false;
+                    this.emit("error", err);
+                });
+                
+                yes(this);
+            }).on("data", datum  => {
+                datum = parseQuotePart(datum);
+                
+                let oldValue = this[datum.key];
+                this[datum.key] = datum.value;
+                this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
+            }).once("error", fail).send();
+        });
     }
     
     tickBuffer(duration) {
