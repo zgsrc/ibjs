@@ -75,32 +75,22 @@ class Quote extends MarketData {
         return this;
     }
     
-    query(cb) {
+    async query() {
         let state = { };
-        this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true, false)
-            .on("data", datum => {
-                datum = parseQuotePart(datum);
-                this[datum.key] = state[datum.key] = datum.value;
-            }).on("error", (err, cancel) => {
-                cb(err, state);
-                cb = null;
-                cancel();
-            }).on("end", cancel => {
-                cb(null, state);
-                cb = null;
-                cancel();
-            }).send();
-        
-        return this;
+        return new Promise((yes, no) => {
+            this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true, false)
+                .on("data", datum => {
+                    datum = parseQuotePart(datum);
+                    this[datum.key] = state[datum.key] = datum.value;
+                })
+                .on("error", err => no(err))
+                .on("end", () => yes(state))
+                .send();
+        });
     }
     
     stream() {
         let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false, false);
-        
-        this.cancel = () => {
-            req.cancel();
-            this.streaming = false;
-        };
         
         req.on("data", datum  => {
             this.streaming = true;
@@ -117,6 +107,11 @@ class Quote extends MarketData {
             this.streaming = false;
             this.emit("error", err);
         }).send();
+        
+        this.cancel = () => {
+            req.cancel();
+            this.streaming = false;
+        };
         
         return this;
     }
