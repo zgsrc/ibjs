@@ -13,12 +13,6 @@ function details(session, summary, cb) {
         .send();
 }
 
-function datetime(date, time, timezone, future) {
-    return DateTime.fromHTTP(
-        Date.create(date + " " + (time || "00:00:00")).format("{Weekday}, {dd} {Mon} {yyyy} {HH}:{mm}:{ss}") + " " + (timezone || "")
-    ).toJSDate();
-}
-
 class Contract extends RealTime {
     
     constructor(session, data) {
@@ -33,12 +27,13 @@ class Contract extends RealTime {
         this.orderTypes = this.orderTypes.split(",").compact();
         this.validExchanges = this.validExchanges.split(",").compact();
 
+        this.timeZoneId = flags.tz[this.timeZoneId] || this.timeZoneId;
+        
         if (this.summary.expiry) {
-            this.expiry = Date.create(Date.create(this.summary.expiry).format("{Month} {dd}, {yyyy}") + " 00:00:00 " + this.timeZoneId);
+            this.expiry = Date.create(DateTime.fromISO(this.summary.expiry, { zone: this.timeZoneId }).toJSDate());
         }
         
-        let timeZoneId = this.timeZoneId,
-            tradingHours = (this.tradingHours || "").split(';').compact(true).map(d => d.split(':')),
+        let tradingHours = (this.tradingHours || "").split(';').compact(true).map(d => d.split(':')),
             liquidHours = (this.liquidHours || "").split(';').compact(true).map(d => d.split(':'));
         
         let schedule = { };
@@ -56,8 +51,8 @@ class Contract extends RealTime {
             schedule[label].end = [ ];
             
             times.forEach(time => {
-                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
-                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
+                let start = Date.create(DateTime.fromISO(date.format(`{yyyy}-{MM}-{dd}T${time[0]}:00`), { zone: this.timeZoneId }).toJSDate()),
+                    end = Date.create(DateTime.fromISO(date.format(`{yyyy}-{MM}-{dd}T${time[1]}:00`), { zone: this.timeZoneId }).toJSDate());
 
                 if (end.isBefore(start)) start.addDays(-1);
 
@@ -84,8 +79,8 @@ class Contract extends RealTime {
             schedule[label].close = [ ];
             
             times.forEach(time => {
-                let start = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[0] + ":00 " + timeZoneId, { future: true }),
-                    end = Date.create(date.format("{Month} {dd}, {yyyy}") + " " + time[1] + ":00 " + timeZoneId, { future: true });
+                let start = Date.create(DateTime.fromISO(date.format(`{yyyy}-{MM}-{dd}T${time[0]}:00`), { zone: this.timeZoneId }).toJSDate()),
+                    end = Date.create(DateTime.fromISO(date.format(`{yyyy}-{MM}-{dd}T${time[1]}:00`), { zone: this.timeZoneId }).toJSDate());
 
                 if (end.isBefore(start)) start.addDays(-1);
 

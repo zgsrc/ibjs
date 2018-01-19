@@ -188,3 +188,49 @@ const MARKET_DATA_TYPE = {
 };
 
 exports.MARKET_DATA_TYPE = MARKET_DATA_TYPE;
+
+const tz = {
+    // USA
+    EST5EDT: "America/New_York",
+    EST: "America/New_York",
+    EDT: "America/New_York",
+    CST6CDT: "America/Chicago",
+    CST: "America/Chicago",
+    CDT: "America/Chicago",
+    MST7MDT: "America/Denver",
+    MST: "America/Denver",
+    MDT: "America/Denver",
+    PST8PDT: "America/Los_Angeles",
+    PST: "America/Los_Angeles",
+    PDT: "America/Los_Angeles",
+    
+    // SOUTH AMERICA
+    ART: "America/Buenos_Aires",
+    BRST: "America/Sao_Paolo",
+    VET: "America/Caracas",
+    
+    // EUROPE
+    WET: "Europe/Lisbon",
+    GMT: "Europe/London",
+    CET: "Europe/Paris",
+    MET: "Europe/Paris",
+    EET: "Europe/Helsinki",
+    MSK: "Europe/Moscow",
+    
+    // MIDDLE EAST
+    IST: "Asia/Tel_Aviv",
+    AST: "Asia/Dubai",
+    
+    // AFRICA
+    SAST: "Africa/Johannesburg",
+    
+    // ASIA
+    IST: "Asia/Kolkata",
+    HKT: "Asia/Hong_Kong",
+    CST: "Asia/Shanghai",
+    KST: "Asia/Seoul",
+    JST: "Asia/Tokyo",
+    AEDT: "Australia/Sydney"
+};
+
+exports.tz = tz;

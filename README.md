@@ -77,14 +77,16 @@ Use the SDK's [symbol](./doc/symbols.md) syntax to create `securities` from whic
 
 ```javascript
 let AAPL = await session.securities("AAPL stock");
+console.log(AAPL.contract);
+console.log(AAPL.contract.areMarketsOpen);
+console.log(AAPL.contract.areMarketsLiquid);
+
 
 let snapshot = await AAPL.fundamentals("snapshot");
 console.log("SNAPSHOT");
 console.log(snapshot);
 
 ```
-
-NOTE: There is an issue with non-"EST" timezones.  Working on a fix.
 
 ## System
 
