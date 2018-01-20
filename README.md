@@ -110,6 +110,32 @@ else {
 
 Manage [system](./example/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interact with display groups.
 
+```javascript
+session.on("error", console.log);
+session.on("disconnected", () => console.log("Disconnected."));
+session.on("connectivity", console.log);
+session.on("displayGroupUpdated", group => console.log(group.contract));
+
+// Make sure stuff has loaded
+await session.system();
+
+// IB news bulletins (margin calls, special labelling, etc)
+let bulletins = session.bulletins;
+console.log(bulletins);
+
+session.on("bulletin", console.log);
+
+// Market data farm connections
+let connectivity = session.connectivity;
+console.log(connectivity);
+
+// Access display groups
+session.displayGroups.forEach(group => console.log(group.contract));
+
+// Update display group
+session.displayGroups[0].update("8314");
+```
+
 ## Advanced
 
 The [service](./doc/service.md) module makes interacting with the IB API pub/sub paradigm easier and enables [remoting](./doc/remoting.md) from other processes or the browser.
