@@ -3,20 +3,12 @@
 An `Order` can be initiated from a `Security` and has chainable methods to build and transmit an order.
 
 ```javascript
-session.security("AAPL stock", (err, securities) => {
-    if (err) console.log(err);
-    else {
-        let AAPL = securities[0],
-            order = AAPL.order();
-        
-        order.sell(100)
-             .show(10)
-             .limit(100.50)
-             .goodUntilCancelled()
-             .transmit();
-    }
-});
-```
+AAPL.order()
+    .sell(100)
+    .show(10)
+    .limit(100.50)
+    .goodUntilCancelled()
+    .transmit();```
 
 Quantity and market side can be set with an appropriate method.  Display size can be set an extra parameter or with the separate `show` method.
 
