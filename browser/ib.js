@@ -960,6 +960,7 @@ class Charts extends MarketData {
             integer: 3600 * 24 * 7 * 30,
             duration: "5 Y" 
         }).on("error", err => this.emit("error", err));
+        
     }
     
     get(text) {
@@ -985,33 +986,39 @@ class Charts extends MarketData {
         return this;
     }
     
-    stream(retry) {
+    async stream(retry) {
         this.service.headTimestamp(this.contract.summary, this.field, 0, 1).once("data", data => {
             this.earliestDataTimestamp = Date.create(data);
         }).send();
         
-        let req = this.service.realTimeBars(this.contract.summary, 5, this.field, false).on("data", data => {
-            data.date = Date.create(data.date * 1000);
-            data.timestamp = data.date.getTime();
-            this.series.push(data);
-            this.emit("update", data);
-        }).on("error", (err, cancel) => {
-            if (err.timeout) {
-                cancel();
-                
-                if (retry) {
-                    this.emit("error", `Real time streaming bars request for ${this.contract.summary.localSymbol} timed out.`);    
-                }
-                else {
-                    this.stream(true);
-                }
-            }
-            else this.emit("error", err);
-        }).send();
-        
+        let req = this.service.realTimeBars(this.contract.summary, 5, this.field, false).once("error", errHandler);
         this.cancel = () => req.cancel();
         
-        return this;
+        return new Promise((yes, no) => {
+            let errHandler = err => {
+                if (!retry && err.timeout) this.stream(true).then(yes).catch(no);
+                else {
+                    this.streaming = false;
+                    no(err);
+                }
+            }
+            
+            req.once("data", () => {
+                req.removeListener("error", errHandler);
+                req.on("error", err => {
+                    this.streaming = false;
+                    this.emit("error", `Real time streaming bars request for ${this.contract.summary.localSymbol} timed out.`);
+                });
+                
+                this.streaming = true;
+                yes(this);
+            }).on("data", data => {
+                data.date = Date.create(data.date * 1000);
+                data.timestamp = data.date.getTime();
+                this.series.push(data);
+                this.emit("update", data);
+            }).send();
+        });
     }
     
 }
