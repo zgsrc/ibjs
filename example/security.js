@@ -17,6 +17,7 @@ sdk.start().then(async session => {
         console.log(instant);
 
         let chart = await AAPL.charts.minutes.five.history();
+        chart.study("SMA20", 20, "SMA");        
         console.log(chart.series);
     }
     else {

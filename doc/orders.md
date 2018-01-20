@@ -8,7 +8,8 @@ AAPL.order()
     .show(10)
     .limit(100.50)
     .goodUntilCancelled()
-    .transmit();```
+    .transmit();
+```
 
 Quantity and market side can be set with an appropriate method.  Display size can be set an extra parameter or with the separate `show` method.
 
