@@ -167,7 +167,10 @@ function attach(ib, dispatch) {
                 dispatch.data("system", args);
             }
         }
-        else if (err && err.id != -1 && err.syscall != "connect" && err.code != "ECONNRESET") {
+        else if (err.syscall == "connect" || err.code == "ECONNRESET") {
+            dispatch.disconnected();
+        }
+        else if (err && err.id != -1) {
             console.log("UNCAUGHT ERROR MESSAGE");
             console.log(err);
         }

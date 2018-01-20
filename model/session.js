@@ -109,12 +109,27 @@ class Session extends Events {
             this.service.autoOpenOrders(true);
             Object.defineProperty(this, 'orders', { value: new Orders(this) });
             
-            this.emit("connected", this.service.socket);
             this.state = "connected";
+            this.emit("connected", this.service.socket);
         }).on("disconnected", () => {
             this.state = "disconnected";
             this.emit("disconnected");
         });
+    }
+    
+    async system() {
+        return new Promise((yes, no) => {
+            let count = 0, timer = setInterval(() => {
+                if (count > 20) no(new Error("Timeout waiting for system features to load in session."));
+                else if (this.displayGroups.length && Object.keys(this.connectivity).length) {
+                    clearInterval(timer);
+                    yes();
+                }
+                else {
+                    count++;
+                }
+            }, 250);
+        }); 
     }
     
     get clientId() {
