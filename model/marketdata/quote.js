@@ -81,7 +81,9 @@ class Quote extends MarketData {
             this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true, false)
                 .on("data", datum => {
                     datum = parseQuotePart(datum);
-                    this[datum.key] = state[datum.key] = datum.value;
+                    if (datum && datum.key && datum.value) {
+                        this[datum.key] = state[datum.key] = datum.value;
+                    }
                 })
                 .once("error", err => no(err))
                 .once("end", () => yes(state))
@@ -113,10 +115,11 @@ class Quote extends MarketData {
                 yes(this);
             }).on("data", datum  => {
                 datum = parseQuotePart(datum);
-                
-                let oldValue = this[datum.key];
-                this[datum.key] = datum.value;
-                this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
+                if (datum && datum.key && datum.value) {
+                    let oldValue = this[datum.key];
+                    this[datum.key] = datum.value;
+                    this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
+                }
             }).once("error", fail).send();
         });
     }
