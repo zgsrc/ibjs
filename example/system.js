@@ -4,10 +4,12 @@ const sdk = require("..");
 
 sdk.start().then(async session => {
     
-    session.on("error", console.log);
-    session.on("disconnected", () => console.log("Disconnected."));
-    session.on("connectivity", console.log);
-    session.on("displayGroupUpdated", group => console.log(group.contract));
+    session
+        .on("error", console.log)
+        .on("disconnected", () => console.log("Disconnected."))
+        .on("connectivity", console.log)
+        .on("displayGroupUpdated", group => console.log(group.contract))
+        .on("bulletin", console.log);
 
     // Make sure stuff has loaded
     await session.system();
@@ -15,8 +17,6 @@ sdk.start().then(async session => {
     // IB news bulletins (margin calls, special labelling, etc)
     let bulletins = session.bulletins;
     console.log(bulletins);
-
-    session.on("bulletin", console.log);
 
     // Market data farm connections
     let connectivity = session.connectivity;

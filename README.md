@@ -111,10 +111,12 @@ else {
 Manage [system](./example/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interact with display groups.
 
 ```javascript
-session.on("error", console.log);
-session.on("disconnected", () => console.log("Disconnected."));
-session.on("connectivity", console.log);
-session.on("displayGroupUpdated", group => console.log(group.contract));
+session
+    .on("error", console.log)
+    .on("disconnected", () => console.log("Disconnected."))
+    .on("connectivity", console.log)
+    .on("displayGroupUpdated", group => console.log(group.contract))
+    .on("bulletin", console.log);
 
 // Make sure stuff has loaded
 await session.system();
@@ -122,8 +124,6 @@ await session.system();
 // IB news bulletins (margin calls, special labelling, etc)
 let bulletins = session.bulletins;
 console.log(bulletins);
-
-session.on("bulletin", console.log);
 
 // Market data farm connections
 let connectivity = session.connectivity;
