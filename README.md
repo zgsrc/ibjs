@@ -100,9 +100,9 @@ else {
         .on("update", update => console.log(update))
         .on("error", err => console.log(err));
     
-    AAPL.charts.stream().on("update", update => {
-        console.log(update);
-    });
+    let charts = (await AAPL.charts.stream())
+        .on("update", update => console.log(update))
+        .on("error", err => console.log(err));
 }
 ```
 
