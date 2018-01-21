@@ -50,7 +50,7 @@ function processFundamentals(obj) {
         if (obj.every(o => o._ && o.$.Type)) {
             let o = { };
             obj.forEach(i => {
-                let key = i.$.Type.camelize();
+                let key = i.$.Type.camelize(true);
                 if (Object.keys(i.$).length == 1) o[key] = i._;
                 else o[key] = Object.merge({ text: i._ }, Object.reject(i.$, "Type"));
             });
@@ -64,7 +64,7 @@ function processFundamentals(obj) {
         Object.keys(obj).forEach(key => {
             if (key == "$") {
                 Object.merge(obj, obj[key]);
-                delete obj[key];
+                delete obj.$;
             }
             else if (key == "_") {
                 if (obj.text == null) {
