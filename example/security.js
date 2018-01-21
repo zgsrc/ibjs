@@ -5,12 +5,13 @@ const sdk = require("..");
 sdk.start().then(async session => {
     
     let AAPL = (await session.securities("AAPL stock"))[0];
-    console.log(AAPL.contract);
+    //console.log(AAPL.contract);
 
     let snapshot = await AAPL.fundamentals("snapshot");
-    console.log(snapshot);
+    console.log(JSON.stringify(snapshot, null, '\t'));
 
-    if (!AAPL.contract.marketsOpen) {
+    if (true) console.log();
+    else if (!AAPL.contract.marketsOpen) {
         session.frozen = true;
 
         let instant = await AAPL.quote.query();
