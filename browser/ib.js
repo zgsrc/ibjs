@@ -991,7 +991,7 @@ class Charts extends MarketData {
             this.earliestDataTimestamp = Date.create(data);
         }).send();
         
-        let req = this.service.realTimeBars(this.contract.summary, 5, this.field, false).once("error", errHandler);
+        let req = this.service.realTimeBars(this.contract.summary, 5, this.field, false);
         this.cancel = () => req.cancel();
         
         return new Promise((yes, no) => {
@@ -1003,7 +1003,7 @@ class Charts extends MarketData {
                 }
             }
             
-            req.once("data", () => {
+            req.once("error", errHandler).once("data", () => {
                 req.removeListener("error", errHandler);
                 req.on("error", err => {
                     this.streaming = false;
