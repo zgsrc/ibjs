@@ -76,7 +76,7 @@ session.close();
 Use the SDK's [symbol](./doc/symbols.md) syntax to create `securities` from which you can access market data.
 
 ```javascript
-let AAPL = (await session.securities("AAPL stock"))[0];
+let AAPL = session.security("AAPL stock");
 console.log(AAPL.contract);
 
 let snapshot = await AAPL.fundamentals("snapshot");
