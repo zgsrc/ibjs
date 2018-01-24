@@ -15,6 +15,16 @@ module.exports = {
         return ( P - EMAp ) * K + EMAp;
     },
     
-    VWAP: window => window.map(bar => bar.volume * [ bar.high, bar.low, bar.close ].average()).sum() / window.sum("volume")
+    VWAP: window => window.map(bar => bar.volume * [ bar.high, bar.low, bar.close ].average()).sum() / window.sum("volume"),
 
+    
+    ABANDS: window => ({
+        upper: window.map(b => b.high * (1 + 4 * (b.high - b.low) / (b.high + b.low))).average(),
+        middle: window.average("close"),
+        lower: window.map(b => b.low * (1 - 4 * (b.high - b.low) / (b.high + b.low))).aveage()
+    }),
+    AD: (window, name) => {
+        return window.at(-2)[name] + (((window.last().close - window.last().low) - (window.last().high - window.last().close)) / (window.last().high - window.last().low)) * window.last().volume
+    }
+    
 };

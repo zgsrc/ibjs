@@ -257,20 +257,20 @@ class Order extends MarketData {
             });
         }
         
-        this.service.placeOrder(this.orderId, this.contract.summary, this.ticket).on("error", err => {
-            this.error = err;
-            this.emit("error", err);
-        }).send();
+        this.service.placeOrder(this.orderId, this.contract.summary, this.ticket).send();
+        return this;
     }
     
     transmit() {
         this.ticket.transmit = true;
         this.save();
+        return this;
     }
     
     cancel() {
         if (!this.readOnly) this.service.cancelOrder(this.orderId);
         else throw new Error("Cannot cancel read-only trade.");
+        return this;
     }
     
 }

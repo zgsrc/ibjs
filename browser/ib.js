@@ -1796,20 +1796,20 @@ class Order extends MarketData {
             });
         }
         
-        this.service.placeOrder(this.orderId, this.contract.summary, this.ticket).on("error", err => {
-            this.error = err;
-            this.emit("error", err);
-        }).send();
+        this.service.placeOrder(this.orderId, this.contract.summary, this.ticket).send();
+        return this;
     }
     
     transmit() {
         this.ticket.transmit = true;
         this.save();
+        return this;
     }
     
     cancel() {
         if (!this.readOnly) this.service.cancelOrder(this.orderId);
         else throw new Error("Cannot cancel read-only trade.");
+        return this;
     }
     
 }
@@ -2145,8 +2145,18 @@ module.exports = {
         return ( P - EMAp ) * K + EMAp;
     },
     
-    VWAP: window => window.map(bar => bar.volume * [ bar.high, bar.low, bar.close ].average()).sum() / window.sum("volume")
+    VWAP: window => window.map(bar => bar.volume * [ bar.high, bar.low, bar.close ].average()).sum() / window.sum("volume"),
 
+    
+    ABANDS: window => ({
+        upper: window.map(b => b.high * (1 + 4 * (b.high - b.low) / (b.high + b.low))).average(),
+        middle: window.average("close"),
+        lower: window.map(b => b.low * (1 - 4 * (b.high - b.low) / (b.high + b.low))).aveage()
+    }),
+    AD: (window, name) => {
+        return window.at(-2)[name] + (((window.last().close - window.last().low) - (window.last().high - window.last().close)) / (window.last().high - window.last().low)) * window.last().volume
+    }
+    
 };
 },{}],20:[function(require,module,exports){
 "use strict";
