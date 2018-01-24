@@ -1379,7 +1379,7 @@ class Curve extends MarketData {
     
     stream() {
         let count = this.securities.count("quote.streaming");
-        if (count == this.securities.length){
+        if (count == this.securities.length) {
             this.emit("load");
         }
         else {
@@ -2203,6 +2203,11 @@ class RealTime extends Events {
         return this;
     }
     
+    log() {
+        this.on("update", console.log).on("error", console.log);
+        return this;
+    }
+    
 }
 
 module.exports = RealTime;
@@ -2419,6 +2424,10 @@ class Session extends Events {
                 else resolve(secs);
             });
         });
+    }
+    
+    async security(description) {
+        return (await this.securities(description))[0];
     }
     
     async curve(description) {

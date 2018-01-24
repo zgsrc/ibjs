@@ -21,7 +21,7 @@ class Curve extends MarketData {
     
     stream() {
         let count = this.securities.count("quote.streaming");
-        if (count == this.securities.length){
+        if (count == this.securities.length) {
             this.emit("load");
         }
         else {

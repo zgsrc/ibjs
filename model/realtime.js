@@ -52,6 +52,11 @@ class RealTime extends Events {
         return this;
     }
     
+    log() {
+        this.on("update", console.log).on("error", console.log);
+        return this;
+    }
+    
 }
 
 module.exports = RealTime;
