@@ -211,6 +211,10 @@ class Session extends Events {
         });
     }
     
+    async security(description) {
+        return (await this.securities(description))[0];
+    }
+    
     async curve(description) {
         return new Promise((resolve, reject) => {
             securities(this, description, (err, securities) => {
