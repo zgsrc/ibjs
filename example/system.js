@@ -24,7 +24,7 @@ sdk.start().then(async session => {
 
     // Access display groups
     session.displayGroups.forEach(group => {
-        //if (group.security) console.log(group.security.contract.summary)
+        if (group.security) console.log(group.security.contract.summary);
     });
 
     // Update display group

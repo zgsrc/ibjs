@@ -93,17 +93,9 @@ if (!AAPL.contract.marketsOpen) {
     console.log(chart.series);
 }
 else {
-    let quote = (await AAPL.quote.stream())
-        .on("update", update => console.log(update))
-        .on("error", err => console.log(err));
-
-    let depth = (await AAPL.depth.stream())
-        .on("update", update => console.log(update))
-        .on("error", err => console.log(err));
-    
-    let charts = (await AAPL.charts.stream())
-        .on("update", update => console.log(update))
-        .on("error", err => console.log(err));
+    (await AAPL.quote.stream()).log();
+    (await AAPL.depth.stream()).log();
+    (await AAPL.charts.stream()).log();
 }
 ```
 
@@ -116,7 +108,7 @@ session
     .on("error", console.log)
     .on("disconnected", () => console.log("Disconnected."))
     .on("connectivity", console.log)
-    .on("displayGroupUpdated", group => console.log(group.contract))
+    .on("displayGroupUpdated", group => console.log(group.security.contract.summary))
     .on("bulletin", console.log);
 
 // Make sure stuff has loaded
@@ -131,10 +123,14 @@ let connectivity = session.connectivity;
 console.log(connectivity);
 
 // Access display groups
-session.displayGroups.forEach(group => console.log(group.contract));
+session.displayGroups.forEach(group => {
+    if (group.security) console.log(group.security.contract.summary);
+});
 
 // Update display group
-session.displayGroups[0].update("8314");
+session.displayGroups[0].update(await session.security("AAPL"));
+
+setTimeout(() => session.close(), 10000);
 ```
 
 ## Advanced
