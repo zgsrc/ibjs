@@ -4,7 +4,7 @@ const sdk = require("..");
 
 sdk.start().then(async session => {
     
-    let AAPL = await session.securities("AAPL stock");
+    let AAPL = await session.security("AAPL stock");
     console.log(AAPL.contract);
 
     let snapshot = await AAPL.fundamentals("snapshot");
