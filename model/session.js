@@ -97,11 +97,26 @@ class Session extends Events {
                     
                     displayGroup.group = group;
                     displayGroup.index = index;
-                    displayGroup.update = contract => this.service.updateDisplayGroup(displayGroup.id, contract);
+                    displayGroup.update = sec => {
+                        if (sec.summary) this.service.updateDisplayGroup(displayGroup.id, sec.summary.conId.toString() + "@" + sec.summary.exchange);
+                        else if (sec.contract) this.service.updateDisplayGroup(displayGroup.id, sec.contract.summary.conId.toString() + "@" + sec.contract.summary.exchange);
+                        else if (sec) this.service.updateDisplayGroup(displayGroup.id, sec.toString());
+                        else throw new Error("No security supplied.");
+                    }
                     
-                    displayGroup.on("data", contract => {
-                        displayGroup.contract = contract;
-                        this.emit("displayGroupUpdated", displayGroup);
+                    displayGroup.on("data", async contract => {
+                        if (contract && contract != "none") {
+                            try {
+                                displayGroup.security = await this.security(contract);
+                                this.emit("displayGroupUpdated", displayGroup);
+                            }
+                            catch (ex) {
+                                this.emit("error", ex);
+                            }
+                        }
+                        else {
+                            displayGroup.security = null;
+                        }
                     }).send();
                 });
             }).send();

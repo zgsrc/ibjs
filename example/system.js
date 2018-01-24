@@ -8,7 +8,7 @@ sdk.start().then(async session => {
         .on("error", console.log)
         .on("disconnected", () => console.log("Disconnected."))
         .on("connectivity", console.log)
-        .on("displayGroupUpdated", group => console.log(group.contract))
+        .on("displayGroupUpdated", group => console.log(group.security.contract.summary))
         .on("bulletin", console.log);
 
     // Make sure stuff has loaded
@@ -23,10 +23,12 @@ sdk.start().then(async session => {
     console.log(connectivity);
 
     // Access display groups
-    session.displayGroups.forEach(group => console.log(group.contract));
+    session.displayGroups.forEach(group => {
+        //if (group.security) console.log(group.security.contract.summary)
+    });
 
     // Update display group
-    session.displayGroups[0].update("8314");
+    session.displayGroups[0].update(await session.security("AAPL"));
 
     setTimeout(() => session.close(), 10000);
     
