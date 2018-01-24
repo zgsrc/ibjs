@@ -1,10 +1,10 @@
 "use strict";
 
-const MarketData = require("./marketdata"),
+const ContractBased = require("./contractbased"),
       studies = require("./studies"),
       flags = require("../flags");
 
-class Bars extends MarketData {
+class Bars extends ContractBased {
     
     constructor(session, contract, charts, barSize) {
         super(session, contract);

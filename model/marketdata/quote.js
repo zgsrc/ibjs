@@ -1,12 +1,12 @@
 "use strict";
 
-const MarketData = require("./marketdata"),
+const ContractBased = require("./contractbased"),
       flags = require("../flags"),
       TICKS = flags.QUOTE_TICK_TYPES;
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}-{hh}:{mm}:{ss}');
 
-class Quote extends MarketData {
+class Quote extends ContractBased {
     
     constructor(session, contract) {
         super(session, contract);
@@ -178,7 +178,7 @@ function parseQuotePart(datum) {
     return { key: key.camelize(false), value: value };
 }
 
-class FieldBuffer extends MarketData {
+class FieldBuffer extends ContractBased {
     
     constructor(quote, duration, field) {
         super(quote.session, quote.contract);

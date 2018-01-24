@@ -1,8 +1,8 @@
 "use strict";
 
-const RealTime = require("../realtime");
+const Base = require("../base");
 
-class Trades extends RealTime {
+class Trades extends Base {
     
     constructor(session, options) {
         super(session);

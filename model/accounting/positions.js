@@ -1,8 +1,8 @@
 "use strict";
 
-const RealTime = require("../realtime");
+const Base = require("../base");
 
-class Positions extends RealTime {
+class Positions extends Base {
     
     constructor(session) {
         super(session);

@@ -2,7 +2,7 @@
 
 const Events = require("events");
 
-class RealTime extends Events {
+class Base extends Events {
     
     constructor(session) {
         super();
@@ -59,4 +59,4 @@ class RealTime extends Events {
     
 }
 
-module.exports = RealTime;
+module.exports = Base;

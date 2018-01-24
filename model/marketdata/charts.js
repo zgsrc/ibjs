@@ -1,12 +1,12 @@
 "use strict";
 
-const MarketData = require("./marketdata"),
+const ContractBased = require("./contractbased"),
       Bars = require("./bars"),
       flags = require("../flags");
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
 
-class Charts extends MarketData {
+class Charts extends ContractBased {
     
     constructor(session, contract, field) {
         

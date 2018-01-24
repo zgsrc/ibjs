@@ -6,13 +6,13 @@ window.ib = {
     session: () => new Session(new Proxy(socket)),
     flags: require("../model/flags")
 };
-},{"../model/flags":8,"../model/session":21,"../service/proxy":24}],2:[function(require,module,exports){
+},{"../model/flags":9,"../model/session":21,"../service/proxy":24}],2:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("../realtime"),
+const Base = require("../base"),
       Currency = require("../currency");
 
-class Account extends RealTime {
+class Account extends Base {
     
     /* string id, boolean trades */
     constructor(session, options) {
@@ -21,8 +21,8 @@ class Account extends RealTime {
         if (typeof options == "string") options = { id: options, orders: true, trades: true };
         if (typeof options.id != "string") throw new Error("Account id is required.");
         
-        this.balances = new RealTime(session);
-        this.positions = new RealTime(session);
+        this.balances = new Base(session);
+        this.positions = new Base(session);
         this.orders = session.orders.stream();
         
         let account = this.service.accountUpdates(options.id).on("data", data => {
@@ -81,14 +81,14 @@ class Account extends RealTime {
 }
 
 module.exports = Account;
-},{"../currency":7,"../realtime":20}],3:[function(require,module,exports){
+},{"../base":7,"../currency":8}],3:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("../realtime"),
+const Base = require("../base"),
       flags = require("../flags"),
       Currency = require("../currency");
 
-class Accounts extends RealTime {
+class Accounts extends Base {
     
     /* string group, array tags, boolean positions */
     constructor(session, options) {
@@ -113,8 +113,8 @@ class Accounts extends RealTime {
                 let id = datum.account;
                 if (this[id] == null) {
                     this[id] = { 
-                        balances: new RealTime(session),
-                        positions: new RealTime(session) 
+                        balances: new Base(session),
+                        positions: new Base(session) 
                     };
                 }
 
@@ -185,13 +185,13 @@ class Accounts extends RealTime {
 }
 
 module.exports = Accounts;
-},{"../currency":7,"../flags":8,"../realtime":20}],4:[function(require,module,exports){
+},{"../base":7,"../currency":8,"../flags":9}],4:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("../realtime"),
+const Base = require("../base"),
       Order = require("../marketdata/order");
 
-class Orders extends RealTime {
+class Orders extends Base {
     
     constructor(session) {
         super(session);
@@ -255,12 +255,12 @@ class Orders extends RealTime {
 }
 
 module.exports = Orders;
-},{"../marketdata/order":16,"../realtime":20}],5:[function(require,module,exports){
+},{"../base":7,"../marketdata/order":17}],5:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("../realtime");
+const Base = require("../base");
 
-class Positions extends RealTime {
+class Positions extends Base {
     
     constructor(session) {
         super(session);
@@ -284,12 +284,12 @@ class Positions extends RealTime {
 }
 
 module.exports = Positions;
-},{"../realtime":20}],6:[function(require,module,exports){
+},{"../base":7}],6:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("../realtime");
+const Base = require("../base");
 
-class Trades extends RealTime {
+class Trades extends Base {
     
     constructor(session, options) {
         super(session);
@@ -323,7 +323,70 @@ class Trades extends RealTime {
 }
 
 module.exports = Trades;
-},{"../realtime":20}],7:[function(require,module,exports){
+},{"../base":7}],7:[function(require,module,exports){
+"use strict";
+
+const Events = require("events");
+
+class Base extends Events {
+    
+    constructor(session) {
+        super();
+        this._exclude = [ "cancel", "domain", "undefined", "null", "true", "false" ];
+        Object.defineProperty(this, 'session', { value: session });
+        Object.defineProperty(this, 'service', { value: session.service });
+    }
+    
+    get fields() {
+        return Object.keys(this).exclude(/\_.*/).subtract(this._exclude);
+    }
+    
+    get snapshot() {
+        let obj = Object.select(this, this.fields);
+        for (let prop in obj) {
+            let snapshot = null;
+            if (obj[prop] && (snapshot = obj[prop].snapshot)) {
+                obj[prop] = snapshot;
+            }
+        }
+        
+        return obj;
+    }
+    
+    each(fn) {
+        this.fields.forEach((e, i) => fn(this[e], e, i));
+    }
+    
+    cancel() {
+        return false;
+    }
+    
+    either(event1, event2, cb) {
+        let done = false;
+        this.once(event1, arg => { 
+            if (!done) {
+                done = true;
+                cb(arg, null);
+            }
+        }).once(event2, arg => { 
+            if (!done) {
+                done = true;
+                cb(null, arg);
+            }
+        });
+        
+        return this;
+    }
+    
+    log() {
+        this.on("update", console.log).on("error", console.log);
+        return this;
+    }
+    
+}
+
+module.exports = Base;
+},{"events":27}],8:[function(require,module,exports){
 "use strict";
 
 class Currency {
@@ -340,7 +403,7 @@ class Currency {
 }
 
 module.exports = Currency;
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 const HISTORICAL = {
     trades: "TRADES",
     midpoint: "MIDPOINT",
@@ -578,14 +641,14 @@ const tz = {
 
 exports.tz = tz;
 
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 "use strict";
 
-const MarketData = require("./marketdata"),
+const ContractBased = require("./contractbased"),
       studies = require("./studies"),
       flags = require("../flags");
 
-class Bars extends MarketData {
+class Bars extends ContractBased {
     
     constructor(session, contract, charts, barSize) {
         super(session, contract);
@@ -773,13 +836,13 @@ function merge(oldBar, newBar) {
 }
 
 module.exports = Bars;
-},{"../flags":8,"./marketdata":15,"./studies":19}],10:[function(require,module,exports){
+},{"../flags":9,"./contractbased":14,"./studies":20}],11:[function(require,module,exports){
 "use strict";
 
-const MarketData = require("./marketdata"),
+const ContractBased = require("./contractbased"),
       Curve = require("./curve");
 
-class Chain extends MarketData {
+class Chain extends ContractBased {
     
     constructor(session, securities, symbol) {
         super(session, securities[0].contract);
@@ -828,16 +891,16 @@ class Chain extends MarketData {
 }
 
 module.exports = Chain;
-},{"./curve":13,"./marketdata":15}],11:[function(require,module,exports){
+},{"./contractbased":14,"./curve":15}],12:[function(require,module,exports){
 "use strict";
 
-const MarketData = require("./marketdata"),
+const ContractBased = require("./contractbased"),
       Bars = require("./bars"),
       flags = require("../flags");
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
 
-class Charts extends MarketData {
+class Charts extends ContractBased {
     
     constructor(session, contract, field) {
         
@@ -1024,12 +1087,12 @@ class Charts extends MarketData {
 }
 
 module.exports = Charts;
-},{"../flags":8,"./bars":9,"./marketdata":15}],12:[function(require,module,exports){
+},{"../flags":9,"./bars":10,"./contractbased":14}],13:[function(require,module,exports){
 "use strict";
 
 const { DateTime } = require('luxon'),
       flags = require("../flags"),
-      RealTime = require("../realtime");
+      Base = require("../base");
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -1040,7 +1103,7 @@ function details(session, summary, cb) {
         .send();
 }
 
-class Contract extends RealTime {
+class Contract extends Base {
     
     constructor(session, data) {
         super(session);
@@ -1364,12 +1427,27 @@ function lookup(session, description, cb) {
 }
 
 exports.lookup = lookup;
-},{"../flags":8,"../realtime":20,"luxon":22}],13:[function(require,module,exports){
+},{"../base":7,"../flags":9,"luxon":22}],14:[function(require,module,exports){
 "use strict";
 
-const MarketData = require("./marketdata");
+const Base = require("../base");
 
-class Curve extends MarketData {
+class ContractBased extends Base {
+    
+    constructor(session, contract) {
+        super(session);
+        Object.defineProperty(this, 'contract', { value: contract });
+    }
+    
+}
+
+module.exports = ContractBased;
+},{"../base":7}],15:[function(require,module,exports){
+"use strict";
+
+const ContractBased = require("./contractbased");
+
+class Curve extends ContractBased {
     
     constructor(session, securities, symbol) {
         super(session, securities[0].contract);
@@ -1415,12 +1493,12 @@ class Curve extends MarketData {
 }
 
 module.exports = Curve;
-},{"./marketdata":15}],14:[function(require,module,exports){
+},{"./contractbased":14}],16:[function(require,module,exports){
 "use strict";
 
-const MarketData = require("./marketdata");
+const ContractBased = require("./contractbased");
 
-class Depth extends MarketData {
+class Depth extends ContractBased {
     
     constructor(session, contract) {
         super(session, contract);
@@ -1530,28 +1608,13 @@ class Depth extends MarketData {
 }
 
 module.exports = Depth;
-},{"./marketdata":15}],15:[function(require,module,exports){
+},{"./contractbased":14}],17:[function(require,module,exports){
 "use strict";
 
-const RealTime = require("../realtime");
-
-class MarketData extends RealTime {
-    
-    constructor(session, contract) {
-        super(session);
-        Object.defineProperty(this, 'contract', { value: contract });
-    }
-    
-}
-
-module.exports = MarketData;
-},{"../realtime":20}],16:[function(require,module,exports){
-"use strict";
-
-const MarketData = require("./marketdata"),
+const ContractBased = require("./contractbased"),
       flags = require("../flags");
 
-class Order extends MarketData {
+class Order extends ContractBased {
     
     constructor(session, contract, data) {
         super(session, contract);
@@ -1824,16 +1887,16 @@ class Order extends MarketData {
 }
 
 module.exports = Order;
-},{"../flags":8,"./marketdata":15}],17:[function(require,module,exports){
+},{"../flags":9,"./contractbased":14}],18:[function(require,module,exports){
 "use strict";
 
-const MarketData = require("./marketdata"),
+const ContractBased = require("./contractbased"),
       flags = require("../flags"),
       TICKS = flags.QUOTE_TICK_TYPES;
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}-{hh}:{mm}:{ss}');
 
-class Quote extends MarketData {
+class Quote extends ContractBased {
     
     constructor(session, contract) {
         super(session, contract);
@@ -2005,7 +2068,7 @@ function parseQuotePart(datum) {
     return { key: key.camelize(false), value: value };
 }
 
-class FieldBuffer extends MarketData {
+class FieldBuffer extends ContractBased {
     
     constructor(quote, duration, field) {
         super(quote.session, quote.contract);
@@ -2037,18 +2100,18 @@ class FieldBuffer extends MarketData {
 }
 
 module.exports = Quote;
-},{"../flags":8,"./marketdata":15}],18:[function(require,module,exports){
+},{"../flags":9,"./contractbased":14}],19:[function(require,module,exports){
 "use strict";
 
 const flags = require("../flags"),
-      MarketData = require("./marketdata"),
+      ContractBased = require("./contractbased"),
       contract = require("./contract"),
       Quote = require("./quote"),
       Depth = require("./depth"),
       Charts = require("./charts"),
       Order = require("./order");
 
-class Security extends MarketData {
+class Security extends ContractBased {
     
     constructor(session, contract) {
         super(session, contract);
@@ -2136,7 +2199,7 @@ function securities(session, description, cb) {
 }
 
 module.exports = securities;
-},{"../flags":8,"./charts":11,"./contract":12,"./depth":14,"./marketdata":15,"./order":16,"./quote":17}],19:[function(require,module,exports){
+},{"../flags":9,"./charts":12,"./contract":13,"./contractbased":14,"./depth":16,"./order":17,"./quote":18}],20:[function(require,module,exports){
 module.exports = { 
 
     MIN: window => window.min("low"),
@@ -2167,70 +2230,7 @@ module.exports = {
     }
     
 };
-},{}],20:[function(require,module,exports){
-"use strict";
-
-const Events = require("events");
-
-class RealTime extends Events {
-    
-    constructor(session) {
-        super();
-        this._exclude = [ "cancel", "domain", "undefined", "null", "true", "false" ];
-        Object.defineProperty(this, 'session', { value: session });
-        Object.defineProperty(this, 'service', { value: session.service });
-    }
-    
-    get fields() {
-        return Object.keys(this).exclude(/\_.*/).subtract(this._exclude);
-    }
-    
-    get snapshot() {
-        let obj = Object.select(this, this.fields);
-        for (let prop in obj) {
-            let snapshot = null;
-            if (obj[prop] && (snapshot = obj[prop].snapshot)) {
-                obj[prop] = snapshot;
-            }
-        }
-        
-        return obj;
-    }
-    
-    each(fn) {
-        this.fields.forEach((e, i) => fn(this[e], e, i));
-    }
-    
-    cancel() {
-        return false;
-    }
-    
-    either(event1, event2, cb) {
-        let done = false;
-        this.once(event1, arg => { 
-            if (!done) {
-                done = true;
-                cb(arg, null);
-            }
-        }).once(event2, arg => { 
-            if (!done) {
-                done = true;
-                cb(null, arg);
-            }
-        });
-        
-        return this;
-    }
-    
-    log() {
-        this.on("update", console.log).on("error", console.log);
-        return this;
-    }
-    
-}
-
-module.exports = RealTime;
-},{"events":27}],21:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 (function (process){
 "use strict";
 
@@ -2486,7 +2486,7 @@ class Session extends Events {
 
 module.exports = Session;
 }).call(this,require('_process'))
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":8,"./marketdata/chain":10,"./marketdata/contract":12,"./marketdata/curve":13,"./marketdata/security":18,"_process":28,"events":27}],22:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":9,"./marketdata/chain":11,"./marketdata/contract":13,"./marketdata/curve":15,"./marketdata/security":19,"_process":28,"events":27}],22:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });

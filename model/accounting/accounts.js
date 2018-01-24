@@ -1,10 +1,10 @@
 "use strict";
 
-const RealTime = require("../realtime"),
+const Base = require("../base"),
       flags = require("../flags"),
       Currency = require("../currency");
 
-class Accounts extends RealTime {
+class Accounts extends Base {
     
     /* string group, array tags, boolean positions */
     constructor(session, options) {
@@ -29,8 +29,8 @@ class Accounts extends RealTime {
                 let id = datum.account;
                 if (this[id] == null) {
                     this[id] = { 
-                        balances: new RealTime(session),
-                        positions: new RealTime(session) 
+                        balances: new Base(session),
+                        positions: new Base(session) 
                     };
                 }
 

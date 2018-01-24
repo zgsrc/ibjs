@@ -1,8 +1,8 @@
 "use strict";
 
-const MarketData = require("./marketdata");
+const ContractBased = require("./contractbased");
 
-class Curve extends MarketData {
+class Curve extends ContractBased {
     
     constructor(session, securities, symbol) {
         super(session, securities[0].contract);

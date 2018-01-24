@@ -2,7 +2,7 @@
 
 const { DateTime } = require('luxon'),
       flags = require("../flags"),
-      RealTime = require("../realtime");
+      Base = require("../base");
 
 function details(session, summary, cb) {
     let list = [ ];
@@ -13,7 +13,7 @@ function details(session, summary, cb) {
         .send();
 }
 
-class Contract extends RealTime {
+class Contract extends Base {
     
     constructor(session, data) {
         super(session);

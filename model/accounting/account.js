@@ -1,9 +1,9 @@
 "use strict";
 
-const RealTime = require("../realtime"),
+const Base = require("../base"),
       Currency = require("../currency");
 
-class Account extends RealTime {
+class Account extends Base {
     
     /* string id, boolean trades */
     constructor(session, options) {
@@ -12,8 +12,8 @@ class Account extends RealTime {
         if (typeof options == "string") options = { id: options, orders: true, trades: true };
         if (typeof options.id != "string") throw new Error("Account id is required.");
         
-        this.balances = new RealTime(session);
-        this.positions = new RealTime(session);
+        this.balances = new Base(session);
+        this.positions = new Base(session);
         this.orders = session.orders.stream();
         
         let account = this.service.accountUpdates(options.id).on("data", data => {

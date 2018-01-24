@@ -9,9 +9,7 @@ const id = exports.id = 0,
       Proxy = exports.Proxy = require("./service/proxy"),
       Session = exports.Session = require("./model/session"),
       flags = exports.flags = require("./model/flags"),
-      studies = exports.studies = require("./model/marketdata/studies"),
-      RealTime = exports.RealTime = require("./model/realtime"),
-      MarketData = exports.MarketData = require("./model/marketdata/marketdata");
+      studies = exports.studies = require("./model/marketdata/studies");
 
 const session = exports.session = options => {
     options = options || { };

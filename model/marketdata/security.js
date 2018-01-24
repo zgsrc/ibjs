@@ -1,14 +1,14 @@
 "use strict";
 
 const flags = require("../flags"),
-      MarketData = require("./marketdata"),
+      ContractBased = require("./contractbased"),
       contract = require("./contract"),
       Quote = require("./quote"),
       Depth = require("./depth"),
       Charts = require("./charts"),
       Order = require("./order");
 
-class Security extends MarketData {
+class Security extends ContractBased {
     
     constructor(session, contract) {
         super(session, contract);
