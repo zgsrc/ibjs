@@ -10,7 +10,7 @@ class Accounts extends Base {
     constructor(session, options) {
         super(session);
 
-        this._exclude.push("orders", "trades");
+        this._exclude.push("orders", "trades", "loaded");
         
         if (options == null) {
             options = { 
@@ -90,6 +90,8 @@ class Accounts extends Base {
         }).on("error", err => {
             this.emit("error", err);
         }).send();
+        
+        this.on("load", () => this.loaded = true);
         
         this.cancel = () => {
             summary.cancel();

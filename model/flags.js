@@ -85,10 +85,7 @@ const REPORT = {
 exports.FUNDAMENTALS_REPORTS = REPORT;
 
 const CURRENCIES = [
-    'KRW', 'EUR', 'GBP', 'AUD',
-    'USD', 'TRY', 'ZAR', 'CAD', 
-    'CHF', 'MXN', 'HKD', 'JPY', 
-    'INR', 'NOK', 'SEK', 'RUB'
+    'USD', 'AUD', 'CAD', 'CHF', 'CNH', 'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 'HUF', 'ILS', 'JPY', 'MXN', 'NOK', 'NZD', 'PLN', 'RUB', 'SEK', 'SGD', 'ZAR', 'KRW'
 ];
 
 exports.CURRENCIES = CURRENCIES;
@@ -109,7 +106,9 @@ const SECURITY_TYPE = {
     forwards: "FOP",
     cash: "CASH",
     currency: "CASH",
-    bag: "BAG",
+    spread: "BAG",
+    spreads: "BAG",
+    combo: "BAG",
     news: "NEWS"
 };
 

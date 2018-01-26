@@ -8,6 +8,7 @@ class Orders extends Base {
     constructor(session) {
         super(session);
         
+        this._exclude.append([ "nextOrderId", "loaded" ]);
         this.nextOrderId = null;
         
         this._subscription = this.service.allOpenOrders().on("data", data => {

@@ -25,6 +25,8 @@ class Account extends Base {
         this.positions = new Base(session);
         this.orders = session.orders.stream();
         
+        this._exclude.push("loaded");
+        
         let account = this.service.accountUpdates(options.id).on("data", data => {
             if (data.key) {
                 let value = data.value;
@@ -70,12 +72,14 @@ class Account extends Base {
             this.emit("error", err);
         }).send();
         
+        this.on("load", () => this.loaded = true);
+        
         this.cancel = () => {
             account.cancel();
             if (this.trades) {
                 this.trades.cancel();
             }
-        }
+        };
     }
     
 }
@@ -94,7 +98,7 @@ class Accounts extends Base {
     constructor(session, options) {
         super(session);
 
-        this._exclude.push("orders", "trades");
+        this._exclude.push("orders", "trades", "loaded");
         
         if (options == null) {
             options = { 
@@ -175,6 +179,8 @@ class Accounts extends Base {
             this.emit("error", err);
         }).send();
         
+        this.on("load", () => this.loaded = true);
+        
         this.cancel = () => {
             summary.cancel();
             if (positions) positions.cancel();
@@ -196,6 +202,7 @@ class Orders extends Base {
     constructor(session) {
         super(session);
         
+        this._exclude.append([ "nextOrderId", "loaded" ]);
         this.nextOrderId = null;
         
         this._subscription = this.service.allOpenOrders().on("data", data => {
@@ -265,6 +272,8 @@ class Positions extends Base {
     constructor(session) {
         super(session);
 
+        this._exclude.append([ "loaded" ])
+        
         let positions = this.service.positions().on("data", data => {
             if (!this[data.contract.conId]) {
                 this[data.contract.conId] = { };    
@@ -273,6 +282,7 @@ class Positions extends Base {
             this[data.contract.conId][data.accountName] = data;
             this.emit("update", data);
         }).on("end", cancel => {
+            this.loaded = true;
             this.emit("load");
         }).on("error", err => {
             this.emit("error", err);
@@ -294,26 +304,27 @@ class Trades extends Base {
     constructor(session, options) {
         super(session);
 
+        this._exclude.append([ "loaded" ])
+        
         options = options || { };
         
-        this.filter = { };
-        this._exclude.push("filter");
+        let filter = { };
+        if (options.account) filter.acctCode = options.account;
+        if (options.client) filter.clientId = options.client;
+        if (options.exchange) filter.exchange = options.exchange;
+        if (options.secType) filter.secType = options.secType;
+        if (options.side) filter.side = options.side;
+        if (options.symbol) filter.symbol = options.symbol;
+        if (options.time) filter.time = options.time;
         
-        if (options.account) this.filter.acctCode = options.account;
-        if (options.client) this.filter.clientId = options.client;
-        if (options.exchange) this.filter.exchange = options.exchange;
-        if (options.secType) this.filter.secType = options.secType;
-        if (options.side) this.filter.side = options.side;
-        if (options.symbol) this.filter.symbol = options.symbol;
-        if (options.time) this.filter.time = options.time;
-        
-        let trades = this.service.executions(this.filter).on("data", data => {
+        let trades = this.service.executions(filter).on("data", data => {
             if (!this[data.exec.permId]) this[data.exec.permId] = { };
             this[data.exec.permId][data.exec.execId] = data;
             this.emit("update", data);
         }).on("error", err => {
             this.emit("error", err);
         }).on("end", () => {
+            this.loaded = true;
             this.emit("load");
         }).send();
         
@@ -491,10 +502,7 @@ const REPORT = {
 exports.FUNDAMENTALS_REPORTS = REPORT;
 
 const CURRENCIES = [
-    'KRW', 'EUR', 'GBP', 'AUD',
-    'USD', 'TRY', 'ZAR', 'CAD', 
-    'CHF', 'MXN', 'HKD', 'JPY', 
-    'INR', 'NOK', 'SEK', 'RUB'
+    'USD', 'AUD', 'CAD', 'CHF', 'CNH', 'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 'HUF', 'ILS', 'JPY', 'MXN', 'NOK', 'NZD', 'PLN', 'RUB', 'SEK', 'SGD', 'ZAR', 'KRW'
 ];
 
 exports.CURRENCIES = CURRENCIES;
@@ -515,7 +523,9 @@ const SECURITY_TYPE = {
     forwards: "FOP",
     cash: "CASH",
     currency: "CASH",
-    bag: "BAG",
+    spread: "BAG",
+    spreads: "BAG",
+    combo: "BAG",
     news: "NEWS"
 };
 
@@ -1427,6 +1437,10 @@ function lookup(session, description, cb) {
 }
 
 exports.lookup = lookup;
+
+function combo(session, desc1, ratio1, desc2, ratio2, cb) {
+    
+}
 },{"../base":7,"../flags":9,"luxon":22}],14:[function(require,module,exports){
 "use strict";
 
@@ -2226,7 +2240,7 @@ module.exports = {
         lower: window.map(b => b.low * (1 - 4 * (b.high - b.low) / (b.high + b.low))).aveage()
     }),
     AD: (window, name) => {
-        return window.at(-2)[name] + (((window.last().close - window.last().low) - (window.last().high - window.last().close)) / (window.last().high - window.last().low)) * window.last().volume
+        return (window.at(-2)[name] || 0) + (((window.last().close - window.last().low) - (window.last().high - window.last().close)) / (window.last().high - window.last().low)) * window.last().volume
     }
     
 };

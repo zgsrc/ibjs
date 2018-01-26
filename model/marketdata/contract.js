@@ -337,3 +337,7 @@ function lookup(session, description, cb) {
 }
 
 exports.lookup = lookup;
+
+function combo(session, desc1, ratio1, desc2, ratio2, cb) {
+    
+}

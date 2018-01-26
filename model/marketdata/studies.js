@@ -24,7 +24,7 @@ module.exports = {
         lower: window.map(b => b.low * (1 - 4 * (b.high - b.low) / (b.high + b.low))).aveage()
     }),
     AD: (window, name) => {
-        return window.at(-2)[name] + (((window.last().close - window.last().low) - (window.last().high - window.last().close)) / (window.last().high - window.last().low)) * window.last().volume
+        return (window.at(-2)[name] || 0) + (((window.last().close - window.last().low) - (window.last().high - window.last().close)) / (window.last().high - window.last().low)) * window.last().volume
     }
     
 };

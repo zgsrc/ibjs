@@ -16,6 +16,8 @@ class Account extends Base {
         this.positions = new Base(session);
         this.orders = session.orders.stream();
         
+        this._exclude.push("loaded");
+        
         let account = this.service.accountUpdates(options.id).on("data", data => {
             if (data.key) {
                 let value = data.value;
@@ -61,12 +63,14 @@ class Account extends Base {
             this.emit("error", err);
         }).send();
         
+        this.on("load", () => this.loaded = true);
+        
         this.cancel = () => {
             account.cancel();
             if (this.trades) {
                 this.trades.cancel();
             }
-        }
+        };
     }
     
 }
