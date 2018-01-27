@@ -2,6 +2,8 @@
 
 const sdk = require("..");
 
+const contract = require("../model/marketdata/contract");
+
 sdk.start().then(async session => {
     
     let AAPL = await session.security("AAPL stock");

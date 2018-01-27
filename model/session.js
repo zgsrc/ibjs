@@ -9,8 +9,7 @@ const Events = require("events"),
       Account = require("./accounting/account"),
       Curve = require("./marketdata/curve"),
       Chain = require("./marketdata/chain"),
-      contract = require("./marketdata/contract"),
-      securities = require("./marketdata/security");
+      contract = require("./marketdata/contract");
 
 class Session extends Events {
     
@@ -219,7 +218,7 @@ class Session extends Events {
     
     async securities(description) {
         return new Promise((resolve, reject) => {
-            securities(this, description, (err, secs) => {
+            contract.securities(this, description, (err, secs) => {
                 if (err) reject(err);
                 else resolve(secs);
             });
@@ -230,9 +229,13 @@ class Session extends Events {
         return (await this.securities(description))[0];
     }
     
+    async combo(description) {
+        return contract.combo(this, description);
+    }
+    
     async curve(description) {
         return new Promise((resolve, reject) => {
-            securities(this, description, (err, securities) => {
+            contract.securities(this, description, (err, securities) => {
                 if (err) reject(err);
                 else resolve(new Curve(this, secs));
             });
@@ -241,7 +244,7 @@ class Session extends Events {
     
     async options(description) {
         return new Promise((resolve, reject) => {
-            securities(this, description, (err, secs) => {
+            contract.securities(this, description, (err, secs) => {
                 if (err) reject(err);
                 else resolve(new Chain(this, secs));
             });

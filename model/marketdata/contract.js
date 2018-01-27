@@ -1,6 +1,7 @@
 "use strict";
 
 const { DateTime } = require('luxon'),
+      Security = require("./security"),
       flags = require("../flags"),
       Base = require("../base");
 
@@ -330,14 +331,62 @@ exports.parse = parse;
 
 function lookup(session, description, cb) {
     let summary = description;
-    try { summary = parse(description); }
-    catch (ex) { cb(ex); return; }
+    try { 
+        summary = parse(description); 
+    }
+    catch (ex) { 
+        cb(ex); 
+        return; 
+    }
     
     details(session, summary, cb);
 }
 
 exports.lookup = lookup;
 
-function combo(session, desc1, ratio1, desc2, ratio2, cb) {
-    
+function securities(session, description, cb) {
+    contract.lookup(session, description, (err, contracts) => {
+        if (err) cb(err);
+        else cb(null, contracts.map(contract => new Security(session, contract)));
+    });
 }
+
+exports.securities = securities;
+
+async function combo(session, definition) {
+    let legs = await Promise.all(definition.split(",").map("trim").map(async leg => {
+        let ratio = parseInt(leg.to(leg.indexOf(" ")));
+        leg = leg.from(leg.indexOf(" ")).trim();
+        
+        let summary = (await session.lookup(leg))[0];
+        if (summary) {
+            summary = summary.summary;
+            return {
+                symbol: summary.symbol,
+                conId: summary.conId,
+                exchange: summary.exchange,
+                ratio: Math.abs(ratio),
+                action: Math.sign(ratio) == -1 ? "SELL" : "BUY",
+                currency: summary.currency
+            };
+        }
+        else {
+            throw new Error("No contract for " + leg);
+        }
+    }));
+    
+    let name = legs.map("symbol").unique().join(',');
+    legs.forEach(leg => delete leg.symbol);
+    
+    return new Security(session, { 
+        summary: {
+            symbol: name,
+            secType: "BAG",
+            currency: legs.first().currency,
+            exchange: legs.first().exchange,
+            comboLegs: legs
+        }
+    });
+}
+
+exports.combo = combo;

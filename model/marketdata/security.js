@@ -88,11 +88,4 @@ function processFundamentals(obj) {
     return obj;
 }
 
-function securities(session, description, cb) {
-    contract.lookup(session, description, (err, contracts) => {
-        if (err) cb(err);
-        else cb(null, contracts.map(contract => new Security(session, contract)));
-    });
-}
-
-module.exports = securities;
+module.exports = Security;

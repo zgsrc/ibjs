@@ -15,6 +15,10 @@ class Base extends Events {
         return Object.keys(this).exclude(/\_.*/).subtract(this._exclude);
     }
     
+    get values() {
+        return this.fields.map(field => this[field]);
+    }
+    
     get snapshot() {
         let obj = Object.select(this, this.fields);
         for (let prop in obj) {

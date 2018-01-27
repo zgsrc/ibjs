@@ -352,6 +352,10 @@ class Base extends Events {
         return Object.keys(this).exclude(/\_.*/).subtract(this._exclude);
     }
     
+    get values() {
+        return this.fields.map(field => this[field]);
+    }
+    
     get snapshot() {
         let obj = Object.select(this, this.fields);
         for (let prop in obj) {
@@ -1101,6 +1105,7 @@ module.exports = Charts;
 "use strict";
 
 const { DateTime } = require('luxon'),
+      Security = require("./security"),
       flags = require("../flags"),
       Base = require("../base");
 
@@ -1430,18 +1435,66 @@ exports.parse = parse;
 
 function lookup(session, description, cb) {
     let summary = description;
-    try { summary = parse(description); }
-    catch (ex) { cb(ex); return; }
+    try { 
+        summary = parse(description); 
+    }
+    catch (ex) { 
+        cb(ex); 
+        return; 
+    }
     
     details(session, summary, cb);
 }
 
 exports.lookup = lookup;
 
-function combo(session, desc1, ratio1, desc2, ratio2, cb) {
-    
+function securities(session, description, cb) {
+    contract.lookup(session, description, (err, contracts) => {
+        if (err) cb(err);
+        else cb(null, contracts.map(contract => new Security(session, contract)));
+    });
 }
-},{"../base":7,"../flags":9,"luxon":22}],14:[function(require,module,exports){
+
+exports.securities = securities;
+
+async function combo(session, definition) {
+    let legs = await Promise.all(definition.split(",").map("trim").map(async leg => {
+        let ratio = parseInt(leg.to(leg.indexOf(" ")));
+        leg = leg.from(leg.indexOf(" ")).trim();
+        
+        let summary = (await session.lookup(leg))[0];
+        if (summary) {
+            summary = summary.summary;
+            return {
+                symbol: summary.symbol,
+                conId: summary.conId,
+                exchange: summary.exchange,
+                ratio: Math.abs(ratio),
+                action: Math.sign(ratio) == -1 ? "SELL" : "BUY",
+                currency: summary.currency
+            };
+        }
+        else {
+            throw new Error("No contract for " + leg);
+        }
+    }));
+    
+    let name = legs.map("symbol").unique().join(',');
+    legs.forEach(leg => delete leg.symbol);
+    
+    return new Security(session, { 
+        summary: {
+            symbol: name,
+            secType: "BAG",
+            currency: legs.first().currency,
+            exchange: legs.first().exchange,
+            comboLegs: legs
+        }
+    });
+}
+
+exports.combo = combo;
+},{"../base":7,"../flags":9,"./security":19,"luxon":22}],14:[function(require,module,exports){
 "use strict";
 
 const Base = require("../base");
@@ -2205,14 +2258,7 @@ function processFundamentals(obj) {
     return obj;
 }
 
-function securities(session, description, cb) {
-    contract.lookup(session, description, (err, contracts) => {
-        if (err) cb(err);
-        else cb(null, contracts.map(contract => new Security(session, contract)));
-    });
-}
-
-module.exports = securities;
+module.exports = Security;
 },{"../flags":9,"./charts":12,"./contract":13,"./contractbased":14,"./depth":16,"./order":17,"./quote":18}],20:[function(require,module,exports){
 module.exports = { 
 
@@ -2257,8 +2303,7 @@ const Events = require("events"),
       Account = require("./accounting/account"),
       Curve = require("./marketdata/curve"),
       Chain = require("./marketdata/chain"),
-      contract = require("./marketdata/contract"),
-      securities = require("./marketdata/security");
+      contract = require("./marketdata/contract");
 
 class Session extends Events {
     
@@ -2467,7 +2512,7 @@ class Session extends Events {
     
     async securities(description) {
         return new Promise((resolve, reject) => {
-            securities(this, description, (err, secs) => {
+            contract.securities(this, description, (err, secs) => {
                 if (err) reject(err);
                 else resolve(secs);
             });
@@ -2478,9 +2523,13 @@ class Session extends Events {
         return (await this.securities(description))[0];
     }
     
+    async combo(description) {
+        return contract.combo(this, description);
+    }
+    
     async curve(description) {
         return new Promise((resolve, reject) => {
-            securities(this, description, (err, securities) => {
+            contract.securities(this, description, (err, securities) => {
                 if (err) reject(err);
                 else resolve(new Curve(this, secs));
             });
@@ -2489,7 +2538,7 @@ class Session extends Events {
     
     async options(description) {
         return new Promise((resolve, reject) => {
-            securities(this, description, (err, secs) => {
+            contract.securities(this, description, (err, secs) => {
                 if (err) reject(err);
                 else resolve(new Chain(this, secs));
             });
@@ -2500,7 +2549,7 @@ class Session extends Events {
 
 module.exports = Session;
 }).call(this,require('_process'))
-},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":9,"./marketdata/chain":11,"./marketdata/contract":13,"./marketdata/curve":15,"./marketdata/security":19,"_process":28,"events":27}],22:[function(require,module,exports){
+},{"./accounting/account":2,"./accounting/accounts":3,"./accounting/orders":4,"./accounting/positions":5,"./accounting/trades":6,"./flags":9,"./marketdata/chain":11,"./marketdata/contract":13,"./marketdata/curve":15,"_process":28,"events":27}],22:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
