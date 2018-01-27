@@ -78,7 +78,13 @@ const start = exports.start = options => {
     return new Promise((yes, no) => {
         open(options, (err, session) => {
             if (err) no(err);
-            else yes(session);
+            else {
+                if (!options || !options.errors) {
+                    session.on("error", no);
+                }
+                
+                yes(session);
+            }
         });
     });
 }

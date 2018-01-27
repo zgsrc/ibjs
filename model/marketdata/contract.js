@@ -345,7 +345,7 @@ function lookup(session, description, cb) {
 exports.lookup = lookup;
 
 function securities(session, description, cb) {
-    contract.lookup(session, description, (err, contracts) => {
+    lookup(session, description, (err, contracts) => {
         if (err) cb(err);
         else cb(null, contracts.map(contract => new Security(session, contract)));
     });
