@@ -85,7 +85,11 @@ const REPORT = {
 exports.FUNDAMENTALS_REPORTS = REPORT;
 
 const CURRENCIES = [
-    'USD', 'AUD', 'CAD', 'CHF', 'CNH', 'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 'HUF', 'ILS', 'JPY', 'MXN', 'NOK', 'NZD', 'PLN', 'RUB', 'SEK', 'SGD', 'ZAR', 'KRW'
+    'USD', 'AUD', 'CAD', 'CHF', 'CNH', 
+    'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 
+    'HUF', 'ILS', 'JPY', 'MXN', 'NOK', 
+    'NZD', 'PLN', 'RUB', 'SEK', 'SGD', 
+    'ZAR', 'KRW'
 ];
 
 exports.CURRENCIES = CURRENCIES;

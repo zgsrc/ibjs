@@ -12,6 +12,7 @@ class Order extends ContractBased {
         
         this.ticket = (data ? data.ticket : null) || { 
             tif: flags.TIME_IN_FORCE.day,
+            outsideRth: true,
             totalQuantity: 1,
             action: flags.SIDE.buy,
             orderType: flags.ORDER_TYPE.market,
@@ -60,8 +61,10 @@ class Order extends ContractBased {
     // QUANTITY
     ////////////////////////////////////////
     trade(qty, show) {
-        this.ticket.totalQuantity = Math.abs(qty);
-        this.ticket.action = qty > 0 ? flags.SIDE.buy : flags.SIDE.sell;
+        if (qty != null) {
+            this.ticket.totalQuantity = Math.abs(qty);
+            this.ticket.action = qty > 0 ? flags.SIDE.buy : flags.SIDE.sell;
+        }
         
         if (show != null) {
             if (show == 0) this.hidden = true;
@@ -72,8 +75,10 @@ class Order extends ContractBased {
     }
     
     buy(qty, show) {
-        this.ticket.totalQuantity = qty;
-        this.ticket.action = flags.SIDE.buy;
+        if (qty != null) {
+            this.ticket.totalQuantity = qty;
+            this.ticket.action = flags.SIDE.buy;    
+        }
         
         if (show != null) {
             if (show == 0) this.hidden = true;
@@ -84,8 +89,10 @@ class Order extends ContractBased {
     }
     
     sell(qty, show) {
-        this.ticket.totalQuantity = qty;
-        this.ticket.action = flags.SIDE.sell;
+        if (qty != null) {
+            this.ticket.totalQuantity = qty;
+            this.ticket.action = flags.SIDE.sell;
+        }
         
         if (show != null) {
             if (show == 0) this.hidden = true;
@@ -96,12 +103,48 @@ class Order extends ContractBased {
     }
     
     show(qty) {
-        if (show != null) {
-            if (show == 0) this.hidden = true;
-            this.displaySize = Math.abs(show);
+        if (qty != null) {
+            if (qty == 0) this.hidden = true;
+            this.displaySize = Math.abs(qty);
         }
 
         return this;
+    }
+    
+    ////////////////////////////////////////
+    // TIMEFRAME
+    ////////////////////////////////////////
+    goodToday() {
+        this.ticket.tif = flags.TIME_IN_FORCE.day;
+        return this;
+    }
+    
+    goodUntilCancelled() {
+        this.ticket.tif = flags.TIME_IN_FORCE.goodUntilCancelled;
+        return this;
+    }
+    
+    immediateOrCancel() {
+        this.ticket.tif = flags.TIME_IN_FORCE.immediateOrCancel;
+        return this;
+    }
+    
+    fillOrKill() {
+        this.ticket.tif = flags.TIME_IN_FORCE.fillOrKill;
+        return this;
+    }
+    
+    atTheOpen() {
+        this.ticket.tif = flags.TIME_IN_FORCE.open;
+    }
+    
+    auction() {
+        this.ticket.tif = flags.TIME_IN_FORCE.auction;
+    }
+    
+    regularTradingHours() {
+        this.ticket.outsideRth = false; 
+        return this; 
     }
     
     ////////////////////////////////////////
@@ -196,41 +239,35 @@ class Order extends ContractBased {
         this.ticket.lmtPrice = limit;            
         return this;
     }
-
-    ////////////////////////////////////////
-    // TIMEFRAME
-    ////////////////////////////////////////
-    goodToday() {
-        this.ticket.tif = flags.TIME_IN_FORCE.day;
+    
+    trail(trigger, offset) {
+        this.ticket.orderType = "TRAIL";
+        this.ticket.trailStopPrice = trigger;
+        this.ticket.auxPrice = offset;
         return this;
     }
     
-    goodUntilCancelled() {
-        this.ticket.tif = flags.TIME_IN_FORCE.goodUntilCancelled;
+    trailPercent(trigger, pct) {
+        this.ticket.orderType = "TRAIL";
+        this.ticket.trailStopPrice = trigger;
+        this.ticket.trailingPercent = pct;
         return this;
     }
     
-    immediateOrCancel() {
-        this.ticket.tif = flags.TIME_IN_FORCE.immediateOrCancel;
+    trailLimit(trigger, offset, limit) {
+        this.ticket.orderType = "TRAIL LIMIT";
+        this.ticket.trailStopPrice = trigger;
+        this.ticket.auxPrice = offset;
+        this.ticket.lmtPriceOffset = limit;
         return this;
     }
     
-    fillOrKill() {
-        this.ticket.tif = flags.TIME_IN_FORCE.fillOrKill;
+    trailLimitPercent(trigger, pct, limit) {
+        this.ticket.orderType = "TRAIL LIMIT";
+        this.ticket.trailStopPrice = trigger;
+        this.ticket.trailingPercent = pct;
+        this.ticket.lmtPriceOffset = limit;
         return this;
-    }
-    
-    atTheOpen() {
-        this.ticket.tif = flags.TIME_IN_FORCE.open;
-    }
-    
-    auction() {
-        this.ticket.tif = flags.TIME_IN_FORCE.auction;
-    }
-    
-    outsideRegularTradingHours() { 
-        this.ticket.outsideRth = true; 
-        return this; 
     }
     
     ////////////////////////////////////////
@@ -238,6 +275,11 @@ class Order extends ContractBased {
     ////////////////////////////////////////
     overridePercentageConstraints() {
         this.ticket.overridePercentageConstraints = true;
+        return this;
+    }
+    
+    whatIf() {
+        this.ticket.whatIf = true;
         return this;
     }
     
