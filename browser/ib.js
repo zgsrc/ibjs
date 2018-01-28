@@ -3,10 +3,11 @@ var Session = require("../model/session"),
     Proxy = require("../service/proxy");
 
 window.ib = {
-    session: () => new Session(new Proxy(socket)),
-    flags: require("../model/flags")
+    session: socket => new Session(new Proxy(socket)),
+    flags: require("../model/flags"),
+    studies: require("../model/marketdata/studies")
 };
-},{"../model/flags":9,"../model/session":21,"../service/proxy":24}],2:[function(require,module,exports){
+},{"../model/flags":9,"../model/marketdata/studies":20,"../model/session":21,"../service/proxy":24}],2:[function(require,module,exports){
 "use strict";
 
 const Base = require("../base"),
@@ -42,16 +43,16 @@ class Account extends Base {
 
                 let key = data.key.camelize(false);
                 this.balances[key] = value;
-                this.emit("update", { type: "balances", field: key, value: value });
+                this.emit("update", { account: options.id, type: "balances", field: key, value: value });
             }
             else if (data.timestamp) {
                 let date = Date.create(data.timestamp);
                 this.timestamp = date;
-                this.emit("update", { type: "timestamp", field: "timestamp", value: date });
+                this.emit("update", { account: options.id, type: "timestamp", field: "timestamp", value: date });
             }
             else if (data.contract) {
                 this.positions[data.contract.conId] = data;
-                this.emit("update", { type: "position", field: data.contract.conId, value: data });
+                this.emit("update", { account: options.id, type: "position", field: data.contract.conId, value: data });
             }
             else {
                 this.emit("error", "Unrecognized account update " + JSON.stringify(data));
@@ -137,7 +138,7 @@ class Accounts extends Base {
 
                     var key = datum.tag.camelize(false);
                     this[id].balances[key] = value;
-                    this.emit("update", { type: "balance", field: key, value: value });
+                    this.emit("update", { account: id, type: "balance", field: key, value: value });
                 }
             }
         }).on("end", cancel => {
@@ -145,7 +146,7 @@ class Accounts extends Base {
                 positions = this.service.positions();
                 positions.on("data", data => {
                     this[data.accountName].positions[data.contract.conId] = data;
-                    this.emit("update", { type: "position", field: data.contract.conId, value: data });
+                    this.emit("update", { account: data.accountName, type: "position", field: data.contract.conId, value: data });
                 }).on("end", cancel => {
                     if (options.trades) {
                         this.session.trades().then(trades => {
@@ -226,7 +227,7 @@ class Orders extends Base {
                 this[id].readOnly = true;
             }
             
-            this.emit("update", data);
+            this.emit("update", { account: data.state.account, type: "order", field: id, value: this[id] });
         }).on("end", () => {
             this.loaded = true;
             this.emit("load");
@@ -236,7 +237,7 @@ class Orders extends Base {
         
         this._exclude.push("_subscription");
         
-        this.cancel = () => subscription.cancel();
+        this.cancel = () => this._subscription.cancel();
     }
     
     stream() {
@@ -275,12 +276,9 @@ class Positions extends Base {
         this._exclude.append([ "loaded" ])
         
         let positions = this.service.positions().on("data", data => {
-            if (!this[data.contract.conId]) {
-                this[data.contract.conId] = { };    
-            }
-            
+            if (!this[data.contract.conId]) this[data.contract.conId] = { };
             this[data.contract.conId][data.accountName] = data;
-            this.emit("update", data);
+            this.emit("update", { account: data.accountName, type: "position", field: data.contract.conId, value: data });
         }).on("end", cancel => {
             this.loaded = true;
             this.emit("load");
@@ -320,7 +318,7 @@ class Trades extends Base {
         let trades = this.service.executions(filter).on("data", data => {
             if (!this[data.exec.permId]) this[data.exec.permId] = { };
             this[data.exec.permId][data.exec.execId] = data;
-            this.emit("update", data);
+            this.emit("update", { account: data.exec.acctNumber, type: "trade", field: data.exec.execId, value: data.exec });
         }).on("error", err => {
             this.emit("error", err);
         }).on("end", () => {

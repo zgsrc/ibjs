@@ -32,7 +32,7 @@ class Orders extends Base {
                 this[id].readOnly = true;
             }
             
-            this.emit("update", data);
+            this.emit("update", { account: data.state.account, type: "order", field: id, value: this[id] });
         }).on("end", () => {
             this.loaded = true;
             this.emit("load");
@@ -42,7 +42,7 @@ class Orders extends Base {
         
         this._exclude.push("_subscription");
         
-        this.cancel = () => subscription.cancel();
+        this.cancel = () => this._subscription.cancel();
     }
     
     stream() {

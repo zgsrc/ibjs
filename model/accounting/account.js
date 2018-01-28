@@ -33,16 +33,16 @@ class Account extends Base {
 
                 let key = data.key.camelize(false);
                 this.balances[key] = value;
-                this.emit("update", { type: "balances", field: key, value: value });
+                this.emit("update", { account: options.id, type: "balances", field: key, value: value });
             }
             else if (data.timestamp) {
                 let date = Date.create(data.timestamp);
                 this.timestamp = date;
-                this.emit("update", { type: "timestamp", field: "timestamp", value: date });
+                this.emit("update", { account: options.id, type: "timestamp", field: "timestamp", value: date });
             }
             else if (data.contract) {
                 this.positions[data.contract.conId] = data;
-                this.emit("update", { type: "position", field: data.contract.conId, value: data });
+                this.emit("update", { account: options.id, type: "position", field: data.contract.conId, value: data });
             }
             else {
                 this.emit("error", "Unrecognized account update " + JSON.stringify(data));

@@ -49,7 +49,7 @@ class Accounts extends Base {
 
                     var key = datum.tag.camelize(false);
                     this[id].balances[key] = value;
-                    this.emit("update", { type: "balance", field: key, value: value });
+                    this.emit("update", { account: id, type: "balance", field: key, value: value });
                 }
             }
         }).on("end", cancel => {
@@ -57,7 +57,7 @@ class Accounts extends Base {
                 positions = this.service.positions();
                 positions.on("data", data => {
                     this[data.accountName].positions[data.contract.conId] = data;
-                    this.emit("update", { type: "position", field: data.contract.conId, value: data });
+                    this.emit("update", { account: data.accountName, type: "position", field: data.contract.conId, value: data });
                 }).on("end", cancel => {
                     if (options.trades) {
                         this.session.trades().then(trades => {

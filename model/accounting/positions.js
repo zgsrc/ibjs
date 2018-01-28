@@ -10,12 +10,9 @@ class Positions extends Base {
         this._exclude.append([ "loaded" ])
         
         let positions = this.service.positions().on("data", data => {
-            if (!this[data.contract.conId]) {
-                this[data.contract.conId] = { };    
-            }
-            
+            if (!this[data.contract.conId]) this[data.contract.conId] = { };
             this[data.contract.conId][data.accountName] = data;
-            this.emit("update", data);
+            this.emit("update", { account: data.accountName, type: "position", field: data.contract.conId, value: data });
         }).on("end", cancel => {
             this.loaded = true;
             this.emit("load");
