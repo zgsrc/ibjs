@@ -318,7 +318,7 @@ class Trades extends Base {
         let trades = this.service.executions(filter).on("data", data => {
             if (!this[data.exec.permId]) this[data.exec.permId] = { };
             this[data.exec.permId][data.exec.execId] = data;
-            this.emit("update", { account: data.exec.acctNumber, type: "trade", field: data.exec.execId, value: data.exec });
+            this.emit("update", { account: data.exec.acctNumber, type: "trade", field: data.exec.permId, value: data.exec });
         }).on("error", err => {
             this.emit("error", err);
         }).on("end", () => {
