@@ -1,8 +1,8 @@
 [![Logo](./ib-logo.png)](http://interactivebrokers.com/)
 
-# Interactive Brokers SDK
+# Interactive Brokers Javascript Library
 
-Interactive Brokers SDK is a high-level programming model build atop the [native javascript API](https://github.com/pilwon/node-ib) that is all about straightforward programmatic access to your portfolio and market data subscriptions.
+This is a high-level javascript library build atop the [native javascript API](https://github.com/pilwon/node-ib).
 
 #### Prerequisites
 
@@ -11,25 +11,25 @@ Interactive Brokers SDK is a high-level programming model build atop the [native
 
 #### How It Works
 
-The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without special infrastructure there is no support for direct connections to IB servers, so the SDK uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a TCP socket connection from Node.js to an IB Gateway or TWS instance.
+The [IB Gateway](http://interactivebrokers.github.io) and [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software are graphical Java processes that encrypt and proxy calls to back-end servers.  Without special infrastructure there is no support for direct connections to IB servers, so the library uses the [native javascript API](https://github.com/pilwon/node-ib) to manage a TCP socket connection from Node.js to an IB Gateway or TWS instance.
 
 ## Installation
 
-    npm install ib-sdk
+    npm install ibjs
 
 ## Getting Started
 
 Login to the [IB Gateway](http://interactivebrokers.github.io) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T) software.
 
-* The SDK expects to connect to an authenticated user session.
+* The library expects to connect to an authenticated user session.
 * The IB software must be configured to accept API connections.
-* The SDK connects over `tcp://localhost:4001` by default.
+* The library connects over `tcp://localhost:4001` by default.
 * Use [ib-controller](https://github.com/ib-controller/ib-controller/releases) to automate UI interaction if necessary.
 
-The entry point is the `session` returned by the `sdk.start` promise.  Each `session` is associated with one or more accounts.  The most common case is access to a single [account](./example/account.js).
+The entry point is the `session` returned by the `ibjs.start` promise.  Each `session` is associated with one or more accounts.  The most common case is access to a single [account](./example/account.js).
 
 ```javascript
-sdk.start().then(async session => {
+ibjs.start().then(async session => {
     let account = await session.account();
 
     console.log("Balances:");
@@ -73,7 +73,7 @@ session.close();
 
 ## Market Data
 
-Use the SDK's [symbol](./doc/symbols.md) syntax to create `securities` from which you can access market data.
+Use the [symbol](./doc/symbols.md) syntax to create `securities` from which you can access market data.
 
 ```javascript
 let AAPL = session.security("AAPL stock");
