@@ -1,7 +1,7 @@
 {
-  "name": "ib-sdk",
-  "version": "0.11.5",
-  "description": "Interactive Brokers SDK framework build atop the native javascript API.",
+  "name": "ibjs",
+  "version": "0.12",
+  "description": "Interactive Brokers library framework build atop the native javascript API.",
   "main": "index.js",
   "directories": {
     "doc": "doc",
@@ -24,12 +24,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/triploc/ib-sdk.git"
+    "url": "git+https://github.com/triploc/ibjs.git"
   },
   "bugs": {
-    "url": "https://github.com/triploc/ib-sdk/issues"
+    "url": "https://github.com/triploc/ibjs/issues"
   },
-  "homepage": "https://github.com/triploc/ib-sdk#readme",
+  "homepage": "https://github.com/triploc/ibjs#readme",
   "scripts": {
     "browserify": "browserify browser/browserify.js -o browser/ib.js"
   }
