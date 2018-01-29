@@ -116,9 +116,8 @@ class Quote extends ContractBased {
             }).on("data", datum  => {
                 datum = parseQuotePart(datum);
                 if (datum && datum.key && datum.value) {
-                    let oldValue = this[datum.key];
                     this[datum.key] = datum.value;
-                    this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
+                    this.emit("update", { contract: this.contract.summary.conId, field: datum.key, value: datum.value });
                 }
             }).once("error", fail).send();
         });

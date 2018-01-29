@@ -42,7 +42,7 @@ class Depth extends ContractBased {
                     if (datum.side == 1) this.bids[exchange][datum.position] = datum;
                     else this.offers[exchange][datum.position] = datum;
                     this.lastUpdate = Date.create();
-                    this.emit("update", datum);
+                    this.emit("update", { contract: this.contract.summary.conId, type: "depth", field: exchange, value: datum });
                     this.streaming = true;
                 }).once("data", () => {
                     req.removeListener("error", fail);

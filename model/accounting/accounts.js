@@ -20,6 +20,7 @@ class Accounts extends Base {
         }
         
         this.orders = session.orders.stream();
+        this.orders.on("update", data => this.emit("update", data));
         
         let positions = null, summary = this.service.accountSummary(
             options.group || "All", 
@@ -78,6 +79,7 @@ class Accounts extends Base {
                 if (options.trades) {
                     this.session.trades().then(trades => {
                         this.trades = trades;
+                        this.trades.on("update", data => this.emit("update", data));
                         if (this.orders.loaded) this.emit("load");
                         else this.orders.on("load", () => this.emit("load"));
                     });

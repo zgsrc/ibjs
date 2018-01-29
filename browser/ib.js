@@ -25,6 +25,7 @@ class Account extends Base {
         this.balances = new Base(session);
         this.positions = new Base(session);
         this.orders = session.orders.stream();
+        this.orders.on("update", data => this.emit("update", data));
         
         this._exclude.push("loaded");
         
@@ -61,6 +62,7 @@ class Account extends Base {
             if (options.trades) {
                 session.trades({ account: options.id }).then(trades => {
                     this.trades = trades;
+                    this.trades.on("update", data => this.emit("update", data));
                     if (this.orders.loaded) this.emit("load");
                     else this.orders.on("load", () => this.emit("load"));
                 });
@@ -109,6 +111,7 @@ class Accounts extends Base {
         }
         
         this.orders = session.orders.stream();
+        this.orders.on("update", data => this.emit("update", data));
         
         let positions = null, summary = this.service.accountSummary(
             options.group || "All", 
@@ -167,6 +170,7 @@ class Accounts extends Base {
                 if (options.trades) {
                     this.session.trades().then(trades => {
                         this.trades = trades;
+                        this.trades.on("update", data => this.emit("update", data));
                         if (this.orders.loaded) this.emit("load");
                         else this.orders.on("load", () => this.emit("load"));
                     });
@@ -366,8 +370,8 @@ class Base extends Events {
         return this.fields.map(e => fn(this[e], e));
     }
     
-    log() {
-        this.on("update", console.log).on("error", console.log);
+    log(fn) {
+        this.on("update", fn || console.log).on("error", fn || console.log);
         return this;
     }
     
@@ -669,14 +673,14 @@ class Bars extends ContractBased {
             let bd = barDate(barSize.text, data.date);
             if (this.series.length && this.series.last().date == bd) {
                 merge(this.series.last(), data);
-                this.emit("update", this.series.last());
+                this.emit("update", { contract: this.contract.summary.conId, type: "chart", field: barSize.text, value: this.series.last() });
             }
             else {
                 data.synthetic = true;
                 data.date = bd;
                 data.timestamp = bd.getTime();
                 this.series.push(data);
-                this.emit("update", this.series.last());
+                this.emit("update", { contract: this.contract.summary.conId, type: "chart", field: barSize.text, value: this.series.last() });
             }
         });
     }
@@ -1082,7 +1086,7 @@ class Charts extends ContractBased {
                 data.date = Date.create(data.date * 1000);
                 data.timestamp = data.date.getTime();
                 this.series.push(data);
-                this.emit("update", data);
+                this.emit("update", { contract: this.contract.summary.conId, type: "chart", field: "realtime", value: data });
             }).send();
         });
     }
@@ -1594,7 +1598,7 @@ class Depth extends ContractBased {
                     if (datum.side == 1) this.bids[exchange][datum.position] = datum;
                     else this.offers[exchange][datum.position] = datum;
                     this.lastUpdate = Date.create();
-                    this.emit("update", datum);
+                    this.emit("update", { contract: this.contract.summary.conId, type: "depth", field: exchange, value: datum });
                     this.streaming = true;
                 }).once("data", () => {
                     req.removeListener("error", fail);
@@ -2104,9 +2108,8 @@ class Quote extends ContractBased {
             }).on("data", datum  => {
                 datum = parseQuotePart(datum);
                 if (datum && datum.key && datum.value) {
-                    let oldValue = this[datum.key];
                     this[datum.key] = datum.value;
-                    this.emit("update", { key: datum.key, newValue: datum.value, oldValue: oldValue });
+                    this.emit("update", { contract: this.contract.summary.conId, field: datum.key, value: datum.value });
                 }
             }).once("error", fail).send();
         });
@@ -2213,9 +2216,16 @@ class Security extends ContractBased {
     
     constructor(session, contract) {
         super(session, contract);
+        
         this.quote = new Quote(session, contract);
+        this.quote.on("update", data => this.emit("update", data));
+        
         this.depth = new Depth(session, contract);
+        this.depth.on("update", data => this.emit("update", data));
+        
         this.charts = new Charts(session, contract, flags.HISTORICAL.trades);
+        this.charts.on("update", data => this.emit("update", data));
+        
         this.reports = { };
     }
     

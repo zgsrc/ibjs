@@ -22,14 +22,14 @@ class Bars extends ContractBased {
             let bd = barDate(barSize.text, data.date);
             if (this.series.length && this.series.last().date == bd) {
                 merge(this.series.last(), data);
-                this.emit("update", this.series.last());
+                this.emit("update", { contract: this.contract.summary.conId, type: "chart", field: barSize.text, value: this.series.last() });
             }
             else {
                 data.synthetic = true;
                 data.date = bd;
                 data.timestamp = bd.getTime();
                 this.series.push(data);
-                this.emit("update", this.series.last());
+                this.emit("update", { contract: this.contract.summary.conId, type: "chart", field: barSize.text, value: this.series.last() });
             }
         });
     }

@@ -185,7 +185,7 @@ class Charts extends ContractBased {
                 data.date = Date.create(data.date * 1000);
                 data.timestamp = data.date.getTime();
                 this.series.push(data);
-                this.emit("update", data);
+                this.emit("update", { contract: this.contract.summary.conId, type: "chart", field: "realtime", value: data });
             }).send();
         });
     }

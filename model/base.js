@@ -31,8 +31,8 @@ class Base extends Events {
         return this.fields.map(e => fn(this[e], e));
     }
     
-    log() {
-        this.on("update", console.log).on("error", console.log);
+    log(fn) {
+        this.on("update", fn || console.log).on("error", fn || console.log);
         return this;
     }
     

@@ -12,9 +12,16 @@ class Security extends ContractBased {
     
     constructor(session, contract) {
         super(session, contract);
+        
         this.quote = new Quote(session, contract);
+        this.quote.on("update", data => this.emit("update", data));
+        
         this.depth = new Depth(session, contract);
+        this.depth.on("update", data => this.emit("update", data));
+        
         this.charts = new Charts(session, contract, flags.HISTORICAL.trades);
+        this.charts.on("update", data => this.emit("update", data));
+        
         this.reports = { };
     }
     

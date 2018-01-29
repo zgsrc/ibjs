@@ -15,6 +15,7 @@ class Account extends Base {
         this.balances = new Base(session);
         this.positions = new Base(session);
         this.orders = session.orders.stream();
+        this.orders.on("update", data => this.emit("update", data));
         
         this._exclude.push("loaded");
         
@@ -51,6 +52,7 @@ class Account extends Base {
             if (options.trades) {
                 session.trades({ account: options.id }).then(trades => {
                     this.trades = trades;
+                    this.trades.on("update", data => this.emit("update", data));
                     if (this.orders.loaded) this.emit("load");
                     else this.orders.on("load", () => this.emit("load"));
                 });
