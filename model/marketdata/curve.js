@@ -6,6 +6,8 @@ class Curve extends ContractBased {
     
     constructor(session, securities, symbol) {
         super(session, securities[0].contract);
+        this._exclude.push("loaded");
+        
         Object.defineProperty(this, "securities", { value: securities });
         Object.defineProperty(this, "symbol", { value: symbol || this.contract.summary.symbol + "_" + this.constructor.name.toLowerCase() });
     }
@@ -33,6 +35,7 @@ class Curve extends ContractBased {
                         .on("load", () => {
                             count--;
                             if (count == 0) {
+                                this.loaded = true;
                                 this.emit("load");
                             }
                         });

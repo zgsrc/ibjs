@@ -36,13 +36,13 @@ ibjs.start().then(async session => {
     account.balances.each((value, name) => console.log(`${name}: ${value}`));
 
     console.log("Positions:");
-    account.positions.each(position => console.log(position));
+    account.positions.each(console.log);
 
     console.log("Orders:");
-    account.orders.each(order => console.log(order));
+    account.orders.each(console.log);
 
     console.log("Trades:");
-    account.trades.each(trade => console.log(trade));
+    account.trades.each(console.log);
     
     session.close();
 }).catch(console.log);
@@ -59,14 +59,14 @@ accounts.each((account, name) => {
     account.balances.each((value, name) => console.log(`${name}: ${value}`));
 
     console.log("Positions:");
-    account.positions.each(position => console.log(position));
+    account.positions.each(console.log);
 });
 
 console.log("Orders:");
-accounts.orders.each(order => console.log(order));
+accounts.orders.each(console.log);
 
 console.log("Trades:");
-accounts.trades.each(trade => console.log(trade));
+accounts.trades.each(console.log);
 
 session.close();
 ```
