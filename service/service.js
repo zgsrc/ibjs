@@ -1,8 +1,22 @@
 "use strict";
 
-const parseXML = require('xml2js').parseString,
-      Dispatch = require("./dispatch"),
-      relay = require("./relay");
+const Dispatch = require("./dispatch"),
+      relay = require("./relay"),
+      parseString = require('xml2js').parseString;
+
+function camelize(str) {
+    return str.camelize(false);
+}
+
+function parseXML(txt, cb) {
+    parseString(txt, { 
+        trim: true, 
+        mergeAttrs: true, 
+        charkey: "text",
+        tagNameProcessors: [ camelize ],
+        attrNameProcessors: [ camelize ]
+    }, cb);
+}
 
 class Service {
     

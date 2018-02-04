@@ -11,12 +11,12 @@ class Model extends Base {
             }).on("update", data => {
                 let obj = this[data.name];
                 if (obj) {
-                    if (data.account && !obj.balances) obj[data.account][data.type][data.field] = value;
-                    else obj[data.type][data.field] = value;
+                    if (data.account && !obj.balances) obj[data.account][data.type][data.field] = data.value;
+                    else obj[data.type][data.field] = data.value;
                 }
                 
                 this.emit("update", data);
-            })
+            });
         }
     }
     
@@ -28,6 +28,13 @@ function model(source) {
             if (model[name] && model[name] instanceof Base) {
                 model[name].removeAllListeners();
                 model[name].cancel();
+            }
+            
+            if (value instanceof Base) {
+                value.on("update", data => {
+                    data.name = name;
+                    model.emit("update", data);
+                });
             }
             
             model[name] = value;

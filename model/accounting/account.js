@@ -46,7 +46,7 @@ class Account extends Base {
                 this.emit("update", { account: options.id, type: "position", field: data.contract.conId, value: data });
             }
             else {
-                this.emit("error", "Unrecognized account update " + JSON.stringify(data));
+                this.emit("error", new Error("Unrecognized account update " + JSON.stringify(data)));
             }
         }).on("end", () => {
             if (options.trades) {
