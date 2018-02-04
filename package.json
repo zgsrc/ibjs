@@ -8,6 +8,7 @@
     "example": "example"
   },
   "dependencies": {
+    "hyperactiv": "^0.1.4",
     "ib": "^0.2.4",
     "luxon": "^0.3.1",
     "sugar": "^2.0.4",
@@ -31,6 +32,6 @@
   },
   "homepage": "https://github.com/triploc/ibjs#readme",
   "scripts": {
-    "browserify": "browserify browser/browserify.js -o browser/ib.js"
+    "browserify": "browserify client.js -o client.browser.js"
   }
 }

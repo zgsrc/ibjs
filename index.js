@@ -8,6 +8,7 @@ const id = exports.id = 0,
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),
       Session = exports.Session = require("./model/session"),
+      container = exports.container = require("./model/container"),
       flags = exports.flags = require("./model/flags"),
       studies = exports.studies = require("./model/marketdata/studies");
 
