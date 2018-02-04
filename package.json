@@ -17,9 +17,7 @@
   "keywords": [
     "interactive brokers",
     "ib",
-    "ib api",
-    "brokerage api",
-    "trading api"
+    "ib api"
   ],
   "author": "Jonathan Hollinger",
   "license": "MIT",

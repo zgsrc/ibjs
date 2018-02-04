@@ -4,9 +4,6 @@ const { computed, observe, dispose } = require("hyperactiv");
 class Container extends Base {
     constructor(reactive) {
         super();
-        
-        Object.defineProperty(this, "errorCapture", { value: errorCapture });
-        
         if (reactive) {
             let _this = observe(this, { deep: true, batch: true });
             Object.defineProperty(this, "rule", { value: fn => computed(fn) });
