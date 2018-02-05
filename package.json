@@ -8,8 +8,10 @@
     "example": "example"
   },
   "dependencies": {
+    "commander": "^2.13.0",
     "hyperactiv": "^0.1.4",
     "ib": "^0.2.4",
+    "line-by-line": "^0.1.6",
     "luxon": "^0.3.1",
     "sugar": "^2.0.4",
     "xml2js": "^0.4.19"
