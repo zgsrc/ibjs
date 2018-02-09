@@ -44,6 +44,10 @@ class Orders extends Subscription {
         return new Promise((yes, no) => this.subscriptions[0].send().once("load", yes).once("error", no));
     }
     
+    nextOrderId(count) {
+        this.service.orderIds(count > 0 ? count : 1);
+    }
+    
     newOrder(contract, data) {
         return new Order(this, contract, data);
     }

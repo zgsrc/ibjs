@@ -2,6 +2,10 @@
 
 require("sugar").extend();
 
+const connectMessage = "Make sure TWS or IB Gateway is running and you are logged in.\n" + 
+    "Then check IB software is configured to accept API connections over the correct port.\n" +
+    "If all else fails, try restarting TWS or IB Gateway.";
+
 const id = exports.id = 0,
       IB = exports.IB = require("ib"),
       Service = exports.Service = require("./service/service"),
@@ -36,10 +40,6 @@ const session = exports.session = options => {
 const proxy = exports.proxy = (socket, dispatch) => {
     return new Service(new Proxy(socket), dispatch);
 };
-
-const connectMessage = "Make sure TWS or IB Gateway is running and you are logged in. " + 
-    "Then check IB software is configured to accept API connections over the correct port. " +
-    "If all else fails, try restarting TWS or IB Gateway.";
 
 const open = exports.open = (options, cb) => {
     if (typeof options == "function" && cb == null) {
@@ -84,10 +84,27 @@ const open = exports.open = (options, cb) => {
 };
 
 const start = exports.start = options => {
+    if (Object.isNumber(options)) {
+        options = { port: options };
+    }
+    
+    options = options || { };
+    
     return new Promise((yes, no) => {
-        open(options, (err, session) => {
-            if (err) no(err);
-            else yes(session);
-        });
+        let timeout = setTimeout(() => {
+            no(new Error("Connection timeout. " + connectMessage));
+        }, options.timeout || 2500);
+        
+        session(options).once("ready", sess => {
+            clearTimeout(timeout);
+            yes(sess);
+        }).once("error", err => {
+            clearTimeout(timeout);
+            no(err);
+        }).service.socket.once("error", err => {
+            clearTimeout(timeout);
+            if (err.code == "ECONNREFUSED") no(new Error("Connection refused. " + connectMessage));
+            else no(err);
+        }).connect();
     });
 };

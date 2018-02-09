@@ -25,9 +25,9 @@ delete config.tws;
 const context = { 
     ibjs: ibjs,
     info: msg => console.log(chalk.gray(msg)),
-    warn: msg => console.log(chalk.yellow(msg)),
-    error: err => {
-        console.log();
+    warn: msg => console.log(chalk.yellow(msg.message || msg)),
+    error: (err, nobreak) => {
+        if (!nobreak) console.log();
         if (err.stack) console.log(chalk.red(err.stack));
         else console.log(chalk.red(err.message || err));
     }
@@ -62,10 +62,13 @@ ibjs.start(config).then(session => {
     let files = config.args;
     context.session = session;
     if (files && files.length) {
-        files.forEach(file => {
-            context.info("Loading " + file);
-            require(file)(context)
-        });
+        Promise.all(files.map(async file => {
+            context.info("Loading module " + file);
+            await require(file)(context);
+        })).then(() => {
+            context.info("All modules loaded successfully.");
+            
+        }).catch(context.error);
     }
     
     if (config.repl) {
@@ -75,7 +78,7 @@ ibjs.start(config).then(session => {
         terminal.on("exit", () => session.close());
     }
 }).catch(err => {
-    context.error(err);
+    context.error(err.message, true);
     process.exit(1);
 });
 

@@ -41,6 +41,7 @@ class Service {
         
         this.autoOpenOrders = autoBind => {
             this.socket.reqAutoOpenOrders(autoBind || false);
+            this.lastAutoOpenOrders = (autoBind || false);
         };
         
         this.orderIds = count => {

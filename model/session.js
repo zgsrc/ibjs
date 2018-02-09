@@ -17,18 +17,15 @@ class Session extends Subscription {
     constructor(service, options) {
         super({ service: service });
         
-        if (options.id === 0) {
-            Object.defineProperty(this, "master", { value: true, enumerable: true });
-        }
-        
-        this.clientId = options.id;
         this.connectivity = { };
         this.bulletins = [ ];
         this.state = "disconnected";
         
         this.service.system().on("data", data => {
             if (data.orderId) {
-                this.orders.nextOrderId = data.orderId;
+                if (this.orders) {
+                    this.orders.nextOrderId = data.orderId;
+                }
             }
             else if (data.code == 321) {
                 if (!this.readOnly && data.message.indexOf("Read-Only") > 0) {
@@ -48,14 +45,14 @@ class Session extends Subscription {
                 this.state = "disconnected";
                 this.emit("disconnected");
             }
-            else if (data.code >= 2103 && data.code <= 2106) {
+            else if (data.code >= 2103 && data.code <= 2106 || data.code == 2119) {
                 let name = data.message.from(data.message.indexOf(" is ") + 4).trim();
                 name = name.split(":");
 
                 let status = name[0];
                 name = name.from(1).join(":");
 
-                this.connectivity[name] = { status: status, time: Date.create() };   
+                this.connectivity[name] = { name: name, status: status, time: Date.create() };   
                 this.emit("connectivity", this.connectivity[name]);
             }
             else if (data.code >= 2107 && data.code <= 2108) {
@@ -65,12 +62,15 @@ class Session extends Subscription {
                 let status = name[0];
                 name = name.from(1).join(".");
 
-                this.connectivity[name] = { status: status, time: Date.create() };   
+                this.connectivity[name] = { name: name, status: status, time: Date.create() };   
                 this.emit("connectivity", this.connectivity[name]);
             }
             else if (data.code == 2148) {
                 this.bulletins.push(data);
                 this.emit("bulletin", data);
+            }
+            else if (data.code >= 2000 && data.code < 3000) {
+                this.emit("warning", data);
             }
             else {
                 this.emit("error", data);
@@ -78,33 +78,29 @@ class Session extends Subscription {
         });
         
         this.service.socket.on("connected", () => {
+            this.state = "connected";
+            this.emit("connected", this.service.socket);
+            
             if (options.orders) {
                 this.orders = new Orders(this);
-                this.orders.on("load", () => this.emit("orders"));
-                
-                if (this.master) {
+                if (this.clientId === 0 && options.orders != "local") {
                     this.service.autoOpenOrders(true);
+                    this.interactiveOrders = true;
                 }
 
                 if (options.orders === true || options.orders == "stream") {
                     this.orders.stream();    
                 }
-                
-                //this.service.orderIds(1); // Force read-only test.
+            }
+            
+            if (options.frozen) {
+                this.useFrozenMarketData = true;
             }
             
             this.subscriptions.push(this.service.newsBulletins(true).on("data", data => {
                 this.bulletins.push(data);
                 this.emit("bulletin", data);
-            }).on("error", err => {
-                this.emit("error", err);
-            }).send());
-            
-            this.displayGroups = new DisplayGroups(this);
-            this.displayGroups.on("load", () => this.emit("displayGroups"));
-            
-            this.state = "connected";
-            this.emit("connected", this.service.socket);
+            }).on("error", err => this.emit("error", err)).send());
         }).on("disconnected", () => {
             this.state = "disconnected";
             this.emit("disconnected");
@@ -119,23 +115,20 @@ class Session extends Subscription {
         if (exit) process.exit();
     }
     
-    async system() {
-        return new Promise((yes, no) => {
-            let count = 0, timer = setInterval(() => {
-                if (count > 20) no(new Error("Timeout waiting for system features to load in session."));
-                else if (this.displayGroups.loaded && Object.keys(this.connectivity).length || this.readOnly) {
-                    clearInterval(timer);
-                    yes();
-                }
-                else {
-                    count++;
-                }
-            }, 250);
-        }); 
+    get clientId() {
+        return this.service.socket._controller.options.clientId;
     }
     
-    get clientId() {
-        return this.service.socket.clientId;
+    get useFrozenMarketData() {
+        return this.service.lastMktDataType == constants.MARKET_DATA_TYPE.frozen;
+    }
+    
+    set useFrozenMarketData(value) {
+        this.service.mktDataType(value ? constants.MARKET_DATA_TYPE.frozen : constants.MARKET_DATA_TYPE.live);
+    }
+    
+    async displayGroups() {
+        return new Promise((yes, no) => (new DisplayGroups(this)).once("load", yes).once("error", no));
     }
     
     async account(options) {
@@ -182,14 +175,6 @@ class Session extends Subscription {
         });
     }
     
-    get frozen() {
-        return this.service.lastMktDataType == constants.MARKET_DATA_TYPE.frozen;
-    }
-    
-    set frozen(value) {
-        this.service.mktDataType(value ? constants.MARKET_DATA_TYPE.frozen : constants.MARKET_DATA_TYPE.live);
-    }
-
     async contract(description) {
         let summary = contract.parse(description);
         return await contract.first(this, summary);
