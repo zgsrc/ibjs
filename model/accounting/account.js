@@ -1,9 +1,9 @@
 "use strict";
 
-const Base = require("../base"),
-      Currency = require("../currency");
+const Subscription = require("../subscription"),
+      Currency = require("./currency");
 
-class Account extends Base {
+class Account extends Subscription {
     
     /* string id, boolean trades */
     constructor(session, options) {
@@ -12,14 +12,13 @@ class Account extends Base {
         if (typeof options == "string") options = { id: options, orders: true, trades: true };
         if (typeof options.id != "string") throw new Error("Account id is required.");
         
-        this.balances = new Base(session);
-        this.positions = new Base(session);
         this.orders = session.orders.stream();
         this.orders.on("update", data => this.emit("update", data));
         
-        this._exclude.push("loaded");
+        this.balances = { };
+        this.positions = { };
         
-        let account = this.service.accountUpdates(options.id).on("data", data => {
+        this.subscriptions.push(this.service.accountUpdates(options.id).on("data", data => {
             if (data.key) {
                 let value = data.value;
                 if (/^\-?[0-9]+(\.[0-9]+)?$/.test(value)) value = parseFloat(value);
@@ -63,16 +62,9 @@ class Account extends Base {
             }
         }).on("error", err => {
             this.emit("error", err);
-        }).send();
+        }).send());
         
         this.on("load", () => this.loaded = true);
-        
-        this.cancel = () => {
-            account.cancel();
-            if (this.trades) {
-                this.trades.cancel();
-            }
-        };
     }
     
 }

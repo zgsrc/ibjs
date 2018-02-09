@@ -1,6 +1,6 @@
 {
   "name": "ibjs",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "Interactive Brokers library framework build atop the native javascript API.",
   "main": "index.js",
   "directories": {
@@ -8,8 +8,9 @@
     "example": "example"
   },
   "dependencies": {
-    "commander": "^2.13.0",
-    "hyperactiv": "^0.1.4",
+    "@nx-js/observer-util": "^4.0.1",
+    "chalk": "^2.3.0",
+    "commander": "^2.14.1",
     "ib": "^0.2.4",
     "line-by-line": "^0.1.6",
     "luxon": "^0.3.1",
@@ -32,6 +33,7 @@
   },
   "homepage": "https://github.com/triploc/ibjs#readme",
   "scripts": {
-    "browserify": "browserify client.js -o client.browser.js"
+    "browserify": "browserify client.js -o client.browser.js",
+    "start": "node run --repl"
   }
 }

@@ -1,10 +1,10 @@
 "use strict";
 
-const ContractBased = require("./contractbased"),
+const Subscription = require("../subscription"),
       studies = require("./studies"),
-      flags = require("../flags");
+      constants = require("../constants");
 
-class Bars extends ContractBased {
+class Bars extends Subscription {
     
     constructor(session, contract, charts, barSize) {
         super(session, contract);

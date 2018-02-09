@@ -8,15 +8,16 @@ const id = exports.id = 0,
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),
       Session = exports.Session = require("./model/session"),
-      container = exports.container = require("./model/container"),
-      flags = exports.flags = require("./model/flags"),
+      Calculator = exports.Calculator = require("./model/calculator"),
+      constants = exports.constants = require("./model/constants"),
       studies = exports.studies = require("./model/marketdata/studies");
 
 const session = exports.session = options => {
     options = options || { };
-
+    options.id = options.id || exports.id++;
+    
     let ib = options.ib || new IB({
-        clientId: options.id || exports.id++,
+        clientId: options.id,
         host: options.host || "127.0.0.1",
         port: options.port || 4001
     });
@@ -25,67 +26,68 @@ const session = exports.session = options => {
         ib.on("all", options.trace);
     }
     
-    return new Session(new Service(ib, options.dispatch || new Dispatch()));
+    if (typeof options.orders == "undefined") {
+        options.orders = "auto";
+    }
+    
+    return new Session(new Service(ib, options.dispatch || new Dispatch()), options);
 };
 
 const proxy = exports.proxy = (socket, dispatch) => {
-    return new Session(new Proxy(socket), dispatch);
+    return new Service(new Proxy(socket), dispatch);
 };
+
+const connectMessage = "Make sure TWS or IB Gateway is running and you are logged in. " + 
+    "Then check IB software is configured to accept API connections over the correct port. " +
+    "If all else fails, try restarting TWS or IB Gateway.";
 
 const open = exports.open = (options, cb) => {
     if (typeof options == "function" && cb == null) {
         cb = options;
         options = { };
     }
+    else if (Object.isNumber(options)) {
+        options = { port: options };
+    }
     
     options = options || { };
     
     let timeout = setTimeout(() => {
-        cb(new Error(
-            "Connection timeout. Make sure TWS or IB Gateway is running and you are logged in. " + 
-            "Then check IB software is configured to accept API connections over the correct port. " +
-            "If all else fails, try restarting TWS or IB Gateway."
-        ));
-        
+        cb(new Error("Connection timeout. " + connectMessage));
         cb = null;
-    }, options.timeout || 500);
+    }, options.timeout || 2500);
     
+    let done = false;
     session(options).once("ready", sess => {
         clearTimeout(timeout);
-        if (cb) {
+        if (cb && !done) {
+            done = true;
             cb(null, sess);
-            cb = null;
         }
+        else done = true;
     }).once("error", err => {
         clearTimeout(timeout);
-        if (cb) {
-            cb(err);
-            cb = null;
+        if (cb && !done) {
+            done = true;
+            cb(null, sess);
         }
+        else done = true;
     }).service.socket.once("error", err => {
         clearTimeout(timeout);
-        if (cb) {
-            cb(err);
-            cb = null;
+        if (cb && !done) {
+            done = true;
+            if (err.code == "ECONNREFUSED") cb(new Error("Connection refused. " + connectMessage));
+            else cb(err);
         }
+        else done = true;
     }).connect();
 };
 
 const start = exports.start = options => {
-    if (Object.isNumber(options)) {
-        options = { port: options };
-    }
-    
     return new Promise((yes, no) => {
         open(options, (err, session) => {
             if (err) no(err);
-            else {
-                if (!options || !options.errors) {
-                    session.on("error", no);
-                }
-                
-                yes(session);
-            }
+            else yes(session);
         });
     });
-}
+};

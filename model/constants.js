@@ -16,6 +16,111 @@ const HISTORICAL = {
 
 exports.HISTORICAL = HISTORICAL;
 
+const BarSizes = {
+    "5 secs": {
+        text: "5 secs",
+        integer: 5,
+        duration: "3600 S"
+    },
+    "10 secs": {
+        text: "10 secs",
+        integer: 10,
+        duration: "7200 S"
+    },
+    "15 secs": {
+        text: "15 secs",
+        integer: 15,
+        duration: "10800 S"
+    },
+    "30 secs": {
+        text: "30 secs",
+        integer: 30,
+        duration: "1 D"
+    },
+    "1 min": {
+        text: "1 min",
+        integer: 60,
+        duration: "2 D"
+    },
+    "2 mins": {
+        text: "2 mins",
+        integer: 120,
+        duration: "3 D"
+    },
+    "3 mins": {
+        text: "3 mins",
+        integer: 180,
+        duration: "4 D"
+    },
+    "5 mins": {
+        text: "5 mins",
+        integer: 300,
+        duration: "1 W"
+    },
+    "10 mins": {
+        text: "10 mins",
+        integer: 600,
+        duration: "2 W"
+    },
+    "15 mins": {
+        text: "15 mins",
+        integer: 900,
+        duration: "2 W"
+    },
+    "20 mins": {
+        text: "20 mins",
+        integer: 1200,
+        duration: "3 W"
+    },
+    "30 mins": {
+        text: "30 mins",
+        integer: 1800,
+        duration: "1 M"
+    },
+    "1 hour": {
+        text: "1 hour",
+        integer: 3600,
+        duration: "2 M"
+    },
+    "2 hours": {
+        text: "2 hours",
+        integer: 7200,
+        duration: "2 M"
+    },
+    "3 hours": {
+        text: "3 hours",
+        integer: 10800,
+        duration: "3 M"
+    },
+    "4 hours": {
+        text: "4 hours",
+        integer: 14400,
+        duration: "4 M"
+    },
+    "8 hours": {
+        text: "8 hours",
+        integer: 28800,
+        duration: "8 M"
+    },
+    "1 day": {
+        text: "1 day",
+        integer: 3600 * 24,
+        duration: "1 Y"
+    },
+    "1 week": {
+        text: "1W",
+        integer: 3600 * 24 * 7,
+        duration: "2 Y"
+    },
+    "1 month": {
+        text: "1M",
+        integer: 3600 * 24 * 7 * 30,
+        duration: "5 Y" 
+    }
+};
+
+exports.BAR_SIZES = BarSizes;
+
 const ACCOUNT_TAGS = {
     accountType: "AccountType",
     netLiquidation: "NetLiquidation",

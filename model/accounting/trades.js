@@ -1,13 +1,11 @@
 "use strict";
 
-const Base = require("../base");
+const Subscription = require("../subscription");
 
-class Trades extends Base {
+class Trades extends Subscription {
     
     constructor(session, options) {
         super(session);
-
-        this._exclude.append([ "loaded" ])
         
         options = options || { };
         
@@ -20,7 +18,7 @@ class Trades extends Base {
         if (options.symbol) filter.symbol = options.symbol;
         if (options.time) filter.time = options.time;
         
-        let trades = this.service.executions(filter).on("data", data => {
+        this.subscriptions.push(this.service.executions(filter).on("data", data => {
             if (!this[data.exec.permId]) this[data.exec.permId] = { };
             this[data.exec.permId][data.exec.execId] = data;
             this.emit("update", { account: data.exec.acctNumber, type: "trade", field: data.exec.permId, value: data.exec });
@@ -29,9 +27,7 @@ class Trades extends Base {
         }).on("end", () => {
             this.loaded = true;
             this.emit("load");
-        }).send();
-        
-        this.cancel = () => trades.cancel();
+        }).send());
     }
     
 }

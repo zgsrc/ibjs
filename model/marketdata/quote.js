@@ -1,12 +1,12 @@
 "use strict";
 
-const ContractBased = require("./contractbased"),
-      flags = require("../flags"),
-      TICKS = flags.QUOTE_TICK_TYPES;
+const Subscription = require("../subscription"),
+      constants = require("../constants"),
+      TICKS = constants.QUOTE_TICK_TYPES;
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}-{hh}:{mm}:{ss}');
 
-class Quote extends ContractBased {
+class Quote extends Subscription {
     
     constructor(session, contract) {
         super(session, contract);
@@ -14,8 +14,7 @@ class Quote extends ContractBased {
         this.loaded = false;
         this.streaming = false;
         
-        this._fieldTypes = Array.create();
-        this._exclude.push("_fieldTypes", "loaded", "streaming");
+        Object.defineProperty(this, "_fieldTypes", { value: [ ], enumerable: false });
     }
     
     addFieldTypes(fieldTypes) {
@@ -93,10 +92,7 @@ class Quote extends ContractBased {
     
     async stream() {
         let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false, false);
-        this.cancel = () => {
-            req.cancel();
-            this.streaming = false;
-        };
+        this.subscriptions.push(req);
         
         return new Promise((yes, no) => {
             let fail = err => {
@@ -121,6 +117,11 @@ class Quote extends ContractBased {
                 }
             }).once("error", fail).send();
         });
+    }
+    
+    cancel() {
+        this.streaming = false;
+        super.cancel();
     }
     
     tickBuffer(duration) {
@@ -177,10 +178,10 @@ function parseQuotePart(datum) {
     return { key: key.camelize(false), value: value };
 }
 
-class FieldBuffer extends ContractBased {
+class FieldBuffer extends Subscription {
     
     constructor(quote, duration, field) {
-        super(quote.session, quote.contract);
+        super();
         
         this.duration = duration;
         this.history = [ ];

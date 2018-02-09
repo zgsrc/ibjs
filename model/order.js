@@ -1,38 +1,50 @@
 "use strict";
 
-const ContractBased = require("./contractbased"),
-      flags = require("../flags");
+const Subscription = require("./subscription"),
+      constants = require("./constants");
 
-class Order extends ContractBased {
+class Order extends Subscription {
     
     constructor(session, contract, data) {
         super(session, contract);
         
-        Object.defineProperty(this, "children", { value: [ ] });
-        
         this.ticket = (data ? data.ticket : null) || { 
-            tif: flags.TIME_IN_FORCE.day,
+            tif: constants.TIME_IN_FORCE.day,
             outsideRth: true,
             totalQuantity: 1,
-            action: flags.SIDE.buy,
-            orderType: flags.ORDER_TYPE.market,
+            action: constants.SIDE.buy,
+            orderType: constants.ORDER_TYPE.market,
             transmit: false
         };
         
         this.state = data ? data.state : { };
+        
         this.orderId = data ? data.orderId : null;
+    }
+    
+    save() {
+        return this.session.orders.placeOrder(this);
+    }
+    
+    transmit() {
+        this.ticket.transmit = true;
+        this.save();
+    }
+    
+    cancel() {
+        this.session.orders.cancelOrder(this);
     }
     
     or(cb) {
         if (this.ocaGroup == null) {
             let group = Math.floor(Math.random * 1000000).toString();
             this.ocaGroup = group;
-            this.oraType = flags.OCA_TYPE.cancel;
+            this.oraType = constants.OCA_TYPE.cancel;
         }
         
-        let siblingOrder = new Order(this.session, this.contract);
+        let siblingOrder = new Order(this.orders, this.contract);
         siblingOrder.ocaGroup = this.ocaGroup;
-        siblingOrder.ocaType = flags.OCA_TYPE.cancel;
+        siblingOrder.ocaType = constants.OCA_TYPE.cancel;
         
         if (cb && typeof cb == "function") {
             cb(siblingOrder);
@@ -44,7 +56,11 @@ class Order extends ContractBased {
     }
     
     then(cb) {
-        let childOrder = new Order(this.session, this.contract);
+        if (!this.children) {
+            Object.defineProperty(this, "children", { value: [ ] });
+        }
+        
+        let childOrder = new Order(this.orders, this.contract);
         childOrder.parent = this;
         this.children.push(childOrder);
         
@@ -63,7 +79,7 @@ class Order extends ContractBased {
     trade(qty, show) {
         if (qty != null) {
             this.ticket.totalQuantity = Math.abs(qty);
-            this.ticket.action = qty > 0 ? flags.SIDE.buy : flags.SIDE.sell;
+            this.ticket.action = qty > 0 ? constants.SIDE.buy : constants.SIDE.sell;
         }
         
         if (show != null) {
@@ -77,7 +93,7 @@ class Order extends ContractBased {
     buy(qty, show) {
         if (qty != null) {
             this.ticket.totalQuantity = qty;
-            this.ticket.action = flags.SIDE.buy;    
+            this.ticket.action = constants.SIDE.buy;    
         }
         
         if (show != null) {
@@ -91,7 +107,7 @@ class Order extends ContractBased {
     sell(qty, show) {
         if (qty != null) {
             this.ticket.totalQuantity = qty;
-            this.ticket.action = flags.SIDE.sell;
+            this.ticket.action = constants.SIDE.sell;
         }
         
         if (show != null) {
@@ -115,31 +131,31 @@ class Order extends ContractBased {
     // TIMEFRAME
     ////////////////////////////////////////
     goodToday() {
-        this.ticket.tif = flags.TIME_IN_FORCE.day;
+        this.ticket.tif = constants.TIME_IN_FORCE.day;
         return this;
     }
     
     goodUntilCancelled() {
-        this.ticket.tif = flags.TIME_IN_FORCE.goodUntilCancelled;
+        this.ticket.tif = constants.TIME_IN_FORCE.goodUntilCancelled;
         return this;
     }
     
     immediateOrCancel() {
-        this.ticket.tif = flags.TIME_IN_FORCE.immediateOrCancel;
+        this.ticket.tif = constants.TIME_IN_FORCE.immediateOrCancel;
         return this;
     }
     
     fillOrKill() {
-        this.ticket.tif = flags.TIME_IN_FORCE.fillOrKill;
+        this.ticket.tif = constants.TIME_IN_FORCE.fillOrKill;
         return this;
     }
     
     atTheOpen() {
-        this.ticket.tif = flags.TIME_IN_FORCE.open;
+        this.ticket.tif = constants.TIME_IN_FORCE.open;
     }
     
     auction() {
-        this.ticket.tif = flags.TIME_IN_FORCE.auction;
+        this.ticket.tif = constants.TIME_IN_FORCE.auction;
     }
     
     regularTradingHours() {
@@ -155,44 +171,44 @@ class Order extends ContractBased {
     }
     
     market() {
-        this.ticket.orderType = flags.ORDER_TYPE.market;
+        this.ticket.orderType = constants.ORDER_TYPE.market;
         return this;
     }
     
     marketProtect() {
-        this.ticket.orderType = flags.ORDER_TYPE.marketProtect;
+        this.ticket.orderType = constants.ORDER_TYPE.marketProtect;
         return this;
     }
     
     marketToLimit() {
-        this.ticket.orderType = flags.ORDER_TYPE.marketToLimit;
+        this.ticket.orderType = constants.ORDER_TYPE.marketToLimit;
         return this;
     }
     
     auction() {
-        this.ticket.orderType = flags.ORDER_TYPE.marketToLimit;
-        this.ticket.tif = flags.TIME_IN_FORCE.auction;
+        this.ticket.orderType = constants.ORDER_TYPE.marketToLimit;
+        this.ticket.tif = constants.TIME_IN_FORCE.auction;
     }
     
     marketIfTouched(price) {
-        this.ticket.orderType = flags.ORDER_TYPE.marketIfTouched;
+        this.ticket.orderType = constants.ORDER_TYPE.marketIfTouched;
         this.ticket.auxPrice = price;
         return this;
     }
     
     marketOnClose() {
-        this.ticket.orderType = flags.ORDER_TYPE.marketOnClose;
+        this.ticket.orderType = constants.ORDER_TYPE.marketOnClose;
         return this;
     }
     
     marketOnOpen() {
-        this.ticket.orderType = flags.ORDER_TYPE.market;
-        this.ticket.tif = flags.TIME_IN_FORCE.open;
+        this.ticket.orderType = constants.ORDER_TYPE.market;
+        this.ticket.tif = constants.TIME_IN_FORCE.open;
         return this;
     }
     
     limit(price, discretionaryAmount) {
-        this.ticket.orderType = flags.ORDER_TYPE.limit;
+        this.ticket.orderType = constants.ORDER_TYPE.limit;
         this.ticket.lmtPrice = price;
         if (discretionaryAmount) {
             this.ticket.discretionaryAmt = discretionaryAmount;
@@ -202,39 +218,39 @@ class Order extends ContractBased {
     }
     
     limitIfTouched(trigger, limit) {
-        this.ticket.orderType = flags.ORDER_TYPE.limitIfTouched;
+        this.ticket.orderType = constants.ORDER_TYPE.limitIfTouched;
         this.ticket.auxPrice = trigger;
         this.ticket.lmtPrice = limit;
         return this;
     }
     
     limitOnClose(price) {
-        this.ticket.orderType = flags.ORDER_TYPE.limitOnClose;
+        this.ticket.orderType = constants.ORDER_TYPE.limitOnClose;
         this.ticket.lmtPrice = price;
         return this;
     }
     
     limitOnOpen(price) {
-        this.ticket.orderType = flags.ORDER_TYPE.limit;
-        this.ticket.tif = flags.TIME_IN_FORCE.open;
+        this.ticket.orderType = constants.ORDER_TYPE.limit;
+        this.ticket.tif = constants.TIME_IN_FORCE.open;
         this.ticket.lmtPrice = price;
         return this;
     }
     
     stop(trigger) {
-        this.ticket.orderType = flags.ORDER_TYPE.stop;
+        this.ticket.orderType = constants.ORDER_TYPE.stop;
         this.ticket.auxPrice = trigger;
         return this;
     }
     
     stopProtect(trigger) {
-        this.ticket.orderType = flags.ORDER_TYPE.stopProtect;
+        this.ticket.orderType = constants.ORDER_TYPE.stopProtect;
         this.ticket.auxPrice = trigger;
         return this;
     }
     
     stopLimit(trigger, limit) {
-        this.ticket.orderType = flags.ORDER_TYPE.stopLimit;
+        this.ticket.orderType = constants.ORDER_TYPE.stopLimit;
         this.ticket.auxPrice = trigger;
         this.ticket.lmtPrice = limit;            
         return this;
@@ -271,7 +287,7 @@ class Order extends ContractBased {
     }
     
     ////////////////////////////////////////
-    // EXECUTION
+    // CONDITIONS
     ////////////////////////////////////////
     overridePercentageConstraints() {
         this.ticket.overridePercentageConstraints = true;
@@ -280,38 +296,6 @@ class Order extends ContractBased {
     
     whatIf() {
         this.ticket.whatIf = true;
-        return this;
-    }
-    
-    save() {
-        if (this.readOnly) {
-            throw new Error("Cannot modify read-only trade.");
-        }
-        
-        if (this.orderId == null) {
-            this.session.orders.assign(this);
-        }
-        
-        if (this.children.length) {
-            this.children.forEach(child => {
-                child.parentId = this.orderId;
-                delete child.parent;
-            });
-        }
-        
-        this.service.placeOrder(this.orderId, this.contract.summary, this.ticket).send();
-        return this;
-    }
-    
-    transmit() {
-        this.ticket.transmit = true;
-        this.save();
-        return this;
-    }
-    
-    cancel() {
-        if (!this.readOnly) this.service.cancelOrder(this.orderId);
-        else throw new Error("Cannot cancel read-only trade.");
         return this;
     }
     

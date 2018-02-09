@@ -1,15 +1,13 @@
 "use strict";
 
-const Base = require("../base");
+const Subscription = require("../subscription");
 
-class Positions extends Base {
+class Positions extends Subscription {
     
     constructor(session) {
         super(session);
 
-        this._exclude.append([ "loaded" ])
-        
-        let positions = this.service.positions().on("data", data => {
+        this.subscriptions.push(this.service.positions().on("data", data => {
             if (!this[data.contract.conId]) this[data.contract.conId] = { };
             this[data.contract.conId][data.accountName] = data;
             this.emit("update", { account: data.accountName, type: "position", field: data.contract.conId, value: data });
@@ -18,9 +16,7 @@ class Positions extends Base {
             this.emit("load");
         }).on("error", err => {
             this.emit("error", err);
-        }).send();
-        
-        this.cancel = () => positions.cancel();
+        }).send());
     }
     
 }

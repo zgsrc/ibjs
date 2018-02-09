@@ -7,7 +7,8 @@ class Request extends Events {
     constructor(dispatch, id, call, send, cancel, timeout, oneOff) {
         super();
         
-        this.dispatch = dispatch;
+        Object.defineProperty(this, "dispatch", { value: dispatch, enumerable: false });
+        
         this.id = id;
         this.call = call;
         
@@ -15,60 +16,63 @@ class Request extends Events {
             throw new Error("Send must be a function.");
         }
         else {
-            this.send = () => {
-                if (timeout) {
-                    if (typeof timeout != "number" || timeout <= 0) {
-                        throw new Error("Timeout must be a positive number.");
+            Object.defineProperty(this, "send", {
+                value: () => {
+                    if (timeout) {
+                        if (typeof timeout != "number" || timeout <= 0) {
+                            throw new Error("Timeout must be a positive number.");
+                        }
+
+                        this.timeout = setTimeout(() => {
+                            this.cancel();
+
+                            let timeoutError = new Error("Request " + (this.call || this.id) + " timed out.");
+                            timeoutError.timeout = timeout;
+                            this.emit("error", timeoutError, () => this.cancel());
+                        }, timeout);
+
+                        this.once("data", () => {
+                            if (oneOff) {
+                                this.cancel();
+                            }
+                            else if (this.timeout) {
+                                clearTimeout(this.timeout);
+                                delete this.timeout;
+                            }
+                        });
+
+                        this.once("end", () => {
+                            if (oneOff) {
+                                this.cancel();
+                            }
+                            else if (this.timeout) {
+                                clearTimeout(this.timeout);
+                                delete this.timeout;
+                            }
+                        });
+
+                        this.once("error", () => {
+                            if (oneOff) {
+                                this.cancel();
+                            }
+                            else if (this.timeout) {
+                                clearTimeout(this.timeout);
+                                delete this.timeout;
+                            }
+                        });
                     }
 
-                    this.timeout = setTimeout(() => {
-                        this.cancel();
+                    try {
+                        send(this);
+                    }
+                    catch (ex) {
+                        this.emit("error", ex);
+                    }
 
-                        let timeoutError = new Error("Request " + (this.call || this.id) + " timed out.");
-                        timeoutError.timeout = timeout;
-                        this.emit("error", timeoutError, () => this.cancel());
-                    }, timeout);
-
-                    this.once("data", () => {
-                        if (oneOff) {
-                            this.cancel();
-                        }
-                        else if (this.timeout) {
-                            clearTimeout(this.timeout);
-                            delete this.timeout;
-                        }
-                    });
-
-                    this.once("end", () => {
-                        if (oneOff) {
-                            this.cancel();
-                        }
-                        else if (this.timeout) {
-                            clearTimeout(this.timeout);
-                            delete this.timeout;
-                        }
-                    });
-
-                    this.once("error", () => {
-                        if (oneOff) {
-                            this.cancel();
-                        }
-                        else if (this.timeout) {
-                            clearTimeout(this.timeout);
-                            delete this.timeout;
-                        }
-                    });
-                }
-                
-                try {
-                    send(this);
-                }
-                catch (ex) {
-                    this.emit("error", ex);
-                }
-                
-                return this;
-            };
+                    return this;
+                },
+                enumerable: false
+            });
         }
         
         if (cancel) {

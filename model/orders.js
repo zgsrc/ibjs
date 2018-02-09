@@ -1,17 +1,16 @@
 "use strict";
 
-const Base = require("../base"),
-      Order = require("../marketdata/order");
+const Subscription = require("./subscription"),
+      Order = require("./order");
 
-class Orders extends Base {
+class Orders extends Subscription {
     
     constructor(session) {
         super(session);
         
-        this._exclude.append([ "nextOrderId", "loaded" ]);
         this.nextOrderId = null;
         
-        this._subscription = this.service.allOpenOrders().on("data", data => {
+        this.subscriptions.push(this.service.allOpenOrders().on("data", data => {
             let id = data.orderId;
             if (id == 0) {
                 if (data.state) id = data.state.permId;
@@ -24,10 +23,10 @@ class Orders extends Base {
             }
             else {
                 if (data.ticket) this[id].ticket = data.ticket;
-                Object.merge(this[id].state, data.state);
+                if (data.state) this[id].state = data.state;
                 this[id].emit("update");
             }
-            
+
             if (data.orderId == 0) {
                 this[id].readOnly = true;
             }
@@ -38,27 +37,45 @@ class Orders extends Base {
             this.emit("load");
         }).on("error", err => {
             this.emit("error", err);
-        });
-        
-        this._exclude.push("_subscription");
-        
-        this.cancel = () => this._subscription.cancel();
+        }));
     }
     
-    stream() {
-        this._subscription.send();
-        return this;
+    async stream() {
+        return new Promise((yes, no) => this.subscriptions[0].send().once("load", yes).once("error", no));
     }
     
-    assign(order) {
+    newOrder(contract, data) {
+        return new Order(this, contract, data);
+    }
+    
+    placeOrder(order) {
+        if (order.readOnly) {
+            throw new Error("Cannot modify read-only trade.");
+        }
+        
         if (order.orderId == null) {
             order.orderId = this.nextOrderId;
             this[order.orderId] = order;
         }
+
+        if (order.children.length) {
+            order.children.forEach(child => {
+                child.parentId = order.orderId;
+                delete child.parent;
+            });
+        }
+        
+        this.service.placeOrder(order.orderId, order.contract.summary, order.ticket).send();
+        
+        return order;
     }
     
-    cancel() {
-        this._subscription.cancel();
+    cancelOrder(order) {
+        if (order && order.orderId) {
+            if (!order.readOnly) this.session.service.cancelOrder(order.orderId);
+            else throw new Error("Cannot cancel read-only trade.");
+        }
+        else throw new Error("Order has not been placed.");
     }
     
     cancelAllOrders() {

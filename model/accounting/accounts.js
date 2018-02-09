@@ -1,16 +1,14 @@
 "use strict";
 
-const Base = require("../base"),
-      flags = require("../flags"),
-      Currency = require("../currency");
+const Subscription = require("../subscription"),
+      constants = require("../constants"),
+      Currency = require("./currency");
 
-class Accounts extends Base {
+class Accounts extends Subscription {
     
     /* string group, array tags, boolean positions */
     constructor(session, options) {
         super(session);
-
-        this._exclude.push("orders", "trades", "loaded");
         
         if (options == null) {
             options = { 
@@ -22,19 +20,13 @@ class Accounts extends Base {
         this.orders = session.orders.stream();
         this.orders.on("update", data => this.emit("update", data));
         
-        let positions = null, summary = this.service.accountSummary(
+        this.subscriptions.push(this.service.accountSummary(
             options.group || "All", 
-            options.tags || Object.values(flags.ACCOUNT_TAGS).join(',')
+            options.tags || Object.values(constants.ACCOUNT_TAGS).join(',')
         ).on("data", datum => {
             if (datum.account && datum.tag) {
                 let id = datum.account;
-                if (this[id] == null) {
-                    this[id] = { 
-                        balances: new Base(session),
-                        positions: new Base(session) 
-                    };
-                }
-
+                if (this[id] == null) this[id] = { balances: { }, positions: { } };
                 if (datum.tag) {
                     var value = datum.value;
                     if (/^\-?[0-9]+(\.[0-9]+)?$/.test(value)) value = parseFloat(value);
@@ -55,8 +47,7 @@ class Accounts extends Base {
             }
         }).on("end", cancel => {
             if (options.positions) {
-                positions = this.service.positions();
-                positions.on("data", data => {
+                this.subscriptions.push(this.service.positions().on("data", data => {
                     this[data.accountName].positions[data.contract.conId] = data;
                     this.emit("update", { account: data.accountName, type: "position", field: data.contract.conId, value: data });
                 }).on("end", cancel => {
@@ -73,7 +64,7 @@ class Accounts extends Base {
                     }
                 }).on("error", err => {
                     this.emit("error", err);
-                }).send();
+                }).send());
             }
             else {
                 if (options.trades) {
@@ -91,15 +82,9 @@ class Accounts extends Base {
             }
         }).on("error", err => {
             this.emit("error", err);
-        }).send();
+        }).send());
         
         this.on("load", () => this.loaded = true);
-        
-        this.cancel = () => {
-            summary.cancel();
-            if (positions) positions.cancel();
-            if (this.trades) this.trades.cancel();
-        };
     }
     
 }

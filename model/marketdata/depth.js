@@ -1,15 +1,11 @@
 "use strict";
 
-const ContractBased = require("./contractbased");
+const Subscription = require("../subscription");
 
-class Depth extends ContractBased {
+class Depth extends Subscription {
     
     constructor(session, contract) {
         super(session, contract);
-        
-        this._exclude.push("_subscriptions");
-        this._subscriptions = [ ];
-        
         this.exchanges = [ ];
         this.bids = { };
         this.offers = { };
@@ -35,10 +31,7 @@ class Depth extends ContractBased {
                     no(err);
                 };
                 
-                let req = this.session.service.mktDepth(copy, rows || 5);
-                this._subscriptions.push(req);
-                
-                req.on("data", datum => {
+                this.subscriptions.push(this.session.service.mktDepth(copy, rows || 5).on("data", datum => {
                     if (datum.side == 1) this.bids[exchange][datum.position] = datum;
                     else this.offers[exchange][datum.position] = datum;
                     this.lastUpdate = Date.create();
@@ -52,18 +45,18 @@ class Depth extends ContractBased {
                     });
                     
                     yes(this);
-                }).once("error", fail).send();
+                }).once("error", fail).send());
             }
         });
     }
     
     unsubscribe(exchange) {
         let idx = this.exchanges.indexOf(exchange),
-            req = this._subscriptions[idx];
+            req = this.subscriptions[idx];
         
         req.cancel();
         
-        this._subscriptions.remove(req);
+        this.subscriptions.remove(req);
         this.exchanges.remove(exchange);
         delete this.bids[exchange];
         delete this.offers[exchange];
@@ -104,9 +97,8 @@ class Depth extends ContractBased {
     }
     
     cancel() {
-        this._subscriptions.map("cancel");
-        this._subscriptions = [ ];
         this.streaming = false;
+        super.cancel();
     }
     
 }
