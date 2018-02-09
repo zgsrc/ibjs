@@ -81,17 +81,6 @@ class Session extends Subscription {
             this.state = "connected";
             this.emit("connected", this.service.socket);
             
-            if (options.orders) {
-                this.orders = new Orders(this);
-                if (this.clientId === 0 && options.orders != "local") {
-                    this.service.autoOpenOrders(true);
-                }
-
-                if (options.orders === true || options.orders == "stream") {
-                    this.orders.stream();    
-                }
-            }
-            
             if (options.frozen) {
                 this.useFrozenMarketData = true;
             }
@@ -103,9 +92,34 @@ class Session extends Subscription {
         }).on("disconnected", () => {
             this.state = "disconnected";
             this.emit("disconnected");
-        }).once("managedAccounts", data => {
+        }).once("managedAccounts", async data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
             this.emit("ready", this);
+            
+            if (options.orders) {
+                this.orders = new Orders(this);
+                if (this.clientId === 0 && options.orders != "local") {
+                    this.service.autoOpenOrders(true);
+                }
+
+                if (options.orders === true || options.orders == "stream") {
+                    await this.orders.stream();
+                }
+                
+                if (this.orders.nextOrderId !== null) {
+                    this.emit("load", this);
+                }
+                else {
+                    let poller = setInterval(() => {
+                        if (this.orders.nextOrderId !== null) {
+                            clearInterval(poller);
+                            this.emit("load", this);
+                        }
+                    }, 50);
+                    
+                    this.orders.nextOrderId();
+                }
+            }
         });
     }
     

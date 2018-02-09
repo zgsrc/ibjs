@@ -36,11 +36,13 @@ class Orders extends Subscription {
             this.loaded = true;
             this.emit("load");
         }).on("error", err => {
+            this.streaming = false;
             this.emit("error", err);
         }));
     }
     
     async stream() {
+        this.streaming = true;
         return new Promise((yes, no) => this.subscriptions[0].send().once("load", yes).once("error", no));
     }
     
@@ -84,6 +86,11 @@ class Orders extends Subscription {
     
     cancelAllOrders() {
         this.service.globalCancel();
+    }
+    
+    cancel() {
+        this.streaming = false;
+        super.cancel();
     }
     
 }
