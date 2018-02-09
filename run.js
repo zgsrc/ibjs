@@ -24,10 +24,13 @@ delete config.tws;
 
 const context = { 
     ibjs: ibjs,
-    info: msg => console.log(chalk.gray(msg)),
-    warn: msg => console.log(chalk.yellow(msg.message || msg)),
-    error: (err, nobreak) => {
-        if (!nobreak) console.log();
+    info: msg => {
+        console.log(chalk.gray(msg));
+    },
+    warn: (msg) => {
+        console.log(chalk.yellow(JSON.stringify(msg)));
+    },
+    error: (err) => {
         if (err.stack) console.log(chalk.red(err.stack));
         else console.log(chalk.red(err.message || err));
     }
