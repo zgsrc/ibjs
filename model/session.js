@@ -85,7 +85,6 @@ class Session extends Subscription {
                 this.orders = new Orders(this);
                 if (this.clientId === 0 && options.orders != "local") {
                     this.service.autoOpenOrders(true);
-                    this.interactiveOrders = true;
                 }
 
                 if (options.orders === true || options.orders == "stream") {

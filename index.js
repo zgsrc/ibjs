@@ -41,49 +41,7 @@ const proxy = exports.proxy = (socket, dispatch) => {
     return new Service(new Proxy(socket), dispatch);
 };
 
-const open = exports.open = (options, cb) => {
-    if (typeof options == "function" && cb == null) {
-        cb = options;
-        options = { };
-    }
-    else if (Object.isNumber(options)) {
-        options = { port: options };
-    }
-    
-    options = options || { };
-    
-    let timeout = setTimeout(() => {
-        cb(new Error("Connection timeout. " + connectMessage));
-        cb = null;
-    }, options.timeout || 2500);
-    
-    let done = false;
-    session(options).once("ready", sess => {
-        clearTimeout(timeout);
-        if (cb && !done) {
-            done = true;
-            cb(null, sess);
-        }
-        else done = true;
-    }).once("error", err => {
-        clearTimeout(timeout);
-        if (cb && !done) {
-            done = true;
-            cb(null, sess);
-        }
-        else done = true;
-    }).service.socket.once("error", err => {
-        clearTimeout(timeout);
-        if (cb && !done) {
-            done = true;
-            if (err.code == "ECONNREFUSED") cb(new Error("Connection refused. " + connectMessage));
-            else cb(err);
-        }
-        else done = true;
-    }).connect();
-};
-
-const start = exports.start = options => {
+const open = exports.open = options => {
     if (Object.isNumber(options)) {
         options = { port: options };
     }
