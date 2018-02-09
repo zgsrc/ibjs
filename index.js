@@ -14,46 +14,40 @@ const id = exports.id = 0,
       Session = exports.Session = require("./model/session"),
       Calculator = exports.Calculator = require("./model/calculator"),
       constants = exports.constants = require("./model/constants"),
-      studies = exports.studies = require("./model/marketdata/studies");
+      studies = exports.studies = require("./model/marketdata/studies"),
+      proxy = exports.proxy = (socket, dispatch) => new Service(new Proxy(socket), dispatch);
 
-const session = exports.session = options => {
-    options = options || { };
-    options.id = options.id || exports.id++;
-    
-    let ib = options.ib || new IB({
-        clientId: options.id,
-        host: options.host || "127.0.0.1",
-        port: options.port || 4001
-    });
-    
-    if (options.trace && typeof options.trace == "function") {
-        ib.on("all", options.trace);
-    }
-    
-    if (typeof options.orders == "undefined") {
-        options.orders = "passive"; // "all", "local", "passive"
-    }
-    
-    return new Session(new Service(ib, options.dispatch || new Dispatch()), options);
-};
-
-const proxy = exports.proxy = (socket, dispatch) => {
-    return new Service(new Proxy(socket), dispatch);
-};
-
-const open = exports.open = options => {
+async function session(options) {
     if (Object.isNumber(options)) {
         options = { port: options };
     }
     
     options = options || { };
+    options.id = options.id || exports.id++;
     
     return new Promise((yes, no) => {
         let timeout = setTimeout(() => {
             no(new Error("Connection timeout. " + connectMessage));
         }, options.timeout || 2500);
         
-        session(options).once("ready", sess => {
+        let ib = options.ib || new IB({
+            clientId: options.id,
+            host: options.host || "127.0.0.1",
+            port: options.port || 4001
+        });
+
+        if (options.trace && typeof options.trace == "function") {
+            ib.on("all", options.trace);
+        }
+
+        if (typeof options.orders == "undefined") {
+            options.orders = "passive"; // "all", "local", "passive"
+        }
+
+        new Session(
+            new Service(ib, options.dispatch || new Dispatch()), 
+            options
+        ).once("load", sess => {
             clearTimeout(timeout);
             yes(sess);
         }).once("error", err => {
@@ -66,3 +60,5 @@ const open = exports.open = options => {
         }).connect();
     });
 };
+
+exports.session = session;

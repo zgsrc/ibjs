@@ -55,7 +55,7 @@ if (config.input) {
 }
 
 context.info("Connecting...");
-ibjs.open(config).then(session => {
+ibjs.session(config).then(session => {
     session.on("error", context.error)
            .on("connectivity", context.warn)
            .on("disconnected", () => context.info("Disconnected"));
