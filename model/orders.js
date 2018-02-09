@@ -5,12 +5,12 @@ const Subscription = require("./subscription"),
 
 class Orders extends Subscription {
     
-    constructor(session) {
+    constructor(session, local) {
         super(session);
         
         this.nextOrderId = null;
         
-        this.subscriptions.push(this.service.allOpenOrders().on("data", data => {
+        this.subscriptions.push((local ? this.service.openOrders() : this.service.allOpenOrders()).on("data", data => {
             let id = data.orderId;
             if (id == 0) {
                 if (data.state) id = data.state.permId;

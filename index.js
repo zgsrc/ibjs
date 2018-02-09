@@ -31,7 +31,7 @@ const session = exports.session = options => {
     }
     
     if (typeof options.orders == "undefined") {
-        options.orders = "auto";
+        options.orders = "passive"; // "all", "local", "passive"
     }
     
     return new Session(new Service(ib, options.dispatch || new Dispatch()), options);

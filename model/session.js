@@ -18,8 +18,14 @@ class Session extends Subscription {
         super({ service: service });
         
         this.connectivity = { };
+        
         this.bulletins = [ ];
+        
         this.state = "disconnected";
+        
+        if (options.orders) {
+            this.orders = new Orders(this, options.orders != "all");
+        }
         
         this.service.system().on("data", data => {
             if (data.orderId) {
@@ -80,11 +86,7 @@ class Session extends Subscription {
         this.service.socket.on("connected", () => {
             this.state = "connected";
             this.emit("connected", this.service.socket);
-            
-            if (options.frozen) {
-                this.useFrozenMarketData = true;
-            }
-            
+            if (options.frozen) this.useFrozenMarketData = true;
             this.subscriptions.push(this.service.newsBulletins(true).on("data", data => {
                 this.bulletins.push(data);
                 this.emit("bulletin", data);
@@ -95,31 +97,12 @@ class Session extends Subscription {
         }).once("managedAccounts", async data => {
             this.managedAccounts = Array.isArray(data) ? data : [ data ];
             this.emit("ready", this);
-            
-            if (options.orders) {
-                this.orders = new Orders(this);
-                if (this.clientId === 0 && options.orders != "local") {
-                    this.service.autoOpenOrders(true);
-                }
-
-                if (options.orders === true || options.orders == "stream") {
-                    await this.orders.stream();
-                }
-                
-                if (this.orders.nextOrderId !== null) {
-                    this.emit("load", this);
-                }
-                else {
-                    let poller = setInterval(() => {
-                        if (this.orders.nextOrderId !== null) {
-                            clearInterval(poller);
-                            this.emit("load", this);
-                        }
-                    }, 50);
-                    
-                    this.orders.nextOrderId();
-                }
+            if (this.clientId === 0) {
+                this.service.autoOpenOrders(true);
+                if (options.orders != "passive") await this.orders.stream();
             }
+            else if (options.orders && options.orders != "passive") await this.orders.stream();
+            this.emit("load", this);
         });
     }
     
