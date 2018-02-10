@@ -14,13 +14,8 @@ class Subscription extends Events {
         Object.defineProperty(this, "_maxListeners", { value: this._maxListeners, enumerable: false });
         
         if (base) {
-            if (base.session) {
+            if (base.service) {
                 Object.defineProperty(this, "contract", { value: base, enumerable: false });
-                Object.defineProperty(this, "session", { value: base.session, enumerable: false });
-                Object.defineProperty(this, "service", { value: base.session.service, enumerable: false });
-            }
-            else if (base.service) {
-                Object.defineProperty(this, "session", { value: base, enumerable: false });
                 Object.defineProperty(this, "service", { value: base.service, enumerable: false });
             }
             else if (base.socket) {

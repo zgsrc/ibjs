@@ -4,8 +4,8 @@ const Subscription = require("./subscription");
 
 class Positions extends Subscription {
     
-    constructor(session) {
-        super(session);
+    constructor(service) {
+        super(service);
 
         this.subscriptions.push(this.service.positions().on("data", data => {
             if (!this[data.contract.conId]) this[data.contract.conId] = { };

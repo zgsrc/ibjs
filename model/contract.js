@@ -9,8 +9,8 @@ const { DateTime } = require('luxon'),
 
 class Contract {
     
-    constructor(session, data) {
-        Object.defineProperty(this, "session", { value: session, enumerable: false });
+    constructor(service, data) {
+        Object.defineProperty(this, "service", { value: service, enumerable: false });
         Object.merge(this, data);
         
         this.symbol = this.summary.localSymbol.compact().parameterize().underscore().toUpperCase();
@@ -137,7 +137,7 @@ class Contract {
             Object.defineProperty(this, "fetchReport", {
                 value: async function(type) {
                     return new Promise((resolve, reject) => {
-                        this.session.service.fundamentalData(this.summary, constants.FUNDAMENTALS_REPORTS[type] || type)
+                        this.service.fundamentalData(this.summary, constants.FUNDAMENTALS_REPORTS[type] || type)
                             .once("data", data => {
                                 let keys = Object.keys(data),
                                     report = keys.length == 1 ? data[keys.first()] : data;
@@ -154,7 +154,7 @@ class Contract {
     }
     
     order(data) {
-        return new Order(this.session, this, data);
+        return new Order(this, data);
     }
     
     toString() {
@@ -239,11 +239,11 @@ class Contract {
 
 exports.Contract = Contract;
 
-async function all(session, summary) {
+async function all(service, summary) {
     let list = [ ];
     return new Promise((yes, no) => {
-        session.service.contractDetails(summary)
-            .on("data", contract => list.push(new Contract(session, contract)))
+        service.contractDetails(summary)
+            .on("data", contract => list.push(new Contract(service, contract)))
             .once("error", err => no(err))
             .once("end", () => yes(list))
             .send();
@@ -252,11 +252,11 @@ async function all(session, summary) {
 
 exports.all = all;
 
-async function first(session, summary) {
+async function first(service, summary) {
     let list = [ ];
     return new Promise((yes, no) => {
-        session.service.contractDetails(summary)
-            .on("data", contract => yes(new Contract(session, contract)))
+        service.contractDetails(summary)
+            .on("data", contract => yes(new Contract(service, contract)))
             .once("error", err => no(err))
             .once("end", () => null)
             .send();

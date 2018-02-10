@@ -4,8 +4,8 @@ const Subscription = require("./subscription");
 
 class Trades extends Subscription {
     
-    constructor(session, options) {
-        super(session);
+    constructor(service, options) {
+        super(service);
         
         options = options || { };
         

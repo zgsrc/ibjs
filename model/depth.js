@@ -31,7 +31,7 @@ class Depth extends Subscription {
                     no(err);
                 };
                 
-                this.subscriptions.push(this.session.service.mktDepth(copy, rows || 5).on("data", datum => {
+                this.subscriptions.push(this.service.mktDepth(copy, rows || 5).on("data", datum => {
                     if (datum.side == 1) this.bids[exchange][datum.position] = datum;
                     else this.offers[exchange][datum.position] = datum;
                     this.lastUpdate = Date.create();

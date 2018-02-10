@@ -191,10 +191,6 @@ function attach(ib, dispatch) {
         }
     });
     
-    ib.on("nextValidId", function(orderId) {
-        dispatch.data("system", { orderId: orderId });
-    });
-    
     ib.once("currentTime", function(time) {
         dispatch.data("currentTime", time);
     });  
@@ -435,6 +431,10 @@ function attach(ib, dispatch) {
         });
     }).on('execDetailsEnd', function(reqId) {
         dispatch.end(reqId);
+    });
+    
+    ib.on("nextValidId", function(orderId) {
+        dispatch.data("orders", { nextOrderId: orderId });
     });
     
     ib.on('openOrder', function(orderId, contract, order, orderState) {

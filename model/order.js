@@ -1,7 +1,8 @@
 "use strict";
 
 const Subscription = require("./subscription"),
-      constants = require("../constants");
+      constants = require("../constants"),
+      orders = require("./orders");
 
 class Order extends Subscription {
     
@@ -290,7 +291,7 @@ class Order extends Subscription {
     // EXECUTION
     ////////////////////////////////////////
     save() {
-        return this.session.orders.placeOrder(this);
+        return orders(contract.service).placeOrder(this);
     }
     
     transmit() {
@@ -299,7 +300,7 @@ class Order extends Subscription {
     }
     
     cancel() {
-        this.session.orders.cancelOrder(this);
+        orders(contract.service).cancelOrder(this);
     }
     
 }

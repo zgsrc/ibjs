@@ -77,7 +77,7 @@ class Quote extends Subscription {
     async query() {
         let state = { };
         return new Promise((yes, no) => {
-            this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), true, false)
+            this.service.mktData(this.contract.summary, this._fieldTypes.join(","), true, false)
                 .on("data", datum => {
                     datum = parseQuotePart(datum);
                     if (datum && datum.key && datum.value) {
@@ -91,7 +91,7 @@ class Quote extends Subscription {
     }
     
     async stream() {
-        let req = this.session.service.mktData(this.contract.summary, this._fieldTypes.join(","), false, false);
+        let req = this.service.mktData(this.contract.summary, this._fieldTypes.join(","), false, false);
         this.subscriptions.push(req);
         
         return new Promise((yes, no) => {

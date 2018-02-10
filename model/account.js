@@ -5,15 +5,11 @@ const Subscription = require("./subscription"),
 
 class Account extends Subscription {
     
-    /* string id, boolean trades */
-    constructor(session, options) {
-        super(session);
+    constructor(service, options) {
+        super(service);
         
-        if (typeof options == "string") options = { id: options, orders: true, trades: true };
+        if (typeof options == "string") options = { id: options };
         if (typeof options.id != "string") throw new Error("Account id is required.");
-        
-        this.orders = session.orders.stream();
-        this.orders.on("update", data => this.emit("update", data));
         
         this.balances = { };
         this.positions = { };
@@ -48,23 +44,11 @@ class Account extends Subscription {
                 this.emit("error", new Error("Unrecognized account update " + JSON.stringify(data)));
             }
         }).on("end", () => {
-            if (options.trades) {
-                session.trades({ account: options.id }).then(trades => {
-                    this.trades = trades;
-                    this.trades.on("update", data => this.emit("update", data));
-                    if (this.orders.loaded) this.emit("load");
-                    else this.orders.on("load", () => this.emit("load"));
-                });
-            }
-            else {
-                if (this.orders.loaded) this.emit("load");
-                else this.orders.on("load", () => this.emit("load"));
-            }
+            this.loaded = true;
+            this.emit("load");
         }).on("error", err => {
             this.emit("error", err);
         }).send());
-        
-        this.on("load", () => this.loaded = true);
     }
     
 }

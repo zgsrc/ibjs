@@ -19,7 +19,7 @@ class Charts extends Subscription {
             get: function(obj, prop) {
                 if (obj[prop]) return obj[prop];
                 else {
-                    if (constants.BAR_SIZES[prop]) return obj[prop] = new Bars(this.session, contract, this, constants.BAR_SIZES[prop]);
+                    if (constants.BAR_SIZES[prop]) return obj[prop] = new Bars(this.service, contract, this, constants.BAR_SIZES[prop]);
                     else return null;
                 }
             }

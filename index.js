@@ -2,21 +2,31 @@
 
 require("sugar").extend();
 
-const connectMessage = "Make sure TWS or IB Gateway is running and you are logged in.\n" + 
+const connectErrorHelp = "Make sure TWS or IB Gateway is running and you are logged in.\n" + 
     "Then check IB software is configured to accept API connections over the correct port.\n" +
     "If all else fails, try restarting TWS or IB Gateway.";
 
+
+
+////////////////////////////////////////////////////////////////////////
+// NOT THAT YOU NEED IT, BUT YOU MIGHT WANT IT
+////////////////////////////////////////////////////////////////////////
 const id = exports.id = 0,
       IB = exports.IB = require("ib"),
       Service = exports.Service = require("./service/service"),
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),
-      Session = exports.Session = require("./model/session"),
-      constants = exports.constants = require("./model/constants"),
-      studies = exports.studies = require("./model/studies"),
-      proxy = exports.proxy = (socket, dispatch) => new Service(new Proxy(socket), dispatch);
+      proxy = exports.proxy = (socket, dispatch) => new Service(new Proxy(socket), dispatch),
+      Session = exports.Session = require("./session");
 
-async function session(options) {
+
+////////////////////////////////////////////////////////////////////////
+// THE PROGRAMMING INTERFACE
+////////////////////////////////////////////////////////////////////////
+const constants = exports.constants = require("./constants"),
+      studies = exports.studies = require("./model/studies");
+
+exports.session = async function(options) {
     if (Object.isNumber(options)) {
         options = { port: options };
     }
@@ -26,7 +36,7 @@ async function session(options) {
     
     return new Promise((yes, no) => {
         let timeout = setTimeout(() => {
-            no(new Error("Connection timeout. " + connectMessage));
+            no(new Error("Connection timeout. " + connectErrorHelp));
         }, options.timeout || 2500);
         
         let ib = options.ib || new IB({
@@ -54,10 +64,8 @@ async function session(options) {
             no(err);
         }).service.socket.once("error", err => {
             clearTimeout(timeout);
-            if (err.code == "ECONNREFUSED") no(new Error("Connection refused. " + connectMessage));
+            if (err.code == "ECONNREFUSED") no(new Error("Connection refused. " + connectErrorHelp));
             else no(err);
         }).connect();
     });
 };
-
-exports.session = session;

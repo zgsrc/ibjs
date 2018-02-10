@@ -1,9 +1,10 @@
-const Subscription = require("./subscription");
+const Subscription = require("./subscription"),
+      Contract = require("./contract");
 
 class DisplayGroups extends Subscription {
     
-    constructor(session) {
-        super(session);
+    constructor(service) {
+        super(service);
         
         this.service.queryDisplayGroups().on("data", groups => {
             groups.forEach((group, index) => {
@@ -13,7 +14,7 @@ class DisplayGroups extends Subscription {
                 displayGroup.on("data", async contract => {
                     if (contract && contract != "none") {
                         try {
-                            this[index].contract = await session.contract(contract);
+                            this[index].contract = await contract.first(this.service, contract);
                             this.emit("update", this[index]);
                         }
                         catch (ex) {
