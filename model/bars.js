@@ -2,7 +2,7 @@
 
 const Subscription = require("./subscription"),
       studies = require("./studies"),
-      constants = require("./constants");
+      constants = require("../constants");
 
 class Bars extends Subscription {
     

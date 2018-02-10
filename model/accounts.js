@@ -1,7 +1,7 @@
 "use strict";
 
 const Subscription = require("./subscription"),
-      constants = require("./constants"),
+      constants = require("../constants"),
       Currency = require("./currency");
 
 class Accounts extends Subscription {

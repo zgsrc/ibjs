@@ -1,7 +1,7 @@
 "use strict";
 
 const { DateTime } = require('luxon'),
-      constants = require("./constants"),
+      constants = require("../constants"),
       Order = require("./order"),
       Quote = require("./quote"),
       Depth = require("./depth"),

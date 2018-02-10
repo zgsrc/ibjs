@@ -2,7 +2,7 @@
 
 const Subscription = require("./subscription"),
       Bars = require("./bars"),
-      constants = require("./constants");
+      constants = require("../constants");
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
 

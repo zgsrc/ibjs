@@ -1,7 +1,7 @@
 "use strict";
 
 const Subscription = require("./subscription"),
-      constants = require("./constants"),
+      constants = require("../constants"),
       symbol = require("./symbol"),
       contract = require("./contract"),
       Curve = require("./curve"),

@@ -1,6 +1,6 @@
 "use strict";
 
-const constants = require("./constants");
+const constants = require("../constants");
 
 function frontMonth(cutOffDay, offset) {
     let date = Date.create();

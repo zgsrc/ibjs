@@ -1,7 +1,7 @@
 "use strict";
 
 const Subscription = require("./subscription"),
-      constants = require("./constants"),
+      constants = require("../constants"),
       TICKS = constants.QUOTE_TICK_TYPES;
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}-{hh}:{mm}:{ss}');
