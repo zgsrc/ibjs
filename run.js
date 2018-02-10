@@ -23,7 +23,7 @@ delete config.paper;
 delete config.tws;
 
 const context = { 
-    ibjs: ibjs,
+    constants: ibjs.constants,
     info: msg => {
         console.log(chalk.gray(msg));
     },
@@ -33,6 +33,9 @@ const context = {
     error: (err) => {
         if (err.stack) console.log(chalk.red(err.stack));
         else console.log(chalk.red(err.message || err));
+    },
+    include: async (file) => {
+        await require(file)(context);
     }
 };
 
@@ -56,30 +59,27 @@ if (config.input) {
 
 context.info("Connecting...");
 ibjs.session(config).then(session => {
+    context.info("Connected");
+    
     session.on("error", context.error)
            .on("connectivity", context.warn)
            .on("disconnected", () => context.info("Disconnected"));
     
-    context.info("Ready");
-    
     let files = config.args;
     context.session = session;
     if (files && files.length) {
-        Promise.all(files.map(async file => {
+        files.map(async file => {
             context.info("Loading module " + file);
             await require(file)(context);
-        })).then(() => {
+        }).reduce((promise, func) =>
+            promise.then(result => func().then(Array.prototype.concat.bind(result))),
+            Promise.resolve([])
+        ).then(() => {
             context.info("All modules loaded successfully.");
-            
+            if (config.repl) startTerminal(context);
         }).catch(context.error);
     }
-    
-    if (config.repl) {
-        context.info("Starting REPL...\n");
-        let terminal = repl.start({ prompt: "> ", ignoreUndefined: true });
-        Object.assign(terminal.context, context);
-        terminal.on("exit", () => session.close());
-    }
+    else if (config.repl) startTerminal(context);
 }).catch(err => {
     context.error(err.message, true);
     process.exit(1);
@@ -87,6 +87,31 @@ ibjs.session(config).then(session => {
 
 if (config.input) {
     config.ib.replay(config.input);
+}
+
+function startTerminal(context) {
+    context.info("Starting REPL...\n");
+    
+    let terminal = repl.start({ 
+        prompt: "> ", 
+        ignoreUndefined: true, 
+        useGlobal: true 
+    });
+    
+    Object.assign(terminal.context, context);
+
+    terminal.defineCommand('stock', function(localSymbol) {
+        terminal.clearBufferedCommand();
+        context.session.contract(localSymbol + " stock").then(contract => {
+            terminal.context[contract.summary.localSymbol] = contract;
+            console.log(chalk.gray("Contract stored in symbol " + contract.summary.localSymbol));
+            terminal.displayPrompt();
+        }).catch(err => {
+
+        });
+    });
+
+    terminal.on("exit", () => context.session.close());
 }
 
 process.on('uncaughtException', context.error);

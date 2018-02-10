@@ -8,6 +8,7 @@ This is a high-level javascript library build atop the [native javascript API](h
 
 * An [Interactive Brokers](https://www.interactivebrokers.com/) trading account.
 * Install the [IB Gateway](https://www.interactivebrokers.com/en/index.php?f=16457) or [IB TWS (Trader Workstation)](https://www.interactivebrokers.com/en/index.php?f=674&ns=T).
+* Node.js 9.0.0 or greater
 
 #### How It Works
 

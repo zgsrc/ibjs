@@ -2,20 +2,21 @@
 
 const Subscription = require("./subscription"),
       constants = require("./constants"),
+      symbol = require("./symbol"),
       contract = require("./contract"),
       Curve = require("./curve"),
       OptionChain = require("./optionchain"),
       DisplayGroups = require("./displaygroups"),
       Orders = require("./orders"),
-      Account = require("./accounting/account"),
-      Accounts = require("./accounting/accounts"),
-      Positions = require("./accounting/positions"),
-      Trades = require("./accounting/trades");
+      Account = require("./account"),
+      Accounts = require("./accounts"),
+      Positions = require("./positions"),
+      Trades = require("./trades");
 
 class Session extends Subscription {
     
     constructor(service, options) {
-        super({ service: service });
+        super(service);
         
         this.connectivity = { };
         
@@ -172,12 +173,12 @@ class Session extends Subscription {
     }
     
     async contract(description) {
-        let summary = contract.parse(description);
+        let summary = symbol.parse(description);
         return await contract.first(this, summary);
     }
     
     async contracts(description) {
-        let summary = contract.parse(description);
+        let summary = symbol.parse(description);
         return await contract.all(this, summary);
     }
     

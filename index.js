@@ -12,9 +12,8 @@ const id = exports.id = 0,
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),
       Session = exports.Session = require("./model/session"),
-      Calculator = exports.Calculator = require("./model/calculator"),
       constants = exports.constants = require("./model/constants"),
-      studies = exports.studies = require("./model/marketdata/studies"),
+      studies = exports.studies = require("./model/studies"),
       proxy = exports.proxy = (socket, dispatch) => new Service(new Proxy(socket), dispatch);
 
 async function session(options) {

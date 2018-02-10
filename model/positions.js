@@ -1,6 +1,6 @@
 "use strict";
 
-const Subscription = require("../subscription");
+const Subscription = require("./subscription");
 
 class Positions extends Subscription {
     

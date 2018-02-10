@@ -1,11 +1,11 @@
 "use strict";
 
-const Subscription = require("../subscription");
+const Subscription = require("./subscription");
 
 class Depth extends Subscription {
     
-    constructor(session, contract) {
-        super(session, contract);
+    constructor(contract) {
+        super(contract);
         this.exchanges = [ ];
         this.bids = { };
         this.offers = { };

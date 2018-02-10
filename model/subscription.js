@@ -5,7 +5,7 @@ const { observable } = require('@nx-js/observer-util');
 
 class Subscription extends Events {
     
-    constructor(session, contract) {
+    constructor(base) {
         super();
         
         Object.defineProperty(this, "domain", { value: this.domain, enumerable: false });
@@ -13,13 +13,19 @@ class Subscription extends Events {
         Object.defineProperty(this, "_eventsCount", { value: this._eventsCount, enumerable: false });
         Object.defineProperty(this, "_maxListeners", { value: this._maxListeners, enumerable: false });
         
-        if (session) {
-            if (session.managedAccounts) Object.defineProperty(this, "session", { value: session, enumerable: false });
-            if (session.service) Object.defineProperty(this, "service", { value: session.service, enumerable: false });
-        }
-        
-        if (contract) {
-            Object.defineProperty(this, "contract", { value: contract });
+        if (base) {
+            if (base.session) {
+                Object.defineProperty(this, "contract", { value: base, enumerable: false });
+                Object.defineProperty(this, "session", { value: base.session, enumerable: false });
+                Object.defineProperty(this, "service", { value: base.session.service, enumerable: false });
+            }
+            else if (base.service) {
+                Object.defineProperty(this, "session", { value: base, enumerable: false });
+                Object.defineProperty(this, "service", { value: base.service, enumerable: false });
+            }
+            else if (base.socket) {
+                Object.defineProperty(this, "service", { value: base, enumerable: false });
+            }
         }
         
         Object.defineProperty(this, "subscriptions", { value: [ ], enumerable: false });

@@ -50,10 +50,6 @@ class Orders extends Subscription {
         this.service.orderIds(count > 0 ? count : 1);
     }
     
-    newOrder(contract, data) {
-        return new Order(this, contract, data);
-    }
-    
     placeOrder(order) {
         if (order.readOnly) {
             throw new Error("Cannot modify read-only trade.");

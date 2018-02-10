@@ -4,8 +4,8 @@ const Curve = require("./curve");
 
 class OptionChain extends Curve {
     
-    constructor(session, contracts) {
-        super(session, contracts[0]);
+    constructor(contracts) {
+        super(contracts[0]);
         
         let dates = contracts.groupBy(c => c.summary.expiry);
         Object.keys(dates).forEach(date => {

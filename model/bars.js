@@ -1,13 +1,13 @@
 "use strict";
 
-const Subscription = require("../subscription"),
+const Subscription = require("./subscription"),
       studies = require("./studies"),
-      constants = require("../constants");
+      constants = require("./constants");
 
 class Bars extends Subscription {
     
-    constructor(session, contract, charts, barSize) {
-        super(session, contract);
+    constructor(contract, charts, barSize) {
+        super(contract);
 
         Object.defineProperty(this, "charts", { value: charts });
         

@@ -1,15 +1,15 @@
 "use strict";
 
-const Subscription = require("../subscription"),
+const Subscription = require("./subscription"),
       Bars = require("./bars"),
-      constants = require("../constants");
+      constants = require("./constants");
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}  {hh}:{mm}:{ss}');
 
 class Charts extends Subscription {
     
-    constructor(session, contract, field) {
-        super(session, contract);
+    constructor(contract, field) {
+        super(contract);
         this.setMaxListeners(50);
         
         Object.defineProperty(this, 'field', { value: field, enumerable: false });
@@ -19,7 +19,7 @@ class Charts extends Subscription {
             get: function(obj, prop) {
                 if (obj[prop]) return obj[prop];
                 else {
-                    if (constants.BAR_SIZES[prop]) return obj[prop] = new Bars(session, contract, this, constants.BAR_SIZES[prop]);
+                    if (constants.BAR_SIZES[prop]) return obj[prop] = new Bars(this.session, contract, this, constants.BAR_SIZES[prop]);
                     else return null;
                 }
             }

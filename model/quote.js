@@ -1,15 +1,15 @@
 "use strict";
 
-const Subscription = require("../subscription"),
-      constants = require("../constants"),
+const Subscription = require("./subscription"),
+      constants = require("./constants"),
       TICKS = constants.QUOTE_TICK_TYPES;
 
 Date.getLocale('en').addFormat('{yyyy}{MM}{dd}-{hh}:{mm}:{ss}');
 
 class Quote extends Subscription {
     
-    constructor(session, contract) {
-        super(session, contract);
+    constructor(contract) {
+        super(contract);
         
         this.loaded = false;
         this.streaming = false;

@@ -5,8 +5,8 @@ const Subscription = require("./subscription"),
 
 class Order extends Subscription {
     
-    constructor(session, contract, data) {
-        super(session, contract);
+    constructor(contract, data) {
+        super(contract);
         
         this.ticket = (data ? data.ticket : null) || { 
             tif: constants.TIME_IN_FORCE.day,
@@ -20,57 +20,6 @@ class Order extends Subscription {
         this.state = data ? data.state : { };
         
         this.orderId = data ? data.orderId : null;
-    }
-    
-    save() {
-        return this.session.orders.placeOrder(this);
-    }
-    
-    transmit() {
-        this.ticket.transmit = true;
-        this.save();
-    }
-    
-    cancel() {
-        this.session.orders.cancelOrder(this);
-    }
-    
-    or(cb) {
-        if (this.ocaGroup == null) {
-            let group = Math.floor(Math.random * 1000000).toString();
-            this.ocaGroup = group;
-            this.oraType = constants.OCA_TYPE.cancel;
-        }
-        
-        let siblingOrder = new Order(this.orders, this.contract);
-        siblingOrder.ocaGroup = this.ocaGroup;
-        siblingOrder.ocaType = constants.OCA_TYPE.cancel;
-        
-        if (cb && typeof cb == "function") {
-            cb(siblingOrder);
-            return this;
-        }
-        else {
-            return siblingOrder;
-        }
-    }
-    
-    then(cb) {
-        if (!this.children) {
-            Object.defineProperty(this, "children", { value: [ ] });
-        }
-        
-        let childOrder = new Order(this.orders, this.contract);
-        childOrder.parent = this;
-        this.children.push(childOrder);
-        
-        if (cb && typeof cb == "function") {
-            cb(childOrder);
-            return this;
-        }
-        else {
-            return childOrder;
-        }
     }
     
     ////////////////////////////////////////
@@ -126,43 +75,7 @@ class Order extends Subscription {
 
         return this;
     }
-    
-    ////////////////////////////////////////
-    // TIMEFRAME
-    ////////////////////////////////////////
-    goodToday() {
-        this.ticket.tif = constants.TIME_IN_FORCE.day;
-        return this;
-    }
-    
-    goodUntilCancelled() {
-        this.ticket.tif = constants.TIME_IN_FORCE.goodUntilCancelled;
-        return this;
-    }
-    
-    immediateOrCancel() {
-        this.ticket.tif = constants.TIME_IN_FORCE.immediateOrCancel;
-        return this;
-    }
-    
-    fillOrKill() {
-        this.ticket.tif = constants.TIME_IN_FORCE.fillOrKill;
-        return this;
-    }
-    
-    atTheOpen() {
-        this.ticket.tif = constants.TIME_IN_FORCE.open;
-    }
-    
-    auction() {
-        this.ticket.tif = constants.TIME_IN_FORCE.auction;
-    }
-    
-    regularTradingHours() {
-        this.ticket.outsideRth = false; 
-        return this; 
-    }
-    
+        
     ////////////////////////////////////////
     // PRICE
     ////////////////////////////////////////
@@ -287,6 +200,42 @@ class Order extends Subscription {
     }
     
     ////////////////////////////////////////
+    // TIMEFRAME
+    ////////////////////////////////////////
+    goodToday() {
+        this.ticket.tif = constants.TIME_IN_FORCE.day;
+        return this;
+    }
+    
+    goodUntilCancelled() {
+        this.ticket.tif = constants.TIME_IN_FORCE.goodUntilCancelled;
+        return this;
+    }
+    
+    immediateOrCancel() {
+        this.ticket.tif = constants.TIME_IN_FORCE.immediateOrCancel;
+        return this;
+    }
+    
+    fillOrKill() {
+        this.ticket.tif = constants.TIME_IN_FORCE.fillOrKill;
+        return this;
+    }
+    
+    atTheOpen() {
+        this.ticket.tif = constants.TIME_IN_FORCE.open;
+    }
+    
+    auction() {
+        this.ticket.tif = constants.TIME_IN_FORCE.auction;
+    }
+    
+    regularTradingHours() {
+        this.ticket.outsideRth = false; 
+        return this; 
+    }
+    
+    ////////////////////////////////////////
     // CONDITIONS
     ////////////////////////////////////////
     overridePercentageConstraints() {
@@ -297,6 +246,60 @@ class Order extends Subscription {
     whatIf() {
         this.ticket.whatIf = true;
         return this;
+    }
+    
+    or(cb) {
+        if (this.ocaGroup == null) {
+            let group = Math.floor(Math.random * 1000000).toString();
+            this.ocaGroup = group;
+            this.oraType = constants.OCA_TYPE.cancel;
+        }
+        
+        let siblingOrder = new Order(this.orders, this.contract);
+        siblingOrder.ocaGroup = this.ocaGroup;
+        siblingOrder.ocaType = constants.OCA_TYPE.cancel;
+        
+        if (cb && typeof cb == "function") {
+            cb(siblingOrder);
+            return this;
+        }
+        else {
+            return siblingOrder;
+        }
+    }
+    
+    then(cb) {
+        if (!this.children) {
+            Object.defineProperty(this, "children", { value: [ ] });
+        }
+        
+        let childOrder = new Order(this.orders, this.contract);
+        childOrder.parent = this;
+        this.children.push(childOrder);
+        
+        if (cb && typeof cb == "function") {
+            cb(childOrder);
+            return this;
+        }
+        else {
+            return childOrder;
+        }
+    }
+    
+    ////////////////////////////////////////
+    // EXECUTION
+    ////////////////////////////////////////
+    save() {
+        return this.session.orders.placeOrder(this);
+    }
+    
+    transmit() {
+        this.ticket.transmit = true;
+        this.save();
+    }
+    
+    cancel() {
+        this.session.orders.cancelOrder(this);
     }
     
 }

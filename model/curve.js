@@ -4,8 +4,8 @@ const Subscription = require("./subscription");
 
 class Curve extends Subscription {
     
-    constructor(session, contracts) {
-        super(session, contract[0]);
+    constructor(contracts) {
+        super(contract[0]);
         
         contracts = contracts.sortBy(c => c.expiry);
         
