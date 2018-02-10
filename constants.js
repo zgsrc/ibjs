@@ -342,3 +342,5 @@ const tz = {
 };
 
 exports.tz = tz;
+
+exports.wellKnownSymbols = { };

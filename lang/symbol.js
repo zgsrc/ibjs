@@ -18,7 +18,7 @@ function frontMonth(cutOffDay, offset) {
 
 exports.frontMonth = frontMonth;
 
-function parse(definition) {
+function contract(definition) {
     if (typeof definition == "number") {
         definition = { conId: definition };
     }
@@ -31,6 +31,10 @@ function parse(definition) {
             };
         }
         else {
+            if (constants.wellKnownSymbols[definition.trim().toUpperCase()]) {
+                definition = constants.wellKnownSymbols[definition.trim().toUpperCase()];
+            }
+            
             let tokens = definition.split(' ').map("trim").compact(true);
             definition = { };
 
@@ -138,24 +142,23 @@ function parse(definition) {
     }
 }
 
-exports.parse = parse;
+exports.contract = contract;
 
-function order(script) {
+function order(script, orderBuilder) {
     if (script && Object.isString(script) && script.length) {
         let tokens = script.toUpperCase().split(" ").map("trim").compact(true);
-
-        let action = tokens.shift().toLowerCase();
-        let qty = parseInt(tokens.shift());
-        this[action](qty);
-
-        let symbol = tokens.to(tokens.lastIndexOf("AT"));
-        // parse into contract summary
+        
+        let action = tokens.shift().toLowerCase(),
+            qty = parseInt(tokens.shift()),
+            symbol = tokens.to(tokens.lastIndexOf("AT")),
+            summary = contract(symbol.join(" ")),
+            order = orderBuilder(summary);
         
         tokens = tokens.from(symbol.length);
         
-        let price = tokens.shift();
-        if (price == "AT") {
-            price = tokens.shift();
+        if (tokens.length == 0) return order;
+        else {
+            let price = tokens.shift();
 
             if (price == "THE") price = tokens.shift();
 
@@ -165,8 +168,8 @@ function order(script) {
                 if (price == "ON") {
                     price = tokens.shift();
                     if (price == "THE") price = tokens.shift();
-                    if (price == "OPEN") this.marketOnOpen();
-                    else if (price == "CLOSE") this.marketOnClose();
+                    if (price == "OPEN") order.marketOnOpen();
+                    else if (price == "CLOSE") order.marketOnClose();
                 }
                 else if (price == "WHEN") {
                     price = tokens.shift();
@@ -176,12 +179,12 @@ function order(script) {
                     // stop of if-touched order depending on position and price
                 }
                 else {
-                    this.market();
+                    order.market();
                     tokens.unshift(price);
                 }
             }
-            else if (price == "MARKET-PROTECT") this.marketProtect();
-            else if (price == "MARKET-TO-LIMIT") this.marketToLimit();
+            else if (price == "MARKET-PROTECT") order.marketProtect();
+            else if (price == "MARKET-TO-LIMIT") order.marketToLimit();
             else {
                 if (!price[0].test(/[0-9]/)) price = price.from(1);
                 let limit = parseFloat(price);
@@ -191,8 +194,8 @@ function order(script) {
                 if (price == "ON") {
                     price = tokens.shift();
                     if (price == "THE") price = tokens.shift();
-                    if (price == "OPEN") this.limitOnOpen(limit);
-                    else if (price == "CLOSE") this.limitOnClose(limit);
+                    if (price == "OPEN") order.limitOnOpen(limit);
+                    else if (price == "CLOSE") order.limitOnClose(limit);
                 }
                 else if (price == "WHEN") {
                     price = tokens.shift();
@@ -202,13 +205,14 @@ function order(script) {
                     // stop of if-touched order depending on position and price
                 }
                 else {
-                    this.limit(price);
+                    order.limit(price);
                     tokens.unshift(price);
                 }
             }
         }
-        else if (Object.values(constants.ORDER_TYPE).indexOf(price) >= 0) {
-            this.ticket.orderType = price;
-        }
+        
+        return order;
     }
 }
+
+exports.order = order;
