@@ -11,6 +11,7 @@
     "@nx-js/observer-util": "^4.0.1",
     "chalk": "^2.3.0",
     "commander": "^2.14.1",
+    "esprima": "^4.0.0",
     "ib": "^0.2.4",
     "line-by-line": "^0.1.6",
     "luxon": "^0.3.1",

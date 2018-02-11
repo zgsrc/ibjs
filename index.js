@@ -17,7 +17,8 @@ const id = exports.id = 0,
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),
       proxy = exports.proxy = (socket, dispatch) => new Service(new Proxy(socket), dispatch),
-      Session = exports.Session = require("./session");
+      Session = exports.Session = require("./session"),
+      Resolver = exports.Resolver = require("./lang/resolver");
 
 
 ////////////////////////////////////////////////////////////////////////
@@ -26,7 +27,7 @@ const id = exports.id = 0,
 const constants = exports.constants = require("./constants"),
       studies = exports.studies = require("./model/studies");
 
-exports.session = async function(options) {
+async function session(options) {
     if (Object.isNumber(options)) {
         options = { port: options };
     }
@@ -69,3 +70,12 @@ exports.session = async function(options) {
         }).connect();
     });
 };
+
+exports.session = session;
+
+async function environment(options) {
+    let sess = await session(options);
+    return new Resolver(sess.service, sess.scope(options.scope));
+}
+
+exports.environment = environment;

@@ -1,5 +1,7 @@
 "use strict";
 
+const { observable, observe } = require('@nx-js/observer-util');
+
 const Events = require("events"),
       constants = require("./constants"),
       symbol = require("./lang/symbol"),
@@ -101,12 +103,12 @@ class Session extends Events {
     }
     
     async contract(description) {
-        let summary = symbol.parse(description);
+        let summary = symbol.contract(description);
         return await contract.first(this.service, summary);
     }
     
     async contracts(description) {
-        let summary = symbol.parse(description);
+        let summary = symbol.contract(description);
         return await contract.all(this.service, summary);
     }
     
@@ -115,7 +117,7 @@ class Session extends Events {
             let ratio = parseInt(leg.to(leg.indexOf(" ")));
             leg = leg.from(leg.indexOf(" ")).trim();
 
-            let summary = await contract.first(symbol.parse(leg));
+            let summary = await contract.first(symbol.contract(leg));
             if (summary) {
                 summary = summary.summary;
                 return {
@@ -156,6 +158,85 @@ class Session extends Events {
     
     async displayGroups() {
         return new Promise((yes, no) => (new DisplayGroups(this.service)).once("load", yes).once("error", no));
+    }
+    
+    async order(description) {
+        symbol.order(this.service, description);
+    }
+    
+    async scope(options) {
+        let scope = { }, session = this;
+
+        if (options.workspace) {
+            if (Object.isString(options.workspace)) scope[options.workspace] = observable({ });
+            else scope.workspace = observable({ });
+        }
+
+        if (optons.rules) {
+            scope.rule = observe;
+        }
+
+        if (options.constants) {
+            Object.keys(constants).forEach(key => scope[key] = constants[key]);
+        }
+
+        if (options.session) {
+            scope.session = session;
+        }
+
+        if (options.system) {
+            scope.system = session.system();
+        }
+
+        if (options.displayGroups) {
+            scope.displayGroups = await session.displayGroups();
+        }
+
+        if (options.account) {
+            scope.account = await session.account(Object.isObject(options.account) ? options.account : null);
+        }
+
+        if (options.accounts) {
+            scope.accounts = await session.accounts();
+        }
+
+        if (options.positions) {
+            scope.positions = await session.positions();
+        }
+
+        if (options.trades) {
+            scope.trades = await session.trades(Object.isObject(options.trades) ? options.trades : null);
+        }
+
+        if (options.wellKnownSymbols) {
+            Object.assign(constants.wellKnownSymbols, options.wellKnownSymbols);
+        }
+
+        if (options.loadWellKnownSymbols) {
+            await Promise.all(Object.keys(constants.wellKnownSymbols).map(async key => {
+                scope[key] = await session.contract(constants.wellKnownSymbols[key]);
+            }));
+        }
+
+        if (options.contracts) {
+            if (Array.isArray(options.contracts)) {
+                await Promise.all(options.contracts.map(async description => {
+                    let contract = await session.contract(description);
+                    scope[contract.toString()] = contract;
+                }));
+            }
+            else {
+                await Promise.all(Object.keys(options.contracts).map(async key => {
+                    scope[key] = await session.contract(options.contractss[key]);
+                }));
+            }
+        }
+
+        if (options.libraries) {
+            Object.assign(scope, options.libraries);
+        }
+
+        return scope;
     }
     
 }

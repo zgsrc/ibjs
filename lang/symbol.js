@@ -1,6 +1,7 @@
 "use strict";
 
-const constants = require("../constants");
+const constants = require("../constants"),
+      contract = require("../model/contract");
 
 function frontMonth(cutOffDay, offset) {
     let date = Date.create();
@@ -144,15 +145,21 @@ function contract(definition) {
 
 exports.contract = contract;
 
-function order(script, orderBuilder) {
+async function order(service, script) {
     if (script && Object.isString(script) && script.length) {
         let tokens = script.toUpperCase().split(" ").map("trim").compact(true);
         
         let action = tokens.shift().toLowerCase(),
             qty = parseInt(tokens.shift()),
-            symbol = tokens.to(tokens.lastIndexOf("AT")),
+            unit = tokens.shift();
+        
+        if (unit != "SHARE" && unit != "SHARES" && unit != "CONTRACT" && unit != "CONTRACTS") {
+            tokens.unshift(unit);
+        }
+        
+        let symbol = tokens.to(tokens.lastIndexOf("AT")),
             summary = contract(symbol.join(" ")),
-            order = orderBuilder(summary);
+            order = await contract.first(service, summary).order();
         
         tokens = tokens.from(symbol.length);
         

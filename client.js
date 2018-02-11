@@ -1,4 +1,4 @@
-var Session = require("./model/session"),
+var Session = require("./session"),
     Proxy = require("./service/proxy");
 
 (window || exports).ib = {

@@ -1,33 +1,28 @@
-class Resolver {
+const eval = require("./eval"),
+      contract = require("../model/contract");
+
+export default class Resolver {
     
-    constructor(session, dictionary) {
-        Object.defineProperty(this, "lookup", { value: { }, enumerable: false });
-        
+    constructor(service, scope) {
+        Object.defineProperty(this, "service", { value: service, enumerable: false });
+        Object.defineProperty(this, "scope", { value: scope, enumerable: false });
+        Object.defineProperty(this, "filters", { value: [ ], enumerable: false });
     }
     
-    async reify(name) {
-        let description = dictionary[name] || name;
+    async resolve(name) {
+        this.filters.forEach(filter => {
+            if (Object.isFunction(filter)) {
+                let result = await filter(name);
+                if (result) return result;
+            }
+            else throw new Error("Resolver filter " + filter.toString() + " is not a function.");
+        });
         
-        // parse(description) = summary
-        // contract.all(summary) = results
-        
-        if (this.lookup[name]) return this[this.lookup[name]];
-        else {
-            
-            
-            let contract = await this.session.contract();
-
-            contract = new Proxy(contract, {
-                get: function(contract, prop) { 
-                    if (prop == "quote") return contract._quote ? contract._quote : contract._quote = contract.quote();
-                    else if (prop == "depth") return contract._depth ? contract._depth : contract._depth = contract.depth();
-                    else if (prop == "charts") return contract._charts ? contract._charts : contract._charts = contract.charts();
-                    else return contract[prop];
-                }
-            });
-
-            this[contract.summary.localSymbol] = contract;
-        }
+        return contract.first(this.service, name);
+    }
+    
+    async eval(src) {
+        eval(name => this.resolve(name), this.scope, src);
     }
     
 }
