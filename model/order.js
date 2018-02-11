@@ -1,4 +1,4 @@
-"use strict";
+
 
 const Subscription = require("./subscription"),
       constants = require("../constants"),

@@ -1,4 +1,4 @@
-"use strict";
+
 
 const { DateTime } = require('luxon'),
       constants = require("../constants"),

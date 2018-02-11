@@ -1,11 +1,8 @@
-"use strict";
-
 require("sugar").extend();
 
 const connectErrorHelp = "Make sure TWS or IB Gateway is running and you are logged in.\n" + 
     "Then check IB software is configured to accept API connections over the correct port.\n" +
     "If all else fails, try restarting TWS or IB Gateway.";
-
 
 
 ////////////////////////////////////////////////////////////////////////
@@ -17,8 +14,7 @@ const id = exports.id = 0,
       Dispatch = exports.Dispatch = require("./service/dispatch"),
       Proxy = exports.Proxy = require("./service/proxy"),
       proxy = exports.proxy = (socket, dispatch) => new Service(new Proxy(socket), dispatch),
-      Session = exports.Session = require("./session"),
-      Resolver = exports.Resolver = require("./lang/resolver");
+      Session = exports.Session = require("./session");
 
 
 ////////////////////////////////////////////////////////////////////////
@@ -72,10 +68,3 @@ async function session(options) {
 };
 
 exports.session = session;
-
-async function environment(options) {
-    let sess = await session(options);
-    return new Resolver(sess.service, sess.scope(options.scope));
-}
-
-exports.environment = environment;

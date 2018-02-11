@@ -1,6 +1,6 @@
 # Service
 
-The low-level native javascript API is directly encapsulated by the `Service` class, which makes streaming API reponses more reliable and cogent.
+The `Service` class makes the request/reponse paradigm more reliable and cogent.
 
 ```javscript
 let IB = require("ib"),

@@ -1,4 +1,4 @@
-export default async function(scope) {
+module.exports = async function(scope) {
     with (scope) {
         // instant magic
     }

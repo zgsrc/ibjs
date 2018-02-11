@@ -22,23 +22,6 @@ else if (config.tws) config.port = config.tws;
 delete config.paper;
 delete config.tws;
 
-const context = { 
-    constants: ibjs.constants,
-    info: msg => {
-        console.log(chalk.gray(msg));
-    },
-    warn: (msg) => {
-        console.log(chalk.yellow(JSON.stringify(msg)));
-    },
-    error: (err) => {
-        if (err.stack) console.log(chalk.red(err.stack));
-        else console.log(chalk.red(err.message || err));
-    },
-    include: async (file) => {
-        await require(file)(context);
-    }
-};
-
 if (config.output) {
     let file = config.output;
     if (Object.isBoolean(file)) {
@@ -47,7 +30,7 @@ if (config.output) {
 
     config.trace = (name, data) => {
         let msg = (new Date()).getTime() + "|" + name + "|" + JSON.stringify(data) + "\n";
-        fs.appendFile(file, msg, err => err ? context.error(err) : null);
+        fs.appendFile(file, msg, err => err ? console.error(err) : null);
     };
 }
 
@@ -57,40 +40,49 @@ if (config.input) {
     delete config.port;
 }
 
-context.info("Connecting...");
-ibjs.session(config).then(session => {
-    context.info("Connected");
+console.log("Connecting...");
+ibjs.session(config).then(async session => {
+    session.on("error", console.error).on("disconnected", () => console.log("Disconnected"));
     
-    session.on("error", context.error)
-           .on("connectivity", context.warn)
-           .on("disconnected", () => context.info("Disconnected"));
+    let scope = await session.scope();
+    let context = scope.context();
+    console.log(await context.evaluate("return account.balances"))
     
-    let files = config.args;
-    context.session = session;
-    if (files && files.length) {
-        files.map(async file => {
-            context.info("Loading module " + file);
-            await require(file)(context);
-        }).reduce((promise, func) =>
-            promise.then(result => func().then(Array.prototype.concat.bind(result))),
-            Promise.resolve([])
-        ).then(() => {
-            context.info("All modules loaded successfully.");
-            if (config.repl) startTerminal(context);
-        }).catch(context.error);
-    }
-    else if (config.repl) startTerminal(context);
+    
 }).catch(err => {
-    context.error(err.message, true);
+    console.error(err.message);
     process.exit(1);
 });
 
 if (config.input) {
-    config.ib.replay(config.input);
+    config.ib.replay(config.input, config.inputSpeed || 1);
 }
 
+
+
+
+
+return;
+
+
+let files = config.args;
+context.session = session;
+if (files && files.length) {
+    files.map(async file => {
+        console.log("Loading module " + file);
+        await require(file)(context);
+    }).reduce((promise, func) =>
+        promise.then(result => func().then(Array.prototype.concat.bind(result))),
+        Promise.resolve([])
+    ).then(() => {
+        console.log("All modules loaded successfully.");
+        if (config.repl) startTerminal(context);
+    }).catch(console.error);
+}
+else if (config.repl) startTerminal(context);
+
 function startTerminal(context) {
-    context.info("Starting REPL...\n");
+    console.log("Starting REPL...\n");
     
     let terminal = repl.start({ 
         prompt: "> ", 
@@ -114,4 +106,4 @@ function startTerminal(context) {
     terminal.on("exit", () => context.session.close());
 }
 
-process.on('uncaughtException', context.error);
+process.on('uncaughtException', console.error);

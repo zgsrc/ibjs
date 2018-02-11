@@ -1,4 +1,4 @@
-"use strict";
+
 
 const Dispatch = require("./dispatch"),
       relay = require("./relay"),

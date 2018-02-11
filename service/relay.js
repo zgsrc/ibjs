@@ -1,4 +1,4 @@
-"use strict";
+
 
 function relay(service, socket) {
     let map = { };

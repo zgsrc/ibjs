@@ -1,6 +1,6 @@
 const LineByLineReader = require('line-by-line');
 
-function replay(file, emitter) {
+function replay(file, emitter, speed) {
     let reader = LineByLineReader(file);
     reader.pause();
     
@@ -30,11 +30,11 @@ function replay(file, emitter) {
         }
         
         if (delta == -1 && buffer.length) {
-            delta = (new Date()).getTime() - buffer[0].time;
+            delta = (new Date()).getTime() - (buffer[0].time / (speed || 1));
         }
         
         let now = (new Date()).getTime();
-        while (buffer.length && now + 10 > buffer[0].time + delta) {
+        while (buffer.length && now + 10 > (buffer[0].time / (speed || 1)) + delta) {
             let event = buffer.shift();
             emitter.emit(event.name, ...event.data);
         }

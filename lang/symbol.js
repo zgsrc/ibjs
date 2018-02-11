@@ -1,5 +1,3 @@
-"use strict";
-
 const constants = require("../constants"),
       contract = require("../model/contract");
 
@@ -19,7 +17,7 @@ function frontMonth(cutOffDay, offset) {
 
 exports.frontMonth = frontMonth;
 
-function contract(definition) {
+function summary(definition) {
     if (typeof definition == "number") {
         definition = { conId: definition };
     }
@@ -143,7 +141,7 @@ function contract(definition) {
     }
 }
 
-exports.contract = contract;
+exports.contract = summary;
 
 async function order(service, script) {
     if (script && Object.isString(script) && script.length) {
@@ -158,8 +156,7 @@ async function order(service, script) {
         }
         
         let symbol = tokens.to(tokens.lastIndexOf("AT")),
-            summary = contract(symbol.join(" ")),
-            order = await contract.first(service, summary).order();
+            order = await contract.first(service, summary(symbol.join(" "))).order();
         
         tokens = tokens.from(symbol.length);
         

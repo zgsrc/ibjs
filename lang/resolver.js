@@ -1,28 +1,23 @@
-const eval = require("./eval"),
-      contract = require("../model/contract");
+const contract = require("../model/contract");
 
-export default class Resolver {
+module.exports = class Resolver {
     
-    constructor(service, scope) {
-        Object.defineProperty(this, "service", { value: service, enumerable: false });
-        Object.defineProperty(this, "scope", { value: scope, enumerable: false });
+    constructor(service) {
         Object.defineProperty(this, "filters", { value: [ ], enumerable: false });
+        Object.defineProperty(this, "resolveContract", { value: name => contract.first(service, name), enumerable: false });
     }
     
     async resolve(name) {
-        this.filters.forEach(filter => {
+        for (let i = 0; i < this.filters.length; i++) {
+            let filter = this.filters[i];
             if (Object.isFunction(filter)) {
                 let result = await filter(name);
                 if (result) return result;
             }
             else throw new Error("Resolver filter " + filter.toString() + " is not a function.");
-        });
+        }
         
-        return contract.first(this.service, name);
-    }
-    
-    async eval(src) {
-        eval(name => this.resolve(name), this.scope, src);
+        return this.resolveContract(name);
     }
     
 }

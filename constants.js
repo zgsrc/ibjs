@@ -344,3 +344,20 @@ const tz = {
 exports.tz = tz;
 
 exports.wellKnownSymbols = { };
+
+exports.defaultScope = {
+    workspace: true,
+    rules: true,
+    constants: true,
+    session: false,
+    system: false,
+    displayGroups: false,
+    account: true,
+    accounts: false,
+    positions: false,
+    trades: false,
+    wellKnownSymbols: { },
+    loadWellKnownSymbols: false,
+    contracts: [ ] || { },
+    libraries: { }
+};

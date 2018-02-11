@@ -1,10 +1,9 @@
-"use strict";
-
 const { observable, observe } = require('@nx-js/observer-util');
 
 const Events = require("events"),
       constants = require("./constants"),
       symbol = require("./lang/symbol"),
+      Context = require("./lang/context"),
       contract = require("./model/contract"),
       orders = require("./model/orders"),
       Curve = require("./model/curve"),
@@ -165,14 +164,16 @@ class Session extends Events {
     }
     
     async scope(options) {
-        let scope = { }, session = this;
+        options = options || constants.defaultScope;
+        
+        let session = this,
+            scope = options.scope || { };
 
         if (options.workspace) {
-            if (Object.isString(options.workspace)) scope[options.workspace] = observable({ });
-            else scope.workspace = observable({ });
+            scope.workspace = observable({ });
         }
 
-        if (optons.rules) {
+        if (options.rules) {
             scope.rule = observe;
         }
 
@@ -227,7 +228,7 @@ class Session extends Events {
             }
             else {
                 await Promise.all(Object.keys(options.contracts).map(async key => {
-                    scope[key] = await session.contract(options.contractss[key]);
+                    scope[key] = await session.contract(options.contracts[key]);
                 }));
             }
         }
@@ -235,6 +236,8 @@ class Session extends Events {
         if (options.libraries) {
             Object.assign(scope, options.libraries);
         }
+        
+        Object.defineProperty(scope, "context", { value: () => new Context(this.service, scope) });
 
         return scope;
     }
