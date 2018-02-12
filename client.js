@@ -3,7 +3,6 @@ var Session = require("./session"),
 
 (window || exports).ib = {
     session: socket => new Session(new Proxy(socket)),
-    flags: require("./model/flags"),
-    studies: require("./model/marketdata/studies"),
-    container: require("./model/container")
+    constants: require("./constants"),
+    studies: require("./model/studies")
 };
