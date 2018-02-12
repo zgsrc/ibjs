@@ -166,69 +166,49 @@ class Session extends Events {
     async scope(options) {
         options = options || constants.defaultScope;
         
-        let session = this,
-            scope = options.scope || { };
-
-        if (options.workspace) {
-            scope.workspace = observable({ });
+        let scope = options.scope || { };
+        
+        if (options.constants) Object.keys(constants).forEach(key => scope[key] = constants[key]);
+        if (options.session) scope.session = this;
+        if (options.system) scope.system = this.system();
+        if (options.account) scope.account = await this.account(Object.isObject(options.account) ? options.account : null);
+        if (options.accounts) scope.accounts = await this.accounts();
+        if (options.positions) scope.positions = await this.positions();
+        if (options.trades) scope.trades = await this.trades(Object.isObject(options.trades) ? options.trades : null);
+        if (options.orders) scope.orders = this.orders;
+        
+        if (options.lookup) {
+            scope.contract = description => this.contract(description);
+            scope.contracts = description => this.contracts(description);
+            scope.combo = description => this.combo(description);
+            scope.curve = description => this.curve(description);
+            scope.optionChains = description => this.optionChain(description);
         }
-
-        if (options.rules) {
-            scope.rule = observe;
-        }
-
-        if (options.constants) {
-            Object.keys(constants).forEach(key => scope[key] = constants[key]);
-        }
-
-        if (options.session) {
-            scope.session = session;
-        }
-
-        if (options.system) {
-            scope.system = session.system();
-        }
-
+        
         if (options.displayGroups) {
-            scope.displayGroups = await session.displayGroups();
+            scope.displayGroups = await this.displayGroups();
         }
-
-        if (options.account) {
-            scope.account = await session.account(Object.isObject(options.account) ? options.account : null);
-        }
-
-        if (options.accounts) {
-            scope.accounts = await session.accounts();
-        }
-
-        if (options.positions) {
-            scope.positions = await session.positions();
-        }
-
-        if (options.trades) {
-            scope.trades = await session.trades(Object.isObject(options.trades) ? options.trades : null);
-        }
-
+        
         if (options.wellKnownSymbols) {
             Object.assign(constants.wellKnownSymbols, options.wellKnownSymbols);
         }
-
+        
         if (options.loadWellKnownSymbols) {
             await Promise.all(Object.keys(constants.wellKnownSymbols).map(async key => {
-                scope[key] = await session.contract(constants.wellKnownSymbols[key]);
+                scope[key] = await this.contract(constants.wellKnownSymbols[key]);
             }));
         }
 
         if (options.contracts) {
             if (Array.isArray(options.contracts)) {
                 await Promise.all(options.contracts.map(async description => {
-                    let contract = await session.contract(description);
+                    let contract = await this.contract(description);
                     scope[contract.toString()] = contract;
                 }));
             }
             else {
                 await Promise.all(Object.keys(options.contracts).map(async key => {
-                    scope[key] = await session.contract(options.contracts[key]);
+                    scope[key] = await this.contract(options.contracts[key]);
                 }));
             }
         }
@@ -237,7 +217,9 @@ class Session extends Events {
             Object.assign(scope, options.libraries);
         }
         
-        Object.defineProperty(scope, "context", { value: () => new Context(this.service, scope) });
+        Object.defineProperty(scope, "context", { 
+            value: () => new Context(this.service, scope) 
+        });
 
         return scope;
     }

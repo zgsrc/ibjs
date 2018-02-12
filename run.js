@@ -44,7 +44,7 @@ console.log("Connecting...");
 ibjs.session(config).then(async session => {
     session.on("error", console.error).on("disconnected", () => console.log("Disconnected"));
     
-    let scope = await session.scope();
+    let scope = await session.scope(config.scope);
     let context = scope.context();
     console.log(await context.evaluate("return account.balances"))
     
