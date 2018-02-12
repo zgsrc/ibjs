@@ -33,13 +33,13 @@ module.exports = class Context {
         return await vm.runInContext(src.toString(), this.vm, { filename: file });
     }
     
-    async load(src, file) {
+    async execute(src, file) {
         await this.reifySpecialIdentifiers(src);
         return await vm.runInContext(`((async () => {\n${src.toString()}\n})())`, this.vm, { filename: file, lineOffset: -1 });
     }
     
-    async run(file) {
-        return await this.load(await read(file), file);
+    async load(file) {
+        return await this.execute(await read(file), file);
     }
     
 }

@@ -44,22 +44,28 @@ console.log("Connecting...");
 ibjs.session(config).then(async session => {
     session.on("error", console.error).on("disconnected", () => console.log("Disconnected"));
     
-    let scope = await session.scope(config.scope),
+    let scope = await session.scope(config.scope), 
         context = scope.context();
     
-    console.log("Starting REPL...\n");
-    return repl.start({ 
-        prompt: "> ", 
-        ignoreUndefined: true, 
-        useGlobal: true,
-        eval: (cmd, cxt, filename, cb) => {
-            context.evaluate(cmd).then(val => cb(null, val)).catch(e => {
-                if (e.name === 'SyntaxError' && /^(Unexpected end of input|Unexpected token)/.test(e.message)) cb(new repl.Recoverable(e));
-                else cb(e);
-            });
-        }
-    }).on("exit", () => session.close());
+    let files = config.args.map(async file => {
+        console.log("Loading " + file + "...")
+        return context.load(file);
+    });
     
+    files.reduce((promise, func) => promise.then(result => func().then(Array.prototype.concat.bind(result))), Promise.resolve([])).then(() => {
+        console.log("Starting REPL...\n");
+        return repl.start({ 
+            prompt: "> ", 
+            ignoreUndefined: true, 
+            useGlobal: true,
+            eval: (cmd, cxt, filename, cb) => {
+                context.evaluate(cmd).then(val => cb(null, val)).catch(e => {
+                    if (e.name === 'SyntaxError' && /^(Unexpected end of input|Unexpected token)/.test(e.message)) cb(new repl.Recoverable(e));
+                    else cb(e);
+                });
+            }
+        }).on("exit", () => session.close());
+    }).catch(console.error);
 }).catch(err => {
     console.error(err.message);
     process.exit(1);
