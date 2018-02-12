@@ -1,116 +1,45 @@
-[![Logo](./ib-logo.png)](http://interactivebrokers.com/)
-
-# Interactive Brokers Javascript Library
-
-This is a high-level javascript library build atop the [native javascript API](https://github.com/pilwon/node-ib).
-
 ## Installation
 
     npm install ibjs
 
-## Getting Started
+## Quick Start
 
-The entry point is the `session` returned by the `ibjs.session` promise.  Each `session` is associated with one or more accounts.  The most common case is access to a single [account](./example/account.js).
+The entry point is the `session` returned by the `ibjs.session` promise.  Each `session` is associated with one or more accounts.  The most common case is access to a single account.
 
 ```javascript
 ibjs.session().then(async session => {
+    // Only one account can be subscribed to at a time.
     let account = await session.account();
-
-    console.log("Balances:");
-    account.balances.each((value, name) => console.log(`${name}: ${value}`));
-
-    console.log("Positions:");
-    account.positions.each(console.log);
-
-    console.log("Orders:");
-    account.orders.each(console.log);
-
-    console.log("Trades:");
-    account.trades.each(console.log);
+    console.log(account);
+    
+    // For multiple managed accounts, account summary must be used.
+    let accounts = await session.accounts();
+    console.log(accounts);
+                                      
+    // Trade history
+    let trades = await session.trades();
+    console.log(trades);
+                                      
+    // Orders are a singleton attached to the session
+    console.log(session.orders);
     
     session.close();
 }).catch(console.log);
 ```
 
-For multiple managed accounts, the [accounts](./example/accounts.js) summary must be used.  Otherwise only one account can be subscribed to at a time.
+Use the [symbol](./doc/symbols.md) syntax to lookup `contracts`.
 
 ```javascript
-let accounts = await session.accounts();
-accounts.each((account, name) => {
-    console.log(name);
-
-    console.log("Balances:");
-    account.balances.each((value, name) => console.log(`${name}: ${value}`));
-
-    console.log("Positions:");
-    account.positions.each(console.log);
-});
-
-console.log("Orders:");
-accounts.orders.each(console.log);
-
-console.log("Trades:");
-accounts.trades.each(console.log);
-
-session.close();
-```
-
-Use the [symbol](./doc/symbols.md) syntax to create `securities` from which you can access market data.
-
-```javascript
-let AAPL = session.security("AAPL stock");
+let AAPL = session.contract("AAPL stock");
 console.log(AAPL.contract);
 
-let snapshot = await AAPL.fundamentals("snapshot");
+let snapshot = await AAPL.fetchReport("snapshot");
 console.log(snapshot);
 
-if (!AAPL.contract.marketsOpen) {
-    session.frozen = true;
+(await AAPL.quote.stream()).log();
     
-    let instant = await AAPL.quote.query();
-    console.log(instant);
-    
-    let chart = await AAPL.charts.minutes.five.history();
-    chart.study("SMA20", 20, "SMA");
-    console.log(chart.series);
-}
-else {
-    (await AAPL.quote.stream()).log();
-    (await AAPL.depth.stream()).log();
-    (await AAPL.charts.stream()).log();
-}
-```
-
-Manage [system](./example/system.js) events like changes in market data farm connectivity, IB bulletins, and FYI's.  If you connect to the graphical TWS software, you can interact with display groups.
-
-```javascript
-session
-    .on("error", console.log)
-    .on("disconnected", () => console.log("Disconnected."))
-    .on("connectivity", console.log)
-    .on("displayGroupUpdated", group => console.log(group.security.contract.summary))
-    .on("bulletin", console.log);
-
-// Make sure stuff has loaded
-await session.system();
-
-// IB news bulletins (margin calls, special labelling, etc)
-let bulletins = session.bulletins;
-console.log(bulletins);
-
-// Market data farm connections
-let connectivity = session.connectivity;
-console.log(connectivity);
-
-// Access display groups
-session.displayGroups.forEach(group => {
-    if (group.security) console.log(group.security.contract.summary);
-});
-
-// Update display group
-session.displayGroups[0].update(await session.security("AAPL"));
-
-setTimeout(() => session.close(), 10000);
+let chart = await AAPL.charts["5 mins"].history();
+console.log(chart.series);
 ```
 
 ## License

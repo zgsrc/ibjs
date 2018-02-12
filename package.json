@@ -1,7 +1,7 @@
 {
   "name": "ibjs",
   "version": "0.13.0",
-  "description": "Interactive Brokers library framework build atop the native javascript API.",
+  "description": "Interactive Brokers javascript library.",
   "main": "index.js",
   "directories": {
     "doc": "doc",
