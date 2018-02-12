@@ -9,6 +9,7 @@ module.exports = class Context {
     
     constructor(service, scope) {
         Object.defineProperty(this, "resolver", { value: new Resolver(service) });
+        
         Object.defineProperty(this, "scope", { 
             value: new Proxy(scope, {
                 get: function(scope, name) {
@@ -21,20 +22,27 @@ module.exports = class Context {
         Object.defineProperty(this, "vm", { value: vm.createContext(this.scope) });
     }
     
-    async reifySpecialIdentifiers(src) {
+    async reify(src) {
         let ids = esprima.tokenize(src.toString()).filter(
             token => token.type == "Identifier" && token.value[0] == "$" && token.value.length > 1
         ).map("value").map(id => id.substr(1)).unique().filter(id => this.scope[id] == null);
-        return Promise.all(ids.map(async identifier => this.scope[identifier] = await this.resolver.resolve(identifier)));
+        
+        return Promise.all(ids.map(async identifier => {
+            this.scope[identifier] = await this.resolver.resolve(identifier);
+        }));
     }
     
     async evaluate(src, file) {
-        await this.reifySpecialIdentifiers(src);
+        await this.reify(src);
         return await vm.runInContext(src.toString(), this.vm, { filename: file });
     }
     
+    async call(fn) {
+        return this.evaluate(`((${fn.toString()})())`);
+    }
+    
     async execute(src, file) {
-        await this.reifySpecialIdentifiers(src);
+        await this.reify(src);
         return await vm.runInContext(`((async () => {\n${src.toString()}\n})())`, this.vm, { filename: file, lineOffset: -1 });
     }
     

@@ -1,4 +1,4 @@
-const HISTORICAL = {
+const HISTORICAL = exports.HISTORICAL = {
     trades: "TRADES",
     midpoint: "MIDPOINT",
     bid: "BID",
@@ -14,9 +14,7 @@ const HISTORICAL = {
     yieldLast: "YIELD_LAST"
 };
 
-exports.HISTORICAL = HISTORICAL;
-
-const BarSizes = {
+const BAR_SIZES = exports.BAR_SIZES = {
     "5 secs": {
         text: "5 secs",
         integer: 5,
@@ -119,9 +117,7 @@ const BarSizes = {
     }
 };
 
-exports.BAR_SIZES = BarSizes;
-
-const ACCOUNT_TAGS = {
+const ACCOUNT_TAGS = exports.ACCOUNT_TAGS = {
     accountType: "AccountType",
     netLiquidation: "NetLiquidation",
     totalCashValue: "TotalCashValue",
@@ -153,9 +149,7 @@ const ACCOUNT_TAGS = {
     leverage: "Leverage"
 };
 
-exports.ACCOUNT_TAGS = ACCOUNT_TAGS;
-
-const TICKS = {  
+const QUOTE_TICK_TYPES = exports.QUOTE_TICK_TYPES = {  
     optionVolume: 100,
     optionOpenInterest: 101,
     historicalVolatility: 104,
@@ -176,9 +170,7 @@ const TICKS = {
     futuresOpenInterest: 588
 };
 
-exports.QUOTE_TICK_TYPES = TICKS;
-
-const REPORT = {
+const FUNDAMENTALS_REPORTS = exports.FUNDAMENTALS_REPORTS = {
     financials: "ReportsFinSummary",
     ownership: "ReportsOwnership",
     snapshot: "ReportSnapshot",
@@ -187,9 +179,7 @@ const REPORT = {
     calendar: "CalendarReport"
 };
 
-exports.FUNDAMENTALS_REPORTS = REPORT;
-
-const CURRENCIES = [
+const CURRENCIES = exports.CURRENCIES = [
     'USD', 'AUD', 'CAD', 'CHF', 'CNH', 
     'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 
     'HUF', 'ILS', 'JPY', 'MXN', 'NOK', 
@@ -197,9 +187,7 @@ const CURRENCIES = [
     'ZAR', 'KRW'
 ];
 
-exports.CURRENCIES = CURRENCIES;
-
-const SECURITY_TYPE = {
+const SECURITY_TYPE = exports.SECURITY_TYPE = {
     stock: "STK",
     equity: "STK",
     option: "OPT",
@@ -221,17 +209,13 @@ const SECURITY_TYPE = {
     news: "NEWS"
 };
 
-exports.SECURITY_TYPE = SECURITY_TYPE;
-
-const SIDE = {
+const SIDE = exports.SIDE = {
     buy: "BUY",
     sell: "SELL",
     short: "SSHORT"
 };
 
-exports.SIDE = SIDE;
-
-const ORDER_TYPE = {
+const ORDER_TYPE = exports.ORDER_TYPE = {
     market: "MKT",
     marketProtect: "MKT PRT",
     marketToLimit: "MTL",
@@ -252,9 +236,7 @@ const ORDER_TYPE = {
     trailingMarketIfTouched: "TRAIL MIT"
 };
 
-exports.ORDER_TYPE = ORDER_TYPE;
-
-const RULE80A = { 
+const RULE80A = exports.RULE80A = { 
     individual: "I",
     agency: "A",
     agentOtherMember: "W",
@@ -266,9 +248,7 @@ const RULE80A = {
     agentOtherMemberPT: "N"
 };
 
-exports.RULE80A = RULE80A;
-
-const TIME_IN_FORCE = {
+const TIME_IN_FORCE = exports.TIME_IN_FORCE = {
     day: "DAY",
     goodUntilCancelled: "GTC",
     goodTilCancelled: "GTC",
@@ -279,86 +259,14 @@ const TIME_IN_FORCE = {
     open: "OPG"
 };
 
-exports.TIME_IN_FORCE = TIME_IN_FORCE;
-
-const OCA_TYPE = {
+const OCA_TYPE = exports.OCA_TYPE = {
     cancel: 1,
     reduce: 2,
     reduceWithoutOverfillProtection: 3
 };
 
-exports.OCA_TYPE = OCA_TYPE;
-
-const MARKET_DATA_TYPE = {
+const MARKET_DATA_TYPE = exports.MARKET_DATA_TYPE = {
     live: 1,
     frozen: 2,
     delayed: 3
-};
-
-exports.MARKET_DATA_TYPE = MARKET_DATA_TYPE;
-
-const tz = {
-    // USA
-    EST5EDT: "America/New_York",
-    EST: "America/New_York",
-    EDT: "America/New_York",
-    CST6CDT: "America/Chicago",
-    CST: "America/Chicago",
-    CDT: "America/Chicago",
-    MST7MDT: "America/Denver",
-    MST: "America/Denver",
-    MDT: "America/Denver",
-    PST8PDT: "America/Los_Angeles",
-    PST: "America/Los_Angeles",
-    PDT: "America/Los_Angeles",
-    
-    // SOUTH AMERICA
-    ART: "America/Buenos_Aires",
-    BRST: "America/Sao_Paolo",
-    VET: "America/Caracas",
-    
-    // EUROPE
-    WET: "Europe/Lisbon",
-    GMT: "Europe/London",
-    CET: "Europe/Paris",
-    MET: "Europe/Paris",
-    EET: "Europe/Helsinki",
-    MSK: "Europe/Moscow",
-    
-    // MIDDLE EAST
-    IST: "Asia/Tel_Aviv",
-    AST: "Asia/Dubai",
-    
-    // AFRICA
-    SAST: "Africa/Johannesburg",
-    
-    // ASIA
-    IST: "Asia/Kolkata",
-    HKT: "Asia/Hong_Kong",
-    CST: "Asia/Shanghai",
-    KST: "Asia/Seoul",
-    JST: "Asia/Tokyo",
-    AEDT: "Australia/Sydney"
-};
-
-exports.tz = tz;
-
-exports.wellKnownSymbols = { };
-
-exports.defaultScope = {
-    workspace: true,
-    rules: true,
-    constants: true,
-    session: false,
-    system: true,
-    account: true,
-    accounts: false,
-    positions: false,
-    trades: true,
-    lookup: true,
-    displayGroups: false,
-    wellKnownSymbols: { },
-    loadWellKnownSymbols: false,
-    contracts: [ ] || { },
-    libraries: { }
 };

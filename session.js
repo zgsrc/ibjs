@@ -163,10 +163,9 @@ class Session extends Events {
         symbol.order(this.service, description);
     }
     
-    async scope(options) {
-        options = options || constants.defaultScope;
-        
-        let scope = options.scope || { };
+    async scope(options, scope) {
+        options = options || Session.defaultScope;
+        scope = scope || { };
         
         if (options.constants) Object.keys(constants).forEach(key => scope[key] = constants[key]);
         if (options.session) scope.session = this;
@@ -175,14 +174,20 @@ class Session extends Events {
         if (options.accounts) scope.accounts = await this.accounts();
         if (options.positions) scope.positions = await this.positions();
         if (options.trades) scope.trades = await this.trades(Object.isObject(options.trades) ? options.trades : null);
-        if (options.orders) scope.orders = this.orders;
+        
+        if (options.orders) {
+            scope.orders = this.orders;
+            scope.order = description => this.order(description);
+        }
         
         if (options.lookup) {
             scope.contract = description => this.contract(description);
             scope.contracts = description => this.contracts(description);
             scope.combo = description => this.combo(description);
             scope.curve = description => this.curve(description);
-            scope.optionChains = description => this.optionChain(description);
+            scope.optionChain = description => this.optionChain(description);
+            
+            scope.markets = contract.markets;
         }
         
         if (options.displayGroups) {
@@ -190,12 +195,12 @@ class Session extends Events {
         }
         
         if (options.wellKnownSymbols) {
-            Object.assign(constants.wellKnownSymbols, options.wellKnownSymbols);
+            Object.assign(symbol.wellKnownSymbols, options.wellKnownSymbols);
         }
         
         if (options.loadWellKnownSymbols) {
-            await Promise.all(Object.keys(constants.wellKnownSymbols).map(async key => {
-                scope[key] = await this.contract(constants.wellKnownSymbols[key]);
+            await Promise.all(Object.keys(symbol.wellKnownSymbols).map(async key => {
+                scope[key] = await this.contract(symbol.wellKnownSymbols[key]);
             }));
         }
 
@@ -225,5 +230,21 @@ class Session extends Events {
     }
     
 }
+
+Session.defaultScope = {
+    session: true,
+    constants: true,
+    system: true,
+    account: true,
+    accounts: false,
+    positions: false,
+    trades: true,
+    lookup: true,
+    displayGroups: false,
+    wellKnownSymbols: { },
+    loadWellKnownSymbols: false,
+    contracts: [ ] || { },
+    libraries: { }
+};
 
 module.exports = Session;

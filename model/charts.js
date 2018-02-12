@@ -1,5 +1,3 @@
-
-
 const Subscription = require("./subscription"),
       Bars = require("./bars"),
       constants = require("../constants");

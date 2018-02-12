@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@nx-js/observer-util": "^4.0.1",
-    "chalk": "^2.3.0",
     "commander": "^2.14.1",
     "esprima": "^4.0.0",
     "ib": "^0.2.4",

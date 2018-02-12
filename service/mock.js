@@ -1,5 +1,3 @@
-
-
 const Events = require("events"),
       IB = require("ib");
 

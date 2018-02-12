@@ -1,6 +1,8 @@
 const constants = require("../constants"),
       contract = require("../model/contract");
 
+const wellKnownSymbols = exports.wellKnownSymbols = { };
+
 function frontMonth(cutOffDay, offset) {
     let date = Date.create();
     
@@ -30,8 +32,8 @@ function summary(definition) {
             };
         }
         else {
-            if (constants.wellKnownSymbols[definition.trim().toUpperCase()]) {
-                definition = constants.wellKnownSymbols[definition.trim().toUpperCase()];
+            if (wellKnownSymbols[definition.trim().toUpperCase()]) {
+                definition = wellKnownSymbols[definition.trim().toUpperCase()];
             }
             
             let tokens = definition.split(' ').map("trim").compact(true);

@@ -1,5 +1,3 @@
-
-
 const Subscription = require("./subscription"),
       constants = require("../constants"),
       Currency = require("./currency");
