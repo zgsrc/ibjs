@@ -1,13 +1,12 @@
-## Installation
-
-    npm install ibjs
-
-## Quick Start
-
 The entry point is the `session` returned by the `ibjs.session` promise.  Each `session` is associated with one or more accounts.  The most common case is access to a single account.
 
 ```javascript
-ibjs.session().then(async session => {
+ibjs.session({
+    host: "localhost",
+    port: 4001,
+    timeout: 500,
+    orders: "passive"
+}).then(async session => {
     // Only one account can be subscribed to at a time.
     let account = await session.account();
     console.log(account);
@@ -44,7 +43,7 @@ console.log(chart.series);
 
 ## License
 
-Copyright 2017 Jonathan Hollinger
+Copyright 2017 Jon Hollinger
 
 This is an open source project unrelated to Interactive Brokers.
 
