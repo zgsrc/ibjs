@@ -44,10 +44,21 @@ console.log("Connecting...");
 ibjs.session(config).then(async session => {
     session.on("error", console.error).on("disconnected", () => console.log("Disconnected"));
     
-    let scope = await session.scope(config.scope);
-    let context = scope.context();
-    console.log(await context.evaluate("return account.balances"))
+    let scope = await session.scope(config.scope),
+        context = scope.context();
     
+    console.log("Starting REPL...\n");
+    return repl.start({ 
+        prompt: "> ", 
+        ignoreUndefined: true, 
+        useGlobal: true,
+        eval: (cmd, cxt, filename, cb) => {
+            context.evaluate(cmd).then(val => cb(null, val)).catch(e => {
+                if (e.name === 'SyntaxError' && /^(Unexpected end of input|Unexpected token)/.test(e.message)) cb(new repl.Recoverable(e));
+                else cb(e);
+            });
+        }
+    }).on("exit", () => session.close());
     
 }).catch(err => {
     console.error(err.message);
@@ -56,54 +67,6 @@ ibjs.session(config).then(async session => {
 
 if (config.input) {
     config.ib.replay(config.input, config.inputSpeed || 1);
-}
-
-
-
-
-
-return;
-
-
-let files = config.args;
-context.session = session;
-if (files && files.length) {
-    files.map(async file => {
-        console.log("Loading module " + file);
-        await require(file)(context);
-    }).reduce((promise, func) =>
-        promise.then(result => func().then(Array.prototype.concat.bind(result))),
-        Promise.resolve([])
-    ).then(() => {
-        console.log("All modules loaded successfully.");
-        if (config.repl) startTerminal(context);
-    }).catch(console.error);
-}
-else if (config.repl) startTerminal(context);
-
-function startTerminal(context) {
-    console.log("Starting REPL...\n");
-    
-    let terminal = repl.start({ 
-        prompt: "> ", 
-        ignoreUndefined: true, 
-        useGlobal: true 
-    });
-    
-    Object.assign(terminal.context, context);
-
-    terminal.defineCommand('stock', function(localSymbol) {
-        terminal.clearBufferedCommand();
-        context.session.contract(localSymbol + " stock").then(contract => {
-            terminal.context[contract.summary.localSymbol] = contract;
-            console.log(chalk.gray("Contract stored in symbol " + contract.summary.localSymbol));
-            terminal.displayPrompt();
-        }).catch(err => {
-
-        });
-    });
-
-    terminal.on("exit", () => context.session.close());
 }
 
 process.on('uncaughtException', console.error);

@@ -1,10 +1,11 @@
-const contract = require("../model/contract");
+const symbol = require("./symbol"),
+      contract = require("../model/contract");
 
 module.exports = class Resolver {
     
     constructor(service) {
         Object.defineProperty(this, "filters", { value: [ ], enumerable: false });
-        Object.defineProperty(this, "resolveContract", { value: name => contract.first(service, name), enumerable: false });
+        Object.defineProperty(this, "resolveContract", { value: name => contract.first(service, symbol.contract(name)), enumerable: false });
     }
     
     async resolve(name) {

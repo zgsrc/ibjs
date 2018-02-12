@@ -25,16 +25,21 @@ module.exports = class Context {
         let ids = esprima.tokenize(src.toString()).filter(
             token => token.type == "Identifier" && token.value[0] == "$" && token.value.length > 1
         ).map("value").map(id => id.substr(1)).unique().filter(id => this.scope[id] == null);
-        return Promise.all(ids.map(async identifier => this.scope[identifier] = await resolve(identifier)));
+        return Promise.all(ids.map(async identifier => this.scope[identifier] = await this.resolver.resolve(identifier)));
     }
     
     async evaluate(src, file) {
         await this.reifySpecialIdentifiers(src);
-        return vm.runInContext(`((async () => {\n${src.toString()}\n})())`, this.vm, { filename: file, lineOffset: -1 });
+        return await vm.runInContext(src.toString(), this.vm, { filename: file });
+    }
+    
+    async load(src, file) {
+        await this.reifySpecialIdentifiers(src);
+        return await vm.runInContext(`((async () => {\n${src.toString()}\n})())`, this.vm, { filename: file, lineOffset: -1 });
     }
     
     async run(file) {
-        return await this.evaluate(await read(file), file);
+        return await this.load(await read(file), file);
     }
     
 }
