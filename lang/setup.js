@@ -84,6 +84,10 @@ function preprocessConfiguration(config) {
 exports.preprocessConfiguration = preprocessConfiguration;
 
 async function setupEnvironment(config, hooks) {
+    if (config == null) {
+        config = processCommandLineArgs();
+    }
+    
     if (hooks) {
         config.hooks = hooks;
     }
