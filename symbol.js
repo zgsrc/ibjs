@@ -1,5 +1,5 @@
-const constants = require("../constants"),
-      contract = require("../model/contract");
+const constants = require("./constants"),
+      contract = require("./model/contract");
 
 const wellKnownSymbols = exports.wellKnownSymbols = { };
 

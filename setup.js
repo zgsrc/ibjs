@@ -1,11 +1,18 @@
 const fs = require("fs"),
       util = require("util"),
-      read = util.promisify(fs.readFile),
-      repl = require("repl"),
+      read = util.promisify(fs.readFile);
+
+const repl = require("repl"),
       config = require("commander"),
-      ibjs = require("../index"),
-      mock = require("../service/mock"),
       json = file => JSON.parse(fs.readFileSync(file).toString());
+
+const id = exports.id = 0,
+      IB = exports.IB = require("ib"),
+      Service = exports.Service = require("./service/service"),
+      Dispatch = exports.Dispatch = require("./service/dispatch"),
+      Proxy = exports.Proxy = require("./service/proxy"),
+      Session = exports.Session = require("./session"),
+      mock = require("./service/mock");
 
 config.version("0.13.0")
     .usage("[options] [files]")
@@ -83,6 +90,52 @@ function preprocessConfiguration(config) {
 
 exports.preprocessConfiguration = preprocessConfiguration;
 
+async function initializeSession(config) {
+    if (Object.isNumber(config)) {
+        config = { port: config };
+    }
+    
+    config = config || { };
+    config.id = config.id || exports.id++;
+    
+    return new Promise((yes, no) => {
+        let timeout = setTimeout(() => {
+            no(new Error("Connection timeout. " + connectErrorHelp));
+        }, config.timeout || 2500);
+        
+        let ib = config.ib || new IB({
+            clientId: config.id,
+            host: config.host || "127.0.0.1",
+            port: config.port || 4001
+        });
+
+        if (config.trace && typeof config.trace == "function") {
+            ib.on("all", config.trace);
+        }
+
+        if (typeof config.orders == "undefined") {
+            config.orders = "passive"; // "all", "local", "passive"
+        }
+
+        new Session(
+            new Service(ib, config.dispatch || new Dispatch()), 
+            config
+        ).once("load", sess => {
+            clearTimeout(timeout);
+            yes(sess);
+        }).once("error", err => {
+            clearTimeout(timeout);
+            no(err);
+        }).service.socket.once("error", err => {
+            clearTimeout(timeout);
+            if (err.code == "ECONNREFUSED") no(new Error("Connection refused. " + connectErrorHelp));
+            else no(err);
+        }).connect();
+    });
+};
+
+exports.initializeSession = initializeSession;
+
 async function setupEnvironment(config, hooks) {
     if (config == null) {
         config = processCommandLineArgs();
@@ -108,7 +161,7 @@ async function setupEnvironment(config, hooks) {
     }
     
     if (connection == null) {
-        connection = ibjs.session(config);
+        connection = initializeSession(config);
     }
     
     connection.then(async session => {

@@ -7,8 +7,8 @@ const esprima = require('esprima'),
 
 module.exports = class Context {
     
-    constructor(service, scope) {
-        Object.defineProperty(this, "resolver", { value: new Resolver(service) });
+    constructor(service, scope, defaultResolver) {
+        Object.defineProperty(this, "resolver", { value: new Resolver(service, defaultResolver) });
         
         Object.defineProperty(this, "scope", { 
             value: new Proxy(scope, {
@@ -32,13 +32,14 @@ module.exports = class Context {
         }));
     }
     
+    async call(fn) {
+        await this.reify(src);
+        return await vm.runInContext(`((${fn.toString()})())`, this.vm, { columnOffset: 4 });
+    }
+    
     async evaluate(src, file) {
         await this.reify(src);
         return await vm.runInContext(src.toString(), this.vm, { filename: file });
-    }
-    
-    async call(fn) {
-        return this.evaluate(`((${fn.toString()})())`);
     }
     
     async execute(src, file) {

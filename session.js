@@ -2,7 +2,7 @@ const { observable, observe } = require('@nx-js/observer-util');
 
 const Events = require("events"),
       constants = require("./constants"),
-      symbol = require("./lang/symbol"),
+      symbol = require("./symbol"),
       Context = require("./lang/context"),
       contract = require("./model/contract"),
       orders = require("./model/orders"),
@@ -217,13 +217,17 @@ class Session extends Events {
                 }));
             }
         }
+        
+        if (options.studies) {
+            scope.studies = require("./model/studies");
+        }
 
         if (options.libraries) {
             Object.assign(scope, options.libraries);
         }
         
         Object.defineProperty(scope, "context", { 
-            value: () => new Context(this.service, scope) 
+            value: () => new Context(this.service, scope, name => contract.first(this.service, symbol.contract(name))) 
         });
 
         return scope;
@@ -243,6 +247,7 @@ Session.defaultScope = {
     displayGroups: false,
     wellKnownSymbols: { },
     loadWellKnownSymbols: false,
+    studies: true,
     contracts: [ ] || { },
     libraries: { }
 };
