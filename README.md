@@ -1,8 +1,18 @@
+# IB Javascript Container
 
+Container to host Interactive Brokers trading system logic written in Javascript.
+
+## Installation
+
+    [sudo] npm i -g ibjs
+
+## Getting Started
+
+    ibjs --help
 
 ## License
 
-Copyright 2017 Jon Hollinger
+Copyright 2017 Jonathan Hollinger
 
 This is an open source project unrelated to Interactive Brokers.
 

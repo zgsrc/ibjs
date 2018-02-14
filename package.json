@@ -1,11 +1,15 @@
 {
   "name": "ibjs",
+  "description": "Interactive Brokers javascript container.",
+  "author": "Jonathan Hollinger",
+  "license": "MIT",
   "version": "0.13.0",
-  "description": "Interactive Brokers javascript library.",
   "main": "index.js",
-  "directories": {
-    "doc": "doc",
-    "example": "example"
+  "bin": "./bin/ibjs",  
+  "homepage": "https://github.com/triploc/ibjs#readme",
+  "scripts": {
+    "browserify": "browserify client.js -o client.browser.js",
+    "start": "./bin/ibjs --repl"
   },
   "dependencies": {
     "commander": "^2.14.1",
@@ -19,13 +23,6 @@
     "sugar": "^2.0.4",
     "xml2js": "^0.4.19"
   },
-  "keywords": [
-    "interactive brokers",
-    "ib",
-    "ib api"
-  ],
-  "author": "Jonathan Hollinger",
-  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/triploc/ibjs.git"
@@ -33,9 +30,9 @@
   "bugs": {
     "url": "https://github.com/triploc/ibjs/issues"
   },
-  "homepage": "https://github.com/triploc/ibjs#readme",
-  "scripts": {
-    "browserify": "browserify client.js -o client.browser.js",
-    "start": "node run --repl"
-  }
+  "keywords": [
+    "interactive brokers",
+    "ib",
+    "ib api"
+  ]
 }

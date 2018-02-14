@@ -1,3 +1,3 @@
-exports.setup = require("./setup");
-exports.constants = require("./constants");
-exports.studies = require("./model/studies");
+exports.setup = require("./lib/setup");
+exports.constants = require("./lib/constants");
+exports.studies = require("./lib/model/studies");
