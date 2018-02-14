@@ -12,7 +12,7 @@ Container to host Interactive Brokers trading system logic written in Javascript
 
 ## License
 
-Copyright 2017 Jonathan Hollinger
+Copyright 2018 Jonathan Hollinger
 
 This is an open source project unrelated to Interactive Brokers.
 
