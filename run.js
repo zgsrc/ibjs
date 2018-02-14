@@ -1,1 +1,2 @@
-require("./lang/setup").setupEnvironment();
+require("sugar").extend();
+require("./setup").setupEnvironment();

@@ -12,6 +12,7 @@
     "commander": "^2.14.1",
     "escodegen": "^1.9.0",
     "esprima": "^4.0.0",
+    "hyperactiv": "^0.1.6",
     "ib": "^0.2.4",
     "line-by-line": "^0.1.6",
     "luxon": "^0.3.1",

@@ -4,7 +4,7 @@ const esprima = require('esprima'),
       fs = require('fs'),
       util = require('util'),
       read = util.promisify(fs.readFile),
-      { observable, observe } = require('@nx-js/observer-util'),
+      { computed, observe, dispose } = require('hyperactiv'),
       Resolver = require("./resolver");
 
 module.exports = class Context {
@@ -12,9 +12,9 @@ module.exports = class Context {
     constructor(service, scope, defaultResolver) {
         Object.defineProperty(this, "resolver", { value: new Resolver(service, defaultResolver) });
         
-        scope.$ = observable({ });
-        scope.observe = observable;
-        scope.rule = observe;
+        scope.$ = observe({ }, { deep: true, batch: true });
+        scope.observe = observe;
+        scope.rule = computed;
         
         scope.reify = src => this.reify(src);
         scope.run = fn => this.run(fn);
@@ -81,17 +81,22 @@ module.exports = class Context {
                     if (statement.expression.left.type == "Identifier") {
                         statement.expression.left = {
                             "type":"MemberExpression",
-                            "computed":false,
-                            "object":{
-                                "type":"Identifier",
-                                "name":"$"
+                            "computed": false,
+                            "object": {
+                                "type": "Identifier",
+                                "name": "$"
                             },
-                            "property":{
-                                "type":"Identifier",
+                            "property": {
+                                "type": "Identifier",
                                 "name": statement.expression.left.name
                             }
                         };
                     }
+                    
+                    statement.expression.right = {
+                        "type":"AwaitExpression",
+                        "argument": statement.expression.right
+                    };
                     
                     return generateCall(generateFn(statement));
                 }
@@ -100,6 +105,7 @@ module.exports = class Context {
         });
         
         src = escodegen.generate(tree);
+        console.log(src);
         return this.execute(src, file);
     }
     
@@ -111,37 +117,30 @@ module.exports = class Context {
 }
 
 function generateCall(fn) {
-    return [
-        {
-            "type": "ExpressionStatement",
-            "expression": {
-                "type": "CallExpression",
-                "callee": {
-                    "type": "Identifier",
-                    "name": "rule"
-                },
-                "arguments": [ fn ]
-            }
+    return {
+        "type": "ExpressionStatement",
+        "expression": {
+            "type": "CallExpression",
+            "callee": {
+                "type": "Identifier",
+                "name": "rule"
+            },
+            "arguments": [ fn ]
         }
-    ];
+    };
 }
 
-function generateFn(statements) {
-    return [
-        {
-            "type": "ExpressionStatement",
-            "expression": {
-                "type": "ArrowFunctionExpression",
-                "id": null,
-                "params": [],
-                "body":{
-                    "type": "BlockStatement",
-                    "body": statements
-                },
-                "generator": false,
-                "expression": false,
-                "async": true
-            }
-        }
-    ];
+function generateFn(statement) {
+    return {
+        "type": "ArrowFunctionExpression",
+        "id": null,
+        "params": [],
+        "body":{
+            "type": "BlockStatement",
+            "body": [statement]
+        },
+        "generator": false,
+        "expression": false,
+        "async": true
+    };
 }

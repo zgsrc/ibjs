@@ -1,3 +1,9 @@
+require("sugar").extend();
+
+const connectErrorHelp = "Make sure TWS or IB Gateway is running and you are logged in.\n" + 
+    "Then check IB software is configured to accept API connections over the correct port.\n" +
+    "If all else fails, try restarting TWS or IB Gateway.";
+
 const fs = require("fs"),
       util = require("util"),
       read = util.promisify(fs.readFile);
@@ -142,7 +148,8 @@ async function setupEnvironment(config, hooks) {
     }
     
     if (hooks) {
-        config.hooks = hooks;
+        if (Object.isString(hooks)) config.hooks = require(hooks);
+        else config.hooks = hooks;
     }
     
     config.hooks = config.hooks || { };
@@ -172,7 +179,11 @@ async function setupEnvironment(config, hooks) {
             session.on("error", config.hooks.sessionError || console.error)
                    .on("disconnected", config.hooks.disconnected || (() => console.log("Disconnected")));
         }
-
+        
+        if (config.verbose) {
+            console.log("Assembling scope...");
+        }
+        
         let scope;
         if (config.hooks.initScope) {
             scope = await config.hooks.initScope(scope);
@@ -181,6 +192,10 @@ async function setupEnvironment(config, hooks) {
         scope = await session.scope(config.scope, scope);
         if (config.hooks.scope) {
             await config.hooks.scope(scope);
+        }
+        
+        if (config.verbose) {
+            console.log("Building context...");
         }
         
         let context = scope.context();

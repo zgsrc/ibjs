@@ -1,11 +1,9 @@
-
-
 const Events = require("events");
-const { observable } = require('@nx-js/observer-util');
+const { observe } = require('hyperactiv');
 
 class Subscription extends Events {
     
-    constructor(base) {
+    constructor(base, plain) {
         super();
         
         Object.defineProperty(this, "domain", { value: this.domain, enumerable: false });
@@ -24,7 +22,9 @@ class Subscription extends Events {
         }
         
         Object.defineProperty(this, "subscriptions", { value: [ ], enumerable: false });
-        return observable(this);
+        
+        if (plain) return this;
+        else return observe(this, { deep: true, batch: true });
     }
     
     each(fn) {
@@ -55,6 +55,6 @@ class Subscription extends Events {
     
 }
 
-Subscription.observable = observable;
+Subscription.observe = observe;
 
 module.exports = Subscription;

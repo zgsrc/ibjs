@@ -1,5 +1,3 @@
-const { observable, observe } = require('@nx-js/observer-util');
-
 const Events = require("events"),
       constants = require("./constants"),
       symbol = require("./symbol"),
@@ -186,7 +184,6 @@ class Session extends Events {
             scope.combo = description => this.combo(description);
             scope.curve = description => this.curve(description);
             scope.optionChain = description => this.optionChain(description);
-            
             scope.markets = contract.markets;
         }
         

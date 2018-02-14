@@ -9,7 +9,7 @@ class Orders extends Subscription {
     constructor(service, local) {
         super(service);
         
-        this.nextOrderId = null;
+        this.nextOrderId = Number.MAX_SAFE_INTEGER;
         
         this.subscriptions.push((local ? this.service.openOrders() : this.service.allOpenOrders()).on("data", async data => {
             if (data.nextOrderId) {
