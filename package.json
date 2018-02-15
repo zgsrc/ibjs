@@ -10,6 +10,7 @@
   "dependencies": {
     "commander": "^2.14.1",
     "currency-symbol-map": "^4.0.3",
+    "dop": "^0.26.0",
     "escodegen": "^1.9.0",
     "esprima": "^4.0.0",
     "hyperactiv": "^0.1.6",
