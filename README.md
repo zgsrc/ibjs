@@ -1,6 +1,6 @@
 # IB Javascript Container
 
-Container to host Interactive Brokers trading system logic written in Javascript.
+Container to host trading system logic written in Javascript.
 
 ## Installation
 
