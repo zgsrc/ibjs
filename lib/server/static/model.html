@@ -1,0 +1,19 @@
+<html>
+    <head>
+        <link href="https://unpkg.com/vue-json-tree@0.3.3/dist/json-tree.css" rel="stylesheet">
+        <script src="https://unpkg.com/vue@2.4.2/dist/vue.js"></script>
+        <script src="https://unpkg.com/vue-json-tree@0.3.3/dist/json-tree.js"></script>
+        <script src="./client.js"></script>
+    </head>
+    <body>
+        <div id="app"></div>
+        <script>
+            await subscribe();
+            new Vue({
+                template: '<json-tree :raw="sample"></json-tree>',
+                el: '#app',
+                data: model
+            });
+        </script> 
+    </body>
+</html>    

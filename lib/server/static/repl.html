@@ -1,0 +1,22 @@
+<html>
+    <head>
+        <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/jquery.terminal@1.11.4/js/jquery.terminal.min.js"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery.terminal@1.11.4/css/jquery.terminal.min.css">
+        <script>
+            $(function() {
+                $('body').terminal(function(command, term) {
+                    return $.post('/eval', { src: command });
+                }, {
+                    greetings: 'Connected to IBJS',
+                    onBlur: function() {
+                        return false;
+                    }
+                });
+            });
+        </script>
+    </head>
+    <body>
+    
+    </body>
+</html>
