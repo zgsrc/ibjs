@@ -1,19 +1,60 @@
 <html>
     <head>
-        <link href="https://unpkg.com/vue-json-tree@0.3.3/dist/json-tree.css" rel="stylesheet">
         <script src="https://unpkg.com/vue@2.4.2/dist/vue.js"></script>
-        <script src="https://unpkg.com/vue-json-tree@0.3.3/dist/json-tree.js"></script>
-        <script src="./client.js"></script>
+        <script src="https://unpkg.com/dop/dist/dop.js"></script>
     </head>
     <body>
         <div id="app"></div>
         <script>
-            await subscribe();
-            new Vue({
-                template: '<json-tree :raw="sample"></json-tree>',
-                el: '#app',
-                data: model
-            });
-        </script> 
+            async function setup() {
+                let server = dop.connect({url:'ws://localhost:4444'});
+
+                window.model = await server.subscribe();
+
+                new Vue({
+                    template: '<json-tree :raw="model"></json-tree>',
+                    el: '#app',
+                    data: { model: window.model }
+                });
+            }
+
+            setup().then(() => console.log("Setup!"));
+        </script>
     </body>
 </html>    
+
+
+<!DOCTYPE html>
+<html>
+    <head>
+        <link href='https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Material+Icons' rel="stylesheet">
+        <link href="https://unpkg.com/vuetify/dist/vuetify.min.css" rel="stylesheet">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
+    </head>
+    <body>
+        <div id="app">
+            <v-app>
+                <v-content>
+                    <v-container>Hello world</v-container>
+                </v-content>
+            </v-app>
+        </div>
+        <script src="https://unpkg.com/dop/dist/dop.js"></script>
+        <script src="https://unpkg.com/vue/dist/vue.js"></script>
+        <script src="https://unpkg.com/vuetify/dist/vuetify.js"></script>
+        <script>
+            new Vue({ el: '#app' })
+        </script>
+    </body> 
+</html>
+
+            <v-app>
+                <v-navigation-drawer app></v-navigation-drawer>
+                <v-toolbar app></v-toolbar>
+                <v-content>
+                    <v-container fluid>
+                        <router-view></router-view>
+                    </v-container>
+                </v-content>
+                <v-footer app></v-footer>
+            </v-app>

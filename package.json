@@ -8,11 +8,13 @@
   "bin": "./bin/ibjs",
   "homepage": "https://github.com/triploc/ibjs#readme",
   "dependencies": {
+    "body-parser": "^1.18.2",
     "commander": "^2.14.1",
     "currency-symbol-map": "^4.0.3",
     "dop": "^0.26.0",
     "escodegen": "^1.9.0",
     "esprima": "^4.0.0",
+    "express": "^4.16.2",
     "hyperactiv": "^0.1.6",
     "ib": "^0.2.4",
     "line-by-line": "^0.1.6",
