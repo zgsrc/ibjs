@@ -12,24 +12,24 @@
         <div id="app">
             <ul v-for="(value, key) in model">
                 <li>
-                    {{ key }}:
+                    <span style="color: gray">{{ key }}</span>:
                     <ul v-for="(value, key) in value">
                         <li>
-                            {{ key }}: 
+                            <span style="color: gray">{{ key }}</span>:
                             <div v-if="typeof value == 'object'">
                                 <ul v-for="(value, key) in value">
                                     <li>
-                                        {{ key }}: 
-                                        <span v-if="value.abbreviation !== undefined && value.amount !== undefined">
+                                        <span style="color: gray">{{ key }}</span>: 
+                                        <span v-if="value.abbreviation !== undefined && value.amount !== undefined" style="color: green">
                                             {{ value.formatted }}
                                         </span>
-                                        <span v-else>
+                                        <span v-else style="color: cornflowerblue">
                                             {{ value }}
                                         </span>
                                     </li>
                                 </ul>
                             </div>
-                            <span v-else>
+                            <span v-else style="color: cornflowerblue">
                                 {{ value }}
                             </span>
                         </li>
