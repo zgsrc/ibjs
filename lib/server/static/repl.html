@@ -6,7 +6,11 @@
         <script>
             $(function() {
                 $('body').terminal(function(command, term) {
-                    return $.post('/eval', { src: command });
+                    if (command == "clear") {
+                        term.clear();
+                        return "";
+                    }
+                    else return $.post('/eval', { src: command });
                 }, {
                     greetings: 'Connected to IBJS',
                     onBlur: function() {
