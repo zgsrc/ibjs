@@ -10,7 +10,12 @@
                         term.clear();
                         return "";
                     }
-                    else return $.post('/eval', { src: command });
+                    else if (command[0] == ".") {
+                        return $.get('/cmd/' + command.substr(1));
+                    }
+                    else {
+                        return $.post('/eval', { src: command });
+                    }
                 }, {
                     greetings: 'Connected to IBJS',
                     onBlur: function() {

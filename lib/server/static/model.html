@@ -18,27 +18,32 @@
             <ul v-for="(value, key) in model">
                 <li>
                     <span style="color: gray">{{ key }}</span>:
-                    <span v-if="typeof value !== 'object'">{{ value.formatted || value.toString() }}</span>
+                    <span v-if="typeof value !== 'object'">{{ value.toString() }}</span>
+                    <span v-else-if="value && value.formatted">{{ value.formatted }}</span>
                     <div v-else>
                         <ul v-for="(value, key) in value">
                             <li>
                                 <span style="color: gray">{{ key }}</span>:
-                                <span v-if="typeof value !== 'object'">{{ value.formatted || value.toString() }}</span>
+                                <span v-if="typeof value !== 'object'">{{ value.toString() }}</span>
+                                <span v-else-if="value && value.formatted">{{ value.formatted }}</span>
                                 <div v-else>
                                     <ul v-for="(value, key) in value">
                                         <li>
                                             <span style="color: gray">{{ key }}</span>: 
-                                            <span v-if="typeof value !== 'object'">{{ value.formatted || value.toString() }}</span>
+                                            <span v-if="typeof value !== 'object'">{{ value.toString() }}</span>
+                                            <span v-else-if="value && value.formatted">{{ value.formatted }}</span>
                                             <div v-else>
                                                 <ul v-for="(value, key) in value">
                                                     <li>
                                                         <span style="color: gray">{{ key }}</span>: 
-                                                        <span v-if="typeof value !== 'object'">{{ value.formatted || value.toString() }}</span>
+                                                        <span v-if="typeof value !== 'object'">{{ value.toString() }}</span>
+                                                        <span v-else-if="value && value.formatted">{{ value.formatted }}</span>
                                                         <div v-else>
                                                             <ul v-for="(value, key) in value">
                                                                 <li>
                                                                     <span style="color: gray">{{ key }}</span>: 
-                                                                    <span v-if="typeof value !== 'object'">{{ value.formatted || value.toString() }}</span>
+                                                                    <span v-if="typeof value !== 'object'">{{ value.toString() }}</span>
+                                                                    <span v-else-if="value && value.formatted">{{ value.formatted }}</span>
                                                                     <span v-else style="color: cornflowerblue">
                                                                         {{ value.toString() }}
                                                                     </span>
