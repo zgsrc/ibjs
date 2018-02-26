@@ -21,6 +21,7 @@
     "node-schedule": "^1.3.0",
     "overactiv": "^0.2.3",
     "sugar": "^2.0.4",
+    "ws": "^4.1.0",
     "xml2js": "^0.4.19"
   },
   "repository": {
