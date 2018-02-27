@@ -44,9 +44,27 @@
                                                                     <span style="color: gray">{{ key }}</span>: 
                                                                     <span v-if="typeof value !== 'object'">{{ value.toString() }}</span>
                                                                     <span v-else-if="value && value.formatted">{{ value.formatted }}</span>
-                                                                    <span v-else style="color: cornflowerblue">
-                                                                        {{ value.toString() }}
-                                                                    </span>
+                                                                    <div v-else>
+                                                                        <ul v-for="(value, key) in value">
+                                                                            <li>
+                                                                                <span style="color: gray">{{ key }}</span>: 
+                                                                                <span v-if="typeof value !== 'object'">{{ value.toString() }}</span>
+                                                                                <span v-else-if="value && value.formatted">{{ value.formatted }}</span>
+                                                                                <div v-else>
+                                                                                    <ul v-for="(value, key) in value">
+                                                                                        <li>
+                                                                                            <span style="color: gray">{{ key }}</span>: 
+                                                                                            <span v-if="typeof value !== 'object'">{{ value.toString() }}</span>
+                                                                                            <span v-else-if="value && value.formatted">{{ value.formatted }}</span>
+                                                                                            <span v-else style="color: cornflowerblue">
+                                                                                                {{ value.toString() }}
+                                                                                            </span>
+                                                                                        </li>
+                                                                                    </ul>
+                                                                                </div>
+                                                                            </li>
+                                                                        </ul>
+                                                                    </div>
                                                                 </li>
                                                             </ul>
                                                         </div>
@@ -65,8 +83,8 @@
         <script>
             (function() {
                 overactiv('ws://localhost:8080', function(obj) {
-                    return (new Vue({ el: '#app', data: { model: obj } })).model;
-                });
+                    return window.model = (new Vue({ el: '#app', data: { model: obj } })).model;
+                }, true);
             })();
         </script>
     </body>

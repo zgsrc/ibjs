@@ -6,12 +6,12 @@
   "version": "0.14.0",
   "main": "index.js",
   "bin": "./bin/ibjs",
-  "homepage": "https://github.com/triploc/ibjs#readme",
+  "homepage": "https://github.com/zgsrc/ibjs#readme",
   "dependencies": {
     "body-parser": "^1.18.2",
     "commander": "^2.14.1",
     "currency-symbol-map": "^4.0.3",
-    "escodegen": "^1.9.0",
+    "escodegen": "^1.9.1",
     "esprima": "^4.0.0",
     "express": "^4.16.2",
     "hyperactiv": "git+https://github.com/zgsrc/hyperactiv.git",
@@ -26,10 +26,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/triploc/ibjs.git"
+    "url": "git+https://github.com/zgsrc/ibjs.git"
   },
   "bugs": {
-    "url": "https://github.com/triploc/ibjs/issues"
+    "url": "https://github.com/zgsrc/ibjs/issues"
   },
   "keywords": [
     "interactive brokers",
