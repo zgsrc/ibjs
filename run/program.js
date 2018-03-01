@@ -25,17 +25,17 @@ function preprocess(config) {
     }
     
     if (config.symbols && typeof config.symbols === 'string') {
-        if (config.symbols.endsWith(".json")) config.symbols = json(config.symbols);
-        else config.symbols = require(config.symbols);
+        if (config.symbols.endsWith(".json")) config.symbols = json(process.cwd() + "/" + config.symbols);
+        else config.symbols = require(process.cwd() + "/" + config.symbols);
     }
     
     if (config.subscriptions && typeof config.subscriptions === 'string') {
-        if (config.subscriptions.endsWith(".json")) config.subscriptions = json(config.subscriptions);
-        else config.subscriptions = require(config.subscriptions);
+        if (config.subscriptions.endsWith(".json")) config.subscriptions = json(process.cwd() + "/" + config.subscriptions);
+        else config.subscriptions = require(process.cwd() + "/" + config.subscriptions);
     }
     
     if (config.hooks && typeof config.hooks === 'string') {
-        config.hooks = require(config.hooks);
+        config.hooks = require(process.cwd() + "/" + config.hooks);
     }
     
     if (config.output) {
