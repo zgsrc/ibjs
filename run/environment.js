@@ -43,9 +43,8 @@ function createApp(context, app) {
 }
 
 async function environment(config) {
-    if (config == null) {
-        config = processCommandLineArgs();
-    }
+    if (config == null) config = processCommandLineArgs();
+    else config = preprocess(config);
     
     config.hooks = config.hooks || { };
     if (config.hooks.config) await config.hooks.config(config);

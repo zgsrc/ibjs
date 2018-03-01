@@ -91,37 +91,11 @@ program
         console.log("Setting up environment in " + process.cwd())
     
         try {
-            fs.writeFileSync("./config.json", JSON.stringify({
-                verbose: true,
-                host: "localhost",
-                port: 4001,
-                timeout: 2500,
-                symbols: "symbols.json",
-                subscriptions: "subscriptions.json",
-                hooks: "hooks.js",
-                repl: true,
-                http: 8080,
-                output: true
-            }, null, '\t'))
-
-            fs.writeFileSync("./symbols.json", JSON.stringify({ 
-                "AAPL": "AAPL stock on SMART" 
-            }, null, '\t'));
-
-            fs.writeFileSync("./subscriptions.json", JSON.stringify({
-                session: true,
-                system: true,
-                account: true,
-                accounts: false,
-                positions: false,
-                trades: true,
-                orders: true,
-                displayGroups: false,
-                quotes: [ ] || { },
-                autoStreamQuotes: false
-            }, null, '\t'));
-
-            fs.writeFileSync("./hooks.js", fs.readFileSync(__dirname + "/hooks.js").toString());
+            fs.writeFileSync("./index.js", fs.readFileSync(__dirname + "/defaults/index.js").toString())
+            fs.writeFileSync("./config.json", fs.readFileSync(__dirname + "/defaults/config.json").toString())
+            fs.writeFileSync("./symbols.json", fs.readFileSync(__dirname + "/defaults/symbols.json").toString())
+            fs.writeFileSync("./subscriptions.json", fs.readFileSync(__dirname + "/defaults/subscriptions.json").toString())
+            fs.writeFileSync("./hooks.js", fs.readFileSync(__dirname + "/defaults/hooks.js").toString());
         }
         catch(ex) {
             console.log("Failure!");

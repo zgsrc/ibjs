@@ -1,0 +1,12 @@
+{
+	"session": true,
+	"system": true,
+	"account": true,
+	"accounts": false,
+	"positions": false,
+	"trades": true,
+	"orders": true,
+	"displayGroups": false,
+	"quotes": [],
+	"autoStreamQuotes": false
+}

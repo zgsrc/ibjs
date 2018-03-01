@@ -1,0 +1,12 @@
+{
+	"verbose": true,
+	"host": "localhost",
+	"port": 4001,
+	"timeout": 2500,
+	"symbols": "symbols.json",
+	"subscriptions": "subscriptions.json",
+	"hooks": "hooks.js",
+	"repl": true,
+	"http": 8080,
+	"output": true
+}
