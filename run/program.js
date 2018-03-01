@@ -72,7 +72,7 @@ program
     .option("--repl", "Terminal interface")
     .option("--http [port]", "Launch http subscription interface using port", parseInt)
     .option("--output [file]", "Record events with optional file name")
-    .action(options => config = filter(preprocess(options));
+    .action(options => config = filter(preprocess(options)));
 
 program
     .command("subscribe")
