@@ -76,12 +76,12 @@ async function subscribe(session, options) {
 let id = 0;
 
 async function session(config) {
-    if (Object.isNumber(config)) {
-        config = { port: config };
-    }
-    
+    if (Object.isNumber(config)) config = { port: config };
     config = config || { };
-    config.id = config.id || exports.id++;
+    config.id = config.id >= 0 ? config.id : id++;
+    if (!Number.isInteger(config.id)) throw new Error("Client id must be an integer: " + config.id);
+    if (config.host && typeof config.host !== 'string') throw new Error("Host must be a string: " + config.host);
+    if (config.port && !Number.isInteger(config.port)) throw new Error("Port must be a number: " + config.port);
     
     return new Promise((yes, no) => {
         let timeout = setTimeout(() => {

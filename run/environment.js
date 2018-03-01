@@ -1,24 +1,51 @@
-const { session } = require("./index"),
+const { session, constants } = require("../index"),
       { processCommandLineArgs, preprocess } = require("./program"),
-      repl = require("repl"),
       { observe, computed, dispose } = require("hyperactiv"),
       { Observable, Computable } = require("hyperactiv/mixins"),
-      Context = require("./lib/context"),
-      symbol = require("./lib/symbol"),
-      ObservableObject = Computable(Observable(Object))
+      wss = require('hyperactiv/websocket/server').server,
+      ObservableObject = Computable(Observable(Object)),
+      Context = require("./context"),
+      http = require('http'),
+      WebSocket = require('ws'),
+      express = require('express'),
+      bodyParser = require('body-parser'),
+      util = require('util'),
+      repl = require("repl");
 
-async function environment(config, hooks) {
-    if (config == null) config = processCommandLineArgs();
-    else if (Object.isString(config)) {
-        if (config.toLowerCase().endsWith(".json")) config = json(config);
-        else if (config.toLowerCase().endsWith(".js")) config = require(config);
-        else throw new Error("Unrecognized config " + config);
-        config = preprocess(config);
-    }
+function createApp(context, app) {
+    app = app || express();
     
-    if (hooks) {
-        if (Object.isString(hooks)) config.hooks = require(hooks);
-        else config.hooks = hooks;
+    app.use("/hyperactiv", express.static("node_modules/hyperactiv"));
+    app.use(express.static(__dirname + '/html'));
+    app.use(bodyParser.urlencoded({ extended: false }));
+    app.use(bodyParser.json());
+    
+    app.get('/cmd/:cmd', async (req, res) => {
+        console.log("HERE");
+        let cmd = req.params.cmd;
+        res.send(cmd);
+    });
+    
+    app.post('/eval', async (req, res) => {
+        let src = req.body.src.trim();
+        if (src.length) {
+            try {
+                let result = await context.evalInContext(req.body.src);
+                res.send(util.inspect(result));
+            }
+            catch (ex) {
+                res.send(util.inspect(ex));
+            }
+        }
+        else res.end();
+    });
+    
+    return app;
+}
+
+async function environment(config) {
+    if (config == null) {
+        config = processCommandLineArgs();
     }
     
     config.hooks = config.hooks || { };
@@ -33,17 +60,21 @@ async function environment(config, hooks) {
         if (config.verbose) console.log("Opening subscriptions...");
         let subscriptions = await session.subscribe(config.subscriptions);
         
+        let context = new Context(constants, { observe, computed, dispose, Observable, Computable }, global);
+        context.resolvers.push(name => session.quote(name));
+        if (config.hooks.context) await config.hooks.context(context);
+        
         if (config.http) {
             if (config.verbose) console.log(`Starting HTTP server on port ${Number.isInteger(config.http) ? config.http : 8080}...`);
-            subscriptions = require("./server")(subscriptions, config.http);
+            
+            const server = http.createServer(createApp(context)), endpoint = wss(new WebSocket.Server({ server }));
+            context.scopes.unshift(endpoint.host(subscriptions));
+            server.listen(Number.isInteger(config.http) ? config.http : 8080);
         }
         else {
             subscriptions = Object.assign(new ObservableObject({ }), subscriptions);
+            context.scopes.unshift(subscriptions);
         }
-
-        let context = new Context(subscriptions, require("./constants"), { observe, computed, dispose, Observable, Computable }, global);
-        context.resolvers.push(name => session.quote(name));
-        if (config.hooks.context) await config.hooks.context(context);
         
         if (config.repl) {
             if (config.verbose) console.log("Starting REPL...\n");

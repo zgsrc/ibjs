@@ -1,0 +1,86 @@
+<html>
+    <head>
+        <script src="/hyperactiv/dist/index.js" ></script>
+        <script src="/hyperactiv/websocket/browser.js"></script>
+        <link href="https://fonts.googleapis.com/css?family=Roboto+Mono" rel="stylesheet">
+        <style>
+            * {
+                font-family: 'Roboto Mono', monospace;
+            }
+        </style>
+    </head>
+    <body onload="subscribe()">
+        <div id="container">
+            <h1 style="margin: 50px; color: gray;">Loading...</h1>
+        </div>
+        <script>
+            function htmlId(keys) {
+                if (keys.length == 0) return "root"
+                else return keys.join("_").replace(/\$/gi, "_")
+            }
+            
+            function render(obj, stack) {
+                if (!stack) stack = [];
+                if (typeof obj === 'object' && !(obj instanceof Date)) {
+                    return `<ul id='${stack.length == 0 ? "root" : htmlId(stack)}'>${Object.keys(obj).map(key => {
+                        stack.push(key);
+                        let html = `<li>${key}: ${render(obj[key], stack)}</li>`
+                        stack.pop();
+                        return html
+                    }).join('')}</ul>`
+                }
+                else {
+                    return `<span id='${htmlId(stack)}'>${obj !== undefined ? obj.toString() : "null"}</span>`
+                }
+            }
+            
+            async function subscribe() {
+                const client = window['hyperactiv-websocket']
+                try {
+                    client('ws://localhost:8080', window.remoteObject = { }, msg => {
+                        console.debug(msg);
+                        if (msg.type == "sync") {
+                            document.getElementById("container").innerHTML = render(msg.state);
+                        }
+                        else if (msg.type == "update") {
+                            let id = htmlId(msg.keys)
+                            if (!document.getElementById(id)) {
+                                let exists = false, keys = msg.keys.slice(0);
+                                while (!exists && keys.length) {
+                                    keys.pop();
+                                    id = htmlId(keys)
+                                    exists = (document.getElementById(id) != null)
+                                }
+                                
+                                let start = document.getElementById(id);
+                                for (let i = keys.length; i < msg.keys.length; i++) {
+                                    id = htmlId(msg.keys.slice(0, i + 1));
+                                    console.log("ID: " + id);
+                                    
+                                    let li = document.createElement('li');
+                                    if (i == msg.keys.length - 1) li.innerHTML = `${msg.keys[i]}: <span id='${id}'></span>`
+                                    else li.innerHTML = `${msg.keys[i]}: <ul id='${id}'></ul>`
+                                    start.appendChild(li);
+                                    start = document.getElementById(id);
+                                }
+                                
+                                id = htmlId(msg.keys)
+                            }
+                            
+                            let obj = msg.value
+                            if (typeof obj === 'object' && !(obj instanceof Date)) {
+                                document.getElementById(id).innerHTML = render(msg.value, msg.keys)
+                            }
+                            else {
+                                document.getElementById(id).innerHTML = msg.value
+                            }
+                        }
+                    }, 5000)
+                }
+                catch (ex) {
+                    document.getElementById("root").innerHTML = ex.stack || ex.message
+                }
+            }
+        </script>
+    </body>
+</html>
