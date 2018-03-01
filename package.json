@@ -3,7 +3,7 @@
   "description": "Interactive Brokers javascript container.",
   "author": "Jonathan Hollinger",
   "license": "MIT",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "main": "index.js",
   "bin": "./bin/ibjs",
   "homepage": "https://github.com/zgsrc/ibjs#readme",
@@ -19,7 +19,6 @@
     "line-by-line": "^0.1.6",
     "luxon": "^0.3.1",
     "node-schedule": "^1.3.0",
-    "overactiv": "git+https://github.com/zgsrc/overactiv.git",
     "sugar": "^2.0.4",
     "ws": "^4.1.0",
     "xml2js": "^0.4.19"
