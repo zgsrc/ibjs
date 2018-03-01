@@ -21,7 +21,6 @@ function createApp(context, app) {
     app.use(bodyParser.json());
     
     app.get('/cmd/:cmd', async (req, res) => {
-        console.log("HERE");
         let cmd = req.params.cmd;
         res.send(cmd);
     });

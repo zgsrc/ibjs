@@ -4,6 +4,16 @@ const fs = require("fs"),
 
 let config = null;
 
+function filter(config) {
+    let command = config._name, keys = Object.keys(config).filter(k => k[0] != '_' && typeof config[k] !== 'object');
+    config = Object.select(config, keys);
+    if (command && !config.command) {
+        config.command = command;
+    }
+    
+    return config;
+}
+
 function preprocess(config) {
     if (config.paper) {
         config.port = config.paper;
@@ -62,7 +72,7 @@ program
     .option("--repl", "Terminal interface")
     .option("--http [port]", "Launch http subscription interface using port", parseInt)
     .option("--output [file]", "Record events with optional file name")
-    .action(options => config = preprocess(options));
+    .action(options => config = filter(preprocess(options));
 
 program
     .command("subscribe")
@@ -72,7 +82,7 @@ program
     .option("--timeout <millis>", "Specifies the connection timeout", parseInt, 2500)
     .option("--repl", "Terminal interface")
     .option("--http [port]", "Launch http subscription interface using port", parseInt)
-    .action(options => config = options);
+    .action(options => config = filter(options));
 
 program
     .command("init")
