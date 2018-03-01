@@ -22,7 +22,7 @@ async function environment(config, hooks) {
     }
     
     config.hooks = config.hooks || { };
-    if (config.hooks.config) config = await config.hooks.config(config);
+    if (config.hooks.config) await config.hooks.config(config);
     
     let connection;
     if (config.verbose) console.log("Connecting...");
@@ -43,11 +43,11 @@ async function environment(config, hooks) {
 
         let context = new Context(subscriptions, require("./constants"), { observe, computed, dispose, Observable, Computable }, global);
         context.resolvers.push(name => session.quote(name));
-        if (config.resolvers) context.resolvers.append(config.resolvers);
+        if (config.hooks.context) await config.hooks.context(context);
         
         if (config.repl) {
             if (config.verbose) console.log("Starting REPL...\n");
-            let terminal = config.hooks.repl ? config.hooks.repl(session, context) : repl.start({ prompt: "> ", eval: context.replEval });
+            let terminal = repl.start({ prompt: "> ", eval: context.replEval });
             terminal.on("exit", () => session.close(true));
         }
         else if (config.verbose) console.log("Ready.");

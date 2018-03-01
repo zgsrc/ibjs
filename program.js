@@ -2,6 +2,17 @@ const fs = require("fs"),
       json = file => JSON.parse(fs.readFileSync(file).toString()),
       program = require("commander");
 
+const hooksTemplate = `module.exports = {
+    config: async config => null,    
+    context: async context => null,
+    ready: (session, context) => null,
+    afterReplay: null,
+    sigint: null,
+    exit: null,
+    warning: msg => console.warn(msg),
+    error: err => console.error(err)
+}`;
+
 let config = null;
 
 program.version("0.15.0")
@@ -18,24 +29,32 @@ program
             port: 4001,
             timeout: 2500,
             symbols: "symbols.json",
-            subscriptions: {
-                session: true,
-                system: true,
-                account: true,
-                accounts: false,
-                positions: false,
-                trades: true,
-                orders: true,
-                displayGroups: false,
-                quotes: [ ] || { },
-                autoStreamQuotes: false
-            },
+            subscriptions: "subscriptions.json",
+            hooks: "hooks.js",
             repl: true,
             http: 8080,
             output: true
         }, null, '\t'))
     
-        fs.writeFileSync("./symbols.json", JSON.stringify({ "AAPL": "AAPL stock on SMART" }, null, '\t'));
+        fs.writeFileSync("./symbols.json", JSON.stringify({ 
+            "AAPL": "AAPL stock on SMART" 
+        }, null, '\t'));
+    
+        fs.writeFileSync("./subscriptions.json", JSON.stringify({
+            session: true,
+            system: true,
+            account: true,
+            accounts: false,
+            positions: false,
+            trades: true,
+            orders: true,
+            displayGroups: false,
+            quotes: [ ] || { },
+            autoStreamQuotes: false
+        }, null, '\t'));
+    
+        fs.writeFileSync("./hooks.js", hooksTemplate);
+    
         console.log("Success!")
         console.log("Configure config.json and symbols.json to customize environment");
         console.log();
@@ -57,8 +76,9 @@ program
     .option("--paper", "Uses the IB gateway default paper trading port", 4002)
     .option("--tws", "Uses the TWS default port", 7496)
     .option("--timeout <millis>", "Specifies the connection timeout", parseInt, 2500)
-    .option("--symbols <file>", "Configure well known symbols", json)
-    .option("--subscriptions <file>", "Configure initial subscriptions", json)
+    .option("--symbols <file>", "Configure well known symbols")
+    .option("--subscriptions <file>", "Configure initial subscriptions")
+    .option("--hooks <file>", "Configure hooks")
     .option("--repl", "Terminal interface")
     .option("--http [port]", "Launch server using port", parseInt)
     .option("--output [file]", "Record events with optional file name")
@@ -69,18 +89,24 @@ function preprocess(config) {
         config.port = config.paper;
         delete config.paper;
     }
-    
     else if (config.tws) {
         config.port = config.tws;
         delete config.tws;
     }
     
-    if (config.scope) {
-        config.scope = json(config.scope);
+    if (config.symbols && typeof config.symbols === 'string') {
+        if (config.symbols.endsWith(".json")) config.symbols = json(config.symbols);
+        else config.symbols = require(config.symbols);
     }
     
-    config.files = config.args;
-    delete config.args;
+    if (config.subscriptions && typeof config.subscriptions === 'string') {
+        if (config.subscriptions.endsWith(".json")) config.subscriptions = json(config.subscriptions);
+        else config.subscriptions = require(config.subscriptions);
+    }
+    
+    if (config.hooks && typeof config.hooks === 'string') {
+        config.hooks = require(config.hooks);
+    }
     
     if (config.output) {
         let file = config.output;
@@ -92,18 +118,6 @@ function preprocess(config) {
             let msg = (new Date()).getTime() + "|" + name + "|" + JSON.stringify(data) + "\n";
             fs.appendFile(file, msg, err => err ? config.hooks.traceError(err) || console.error(err) : null);
         };
-    }
-    
-    if (config.resolvers) {
-        if (!Array.isArray(config.resolvers)) config.resolvers = [ config.resolvers ];
-        config.resolvers = config.resolvers.map(resolver => {
-            if (Object.isString(resolver)) return require(resolver);
-            else return resolver;
-        });
-    }
-    
-    if (config.hooks && Object.isString(config.hooks)) {
-        config.hooks = require(config.hooks);
     }
     
     return config;
