@@ -1,5 +1,8 @@
 require("sugar").extend();
 
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Open Session
+////////////////////////////////////////////////////////////////////////////////////////////////
 const IB = require("ib"),
       Service = require("./lib/service/service"),
       Dispatch = require("./lib/service/dispatch"),
@@ -10,68 +13,6 @@ const IB = require("ib"),
 const connectErrorHelp = "Make sure TWS or IB Gateway is running and you are logged in.\n" + 
     "Then check IB software is configured to accept API connections over the correct port.\n" +
     "If all else fails, try restarting TWS or IB Gateway.";
-
-async function subscribe(session, options) {
-    options = options || {
-        session: true,
-        system: true,
-        account: true,
-        accounts: false,
-        positions: false,
-        trades: true,
-        orders: true,
-        displayGroups: false,
-        quotes: [ ] || { },
-        autoStreamQuotes: false
-    };
-
-    let scope = { };
-    if (options.session) scope.session = session;
-    if (options.system) {
-        scope.system = session.system();
-        if (options.system == "frozen") scope.system.useFrozenMarketData = true;
-    }
-
-    if (options.displayGroups) scope.displayGroups = await session.displayGroups();
-    if (options.account) scope.account = await session.account(Object.isObject(options.account) ? options.account : null);
-    if (options.accounts) scope.accounts = await session.accounts();
-    if (options.positions) scope.positions = await session.positions();
-    if (options.trades) scope.trades = await session.trades(Object.isObject(options.trades) ? options.trades : null);
-
-    if (options.orders) {
-        scope.orders = session.orders;
-        scope.order = description => session.order(description);
-    }
-
-    if (options.quotes) {
-        if (Array.isArray(options.quotes)) {
-            await Promise.all(options.quotes.map(async description => {
-                let quote = await session.quote(description.description || description);
-                scope[quote.contract.toString()] = quote;
-                if (description.fields) session.query.addFieldTypes(description.fields);
-                if (options.autoStreamQuotes) {
-                    if (options.autoStreamQuotes == "all") return quote.streamAll();
-                    else return quote.stream();
-                }
-                else quote.refresh();
-            }));
-        }
-        else {
-            await Promise.all(Object.keys(options.quotes).map(async key => {
-                let description = options.quotes[key];
-                let quote = scope[key] = await session.quote(description.description || description);
-                if (description.fields) session.query.addFieldTypes(description.fields);
-                if (options.autoStreamQuotes) {
-                    if (options.autoStreamQuotes == "all") return quote.streamAll();
-                    else return quote.stream();
-                }
-                else quote.refresh();
-            }));
-        }
-    }
-
-    return scope;
-}
 
 let id = 0;
 
@@ -120,4 +61,171 @@ async function session(config) {
     });
 }
 
-module.exports = { IB, Service, Dispatch, Proxy, Session, constants, subscribe, id, session }
+async function subscribe(session, options) {
+    let scope = { };
+    if (options.system) {
+        scope.system = session.system();
+        if (options.system == "frozen") scope.system.useFrozenMarketData = true;
+    }
+
+    if (options.displayGroups) scope.displayGroups = await session.displayGroups();
+    if (options.account) scope.account = await session.account(Object.isObject(options.account) ? options.account : null);
+    if (options.accounts) scope.accounts = await session.accounts();
+    if (options.positions) scope.positions = await session.positions();
+    if (options.trades) scope.trades = await session.trades(Object.isObject(options.trades) ? options.trades : null);
+
+    if (options.orders) {
+        scope.orders = session.orders;
+        scope.order = description => session.order(description);
+    }
+
+    if (options.quotes) {
+        if (Array.isArray(options.quotes)) {
+            await Promise.all(options.quotes.map(async description => {
+                let quote = await session.quote(description.description || description);
+                scope[quote.contract.toString()] = quote;
+                if (description.fields) session.query.addFieldTypes(description.fields);
+                if (options.autoStreamQuotes) {
+                    if (options.autoStreamQuotes == "all") return quote.streamAll();
+                    else return quote.stream();
+                }
+                else quote.refresh();
+            }));
+        }
+        else {
+            await Promise.all(Object.keys(options.quotes).map(async key => {
+                let description = options.quotes[key];
+                let quote = scope[key] = await session.quote(description.description || description);
+                if (description.fields) session.query.addFieldTypes(description.fields);
+                if (options.autoStreamQuotes) {
+                    if (options.autoStreamQuotes == "all") return quote.streamAll();
+                    else return quote.stream();
+                }
+                else quote.refresh();
+            }));
+        }
+    }
+
+    return scope;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Create Express App Interface
+////////////////////////////////////////////////////////////////////////////////////////////////
+const http = require('http'),
+      WebSocket = require('ws'),
+      express = require('express'),
+      bodyParser = require('body-parser'),
+      util = require('util');
+
+function createApp(context, app) {
+    app = app || express();
+    
+    app.use("/hyperactiv", express.static("node_modules/hyperactiv"));
+    app.use(express.static(__dirname + '/html'));
+    app.use(bodyParser.urlencoded({ extended: false }));
+    app.use(bodyParser.json());
+    
+    app.get('/cmd/:cmd', async (req, res) => {
+        let cmd = req.params.cmd;
+        res.send(cmd);
+    });
+    
+    app.post('/eval', async (req, res) => {
+        let src = req.body.src.trim();
+        if (src.length) {
+            try {
+                let result = await context.evalInContext(req.body.src);
+                res.send(util.inspect(result));
+            }
+            catch (ex) {
+                res.send(util.inspect(ex));
+            }
+        }
+        else res.end();
+    });
+    
+    return app;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Startup Environment
+////////////////////////////////////////////////////////////////////////////////////////////////
+const createContext = require("./runtime"),
+      repl = require("repl"),
+      { observe, computed, dispose } = require("hyperactiv"),
+      { Observable, Computable } = require("hyperactiv/mixins"),
+      ObservableObject = Computable(Observable(Object)),
+      wss = require('hyperactiv/websocket/server').server;
+
+async function environment(config) {
+    config.hooks = config.hooks || { };
+    if (config.hooks.init) await config.hooks.init(config);
+    
+    let connection;
+    if (config.verbose) console.log("Connecting...");
+    session(config).then(async session => {
+        if (config.verbose) console.log("Session established");
+        session.on("error", config.hooks.error || console.error);
+        
+        let context = createContext();
+        context.scopes.unshift(require("./lib/model/market").markets);
+        if (config.hooks.setup) await config.hooks.setup(session, context);
+        
+        if (config.verbose) console.log("Opening subscriptions...");
+        let subscriptions = await session.subscribe(config.subscriptions || { });
+        
+        if (config.http) {
+            if (config.verbose) console.log(`Starting HTTP server on port ${Number.isInteger(config.http) ? config.http : 8080}...`);
+            const server = http.createServer(createApp(context)), endpoint = wss(new WebSocket.Server({ server }));
+            context.scopes.unshift(endpoint.host(subscriptions));
+            server.listen(Number.isInteger(config.http) ? config.http : 8080);
+        }
+        else {
+            subscriptions = Object.assign(new ObservableObject({ }), subscriptions);
+            context.scopes.unshift(subscriptions);
+        }
+        
+        if (config.repl) {
+            if (config.verbose) console.log("Starting REPL...\n");
+            let terminal = repl.start({ prompt: "> ", eval: context.replEval });
+            terminal.on("exit", () => session.close(true));
+        }
+        else if (config.verbose) console.log("Ready.");
+        
+        process.on("exit", config.hooks.exit || (() => session.close()));
+        process.on("SIGINT", config.hooks.sigint || (() => session.close()));
+        process.on("message", msg => msg == "shutdown" ? session.close() : null);
+        if (Object.isFunction(process.send)) process.send("ready");
+        if (config.hooks.ready) config.hooks.ready(session, context);
+        
+        if (config.globals) {
+            for (let i = 0; i < config.globals.length; i++) {
+                await context.include(config.globals[i]);
+            }
+        }
+        
+        if (config.modules) {
+            for (let i = 0; i < config.modules.length; i++) {
+                await context.import(config.globals[i]);
+            }
+        }
+        
+        if (config.hooks.load) config.hooks.load(session, context);
+    }).catch(config.hooks.error || (err => {
+        console.error(err);
+        process.exit(1);
+    }));
+
+    if (config.input) {
+        config.ib.replay(config.input, config.inputSpeed || 1, config.hooks.afterReplay);
+    }
+    
+    process.on("warning", config.hooks.warning || config.hooks.error || console.warn);
+    process.on("uncaughtException", config.hooks.error || console.error);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Exports
+////////////////////////////////////////////////////////////////////////////////////////////////
+module.exports = { IB, Service, Dispatch, Proxy, Session, constants, session, environment }

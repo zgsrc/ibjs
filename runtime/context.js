@@ -74,28 +74,32 @@ module.exports = class Context {
         await this.reifyImplicitIdentifiers(ids);
     }
     
-    async evalInContext(src, file) {
+    async runInContext(src, file) {
         if (this.resolvers.length) await this.reifyImplicitIdentifiersInSrc(src);
         return await vm.runInContext(src.toString(), this.vm, { filename: file });
     }
     
-    async callInContext(fn) {
-        if (this.resolvers.length) await this.reifyImplicitIdentifiersInSrc(fn);
-        return await vm.runInContext(`((${fn.toString()})())`, this.vm, { columnOffset: 4 });
-    }
-    
-    async runInContext(src, file) {
-        if (this.resolvers.length) await this.reifyImplicitIdentifiersInSrc(src);
-        return await vm.runInContext(`((async () => {\n${src.toString()}\n})())`, this.vm, { filename: file, lineOffset: -1 });
-    }
-    
     get replEval() {
         return (cmd, cxt, filename, cb) => {
-            this.evalInContext(cmd).then(val => cb(null, val)).catch(e => {
+            this.runInContext(cmd).then(val => cb(null, val)).catch(e => {
                 if (e.name === "SyntaxError" && /^(Unexpected end of input|Unexpected token)/.test(e.message)) cb(new repl.Recoverable(e));
                 else cb(e);
             });
         };
+    }
+    
+    async call(fn) {
+        if (this.resolvers.length) await this.reifyImplicitIdentifiersInSrc(fn);
+        return await vm.runInContext(`((${fn.toString()})())`, this.vm, { columnOffset: 2 });
+    }
+    
+    async module(src, file) {
+        if (this.resolvers.length) await this.reifyImplicitIdentifiersInSrc(src);
+        return await vm.runInContext(`((async () => {\n${src.toString()}\n})())`, this.vm, { filename: file, lineOffset: -1 });
+    }
+    
+    async global(src, file) {
+        this.runInContext(src, file);
     }
     
 }

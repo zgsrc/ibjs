@@ -1,1 +1,0 @@
-require("ibjs/run/environment")(JSON.parse(require("fs").readFileSync(__dirname + "/config.json").toString()))
