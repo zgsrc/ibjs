@@ -3,9 +3,11 @@
   "description": "Interactive Brokers javascript container.",
   "author": "Jonathan Hollinger",
   "license": "MIT",
-  "version": "0.15.2",
+  "version": "0.16.0",
   "main": "index.js",
-  "bin": "./bin/ibjs",
+  "scripts": {
+    "start": "node run.js"
+  },
   "homepage": "https://github.com/zgsrc/ibjs#readme",
   "dependencies": {
     "body-parser": "^1.18.2",

@@ -90,12 +90,14 @@ module.exports = class Context {
     
     async call(fn) {
         if (this.resolvers.length) await this.reifyImplicitIdentifiersInSrc(fn);
-        return await vm.runInContext(`((${fn.toString()})())`, this.vm, { columnOffset: 2 });
+        fn = vm.runInContext(`(${fn.toString()})`, this.vm, { columnOffset: 2 });
+        return await fn();
     }
     
     async module(src, file) {
         if (this.resolvers.length) await this.reifyImplicitIdentifiersInSrc(src);
-        return await vm.runInContext(`((async () => {\n${src.toString()}\n})())`, this.vm, { filename: file, lineOffset: -1 });
+        let fn = vm.runInContext(`(async exports => {\n${src.toString()}\nreturn exports\n})`, this.vm, { filename: file, lineOffset: -1 });
+        Object.assign(this.scopes[0], await fn({ }))
     }
     
     async global(src, file) {

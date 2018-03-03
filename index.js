@@ -152,6 +152,7 @@ function createApp(context, app) {
 // Startup Environment
 ////////////////////////////////////////////////////////////////////////////////////////////////
 const createContext = require("./runtime"),
+      wellKnownSymbols = require("./lib/symbol").wellKnownSymbols,
       repl = require("repl"),
       { observe, computed, dispose } = require("hyperactiv"),
       { Observable, Computable } = require("hyperactiv/mixins"),
@@ -161,6 +162,23 @@ const createContext = require("./runtime"),
 async function environment(config) {
     config.hooks = config.hooks || { };
     if (config.hooks.init) await config.hooks.init(config);
+    
+    if (config.symbols) {
+        Object.assign(wellKnownSymbols, config.symbols)
+    }
+    
+    if (config.output) {
+        let file = config.output;
+        if (Object.isBoolean(file)) {
+            config.output = Date.create().format("{dow}-{H}:{mm}:{ss}")
+            file = config.output + ".api.log";
+        }
+
+        config.trace = (name, data) => {
+            let msg = (new Date()).getTime() + "|" + name + "|" + JSON.stringify(data) + "\n";
+            fs.appendFile(file, msg, err => err ? config.hooks.traceError(err) || console.error(err) : null);
+        };
+    }
     
     let connection;
     if (config.verbose) console.log("Connecting...");
@@ -174,16 +192,28 @@ async function environment(config) {
         
         if (config.verbose) console.log("Opening subscriptions...");
         let subscriptions = await session.subscribe(config.subscriptions || { });
+        if (config.output) {
+            fs.appendFile(config.output + ".change.log", JSON.stringify({ type: "sync", state: subscriptions }), err => err ? config.hooks.traceError(err) || console.error(err) : null)
+        }
         
         if (config.http) {
             if (config.verbose) console.log(`Starting HTTP server on port ${Number.isInteger(config.http) ? config.http : 8080}...`);
-            const server = http.createServer(createApp(context)), endpoint = wss(new WebSocket.Server({ server }));
+            const app = createApp(context);
+            if (config.html) app.use(express.static(config.html));
+            
+            const server = http.createServer(app), endpoint = wss(new WebSocket.Server({ server }));
             context.scopes.unshift(endpoint.host(subscriptions));
             server.listen(Number.isInteger(config.http) ? config.http : 8080);
         }
         else {
-            subscriptions = Object.assign(new ObservableObject({ }), subscriptions);
+            subscriptions = Object.assign(new ObservableObject({ }, { bubble: true, batch: true }), subscriptions);
             context.scopes.unshift(subscriptions);
+        }
+        
+        if (config.output) {
+            subscriptions.__handler = (keys, value, old, proxy) => {
+                fs.appendFile(config.output + ".change.log", JSON.stringify({ type: "update", keys: keys, value: value }), err => err ? config.hooks.traceError(err) || console.error(err) : null)
+            };
         }
         
         if (config.repl) {
@@ -200,14 +230,28 @@ async function environment(config) {
         if (config.hooks.ready) config.hooks.ready(session, context);
         
         if (config.globals) {
-            for (let i = 0; i < config.globals.length; i++) {
-                await context.include(config.globals[i]);
+            if (typeof config.globals === 'string') {
+                config.globals = fs.readdirSync(config.globals).filter(file => file[0] !== '.' && file.endsWith(".js"));
+            }
+            
+            if (Array.isArray(config.globals)) {
+                for (let i = 0; i < config.globals.length; i++) {
+                    if (config.verbose) console.log("Including " + config.globals[i])
+                    await context.include(config.globals[i]);
+                }
             }
         }
         
         if (config.modules) {
-            for (let i = 0; i < config.modules.length; i++) {
-                await context.import(config.globals[i]);
+            if (typeof config.modules === 'string') {
+                config.modules = fs.readdirSync(config.modules).filter(file => file[0] !== '.' && file.endsWith(".js"));
+            }
+            
+            if (Array.isArray(config.modules)) {
+                for (let i = 0; i < config.modules.length; i++) {
+                    if (config.verbose) console.log("Importing " + config.modules[i])
+                    await context.import(config.modules[i]);
+                }
             }
         }
         

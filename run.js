@@ -37,19 +37,7 @@ function preprocess(config) {
     
     if (config.hooks && typeof config.hooks === 'string') {
         config.hooks = require(process.cwd() + "/" + config.hooks);
-    }
-    
-    if (config.output) {
-        let file = config.output;
-        if (Object.isBoolean(file)) {
-            file = (new Date()).getTime() + ".log";
-        }
-
-        config.trace = (name, data) => {
-            let msg = (new Date()).getTime() + "|" + name + "|" + JSON.stringify(data) + "\n";
-            fs.appendFile(file, msg, err => err ? config.hooks.traceError(err) || console.error(err) : null);
-        };
-    }
+    }    
     
     return config;
 }
@@ -70,9 +58,12 @@ program
     .option("--orders [type]", "Specify session order processing", "passive")
     .option("--repl", "Terminal interface")
     .option("--http [port]", "Launch http subscription interface using port", parseInt)
+    .option("--html <path>", "Configure static HTML path", parseInt)
     .option("--output [file]", "Record events with optional file name")
     .option("--symbols <file>", "Configure well known symbols")
     .option("--subscriptions <file>", "Configure initial subscriptions")
+    .option("--global <path>", "Configure global path", "./global")
+    .option("--module <path>", "Configure module path", "./module")
     .option("--hooks <file>", "Configure hooks")
     .action(options => ibjs.environment(filter(preprocess(options))));
 
@@ -82,7 +73,9 @@ program
     .action(() => { 
         console.log("Setting up environment in " + process.cwd())
         try {
-            fs.writeFileSync(process.cwd() + "/startup.js", fs.readFileSync(__dirname + "/startup.js").toString())
+            fs.writeFileSync(process.cwd() + "/startup.js", fs.readFileSync(__dirname + "/example/startup.js").toString())
+            fs.mkdirSync(process.cwd() + "/global")
+            fs.mkdirSync(process.cwd() + "/module")
             console.log("Success! Configure startup.js to customize environment");
             console.log();
             process.exit(0);

@@ -1,14 +1,17 @@
 # IB Javascript Container
 
-Container to host trading system logic written in Javascript.
+Container to host Interactive Brokers trading system logic written in Javascript.
 
 ## Installation
 
-    [sudo] npm i -g ibjs
-
+    npm i ibjs
+    node ./node_modules/ibjs/run init
+    
 ## Getting Started
 
-    ibjs --help
+Edit `config.js` and populate the `global` and `module` folders to customize behavior.
+
+    node startup
 
 ## License
 

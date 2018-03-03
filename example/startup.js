@@ -18,6 +18,8 @@ require("ibjs").environment({
     repl: true,
     /* HTTP interface/port */
 	http: 8080,
+    /* Static HTML path to serve */
+    html: "./html",
     /* Save raw API events to file */
 	output: true,
     
@@ -47,9 +49,9 @@ require("ibjs").environment({
     },
     
     /* Global code */
-    globals: [ ],
-    /* Modules whose scope is encapsulated */
-    modules: [ ],
+    global: "./global",
+    /* Modularized code */
+    module: "./module",
     /* Lifecycle hooks */
 	hooks: {
         async init(config) {

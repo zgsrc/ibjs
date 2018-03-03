@@ -5,6 +5,7 @@ const { observe, computed, dispose } = require("hyperactiv"),
       ObservableObject = Computable(Observable(Object));
 
 const utility = {
+    timer: require('node-schedule').scheduleJob,
     get time() { return Date.create() },
     require,
     process,
@@ -84,8 +85,8 @@ function createContext() {
     
     Object.defineProperty(context, "read", { 
         value: path => { 
-            let src = fs.readFileSync(path).toString();
-            return path.endsWith(".r.js") ? translateRules(src) : src;
+            let src = fs.readFileSync(path).toString().trim();
+            src = path.endsWith(".r.js") || src.startsWith("/*rules*/") ? translateRules(src) : src;
         } 
     })
     
@@ -94,7 +95,6 @@ function createContext() {
     Object.defineProperty(context, "include", { value: path => context.global(context.read(path)) })
     
     context.scopes.push({
-        get exports() { return context.scopes[0] },
         import: context.import,
         include: context.include
     })

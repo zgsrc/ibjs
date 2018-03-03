@@ -1,3 +1,5 @@
+/* rules file */
+
 var x, y, z;
 
 when: if (x > 5) {
