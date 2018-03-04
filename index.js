@@ -116,7 +116,8 @@ const http = require('http'),
       WebSocket = require('ws'),
       express = require('express'),
       bodyParser = require('body-parser'),
-      util = require('util');
+      util = require('util'),
+      fs = require('fs');
 
 function createApp(context, app) {
     app = app || express();
