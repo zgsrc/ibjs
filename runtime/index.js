@@ -25,7 +25,7 @@ const esprima = require("esprima"),
       escodegen = require("escodegen"),
       fs = require("fs");
 
-function computed(...args) {
+function computedStatement(...args) {
     return {
         "type": "ExpressionStatement",
         "expression": {
@@ -64,7 +64,7 @@ function translateRules(src) {
                 else throw new Error("When statement must take an if condition")
             }
             else if (line.label.name == "set") {
-                return computed(line.body)
+                return computedStatement(line.body)
             }
             else return line;
         }
@@ -78,7 +78,7 @@ const Context = require("./context");
 function createContext() {
     let context = new Context(math, utility, global);
     
-    context.evalInContext("require('sugar').extend()");
+    context.global("require('sugar').extend()");
     context.resolvers.push(name => session.quote(name));
     
     Object.defineProperty(context, "rules", { value: translateRules })

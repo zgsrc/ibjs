@@ -3,7 +3,7 @@
   "description": "Interactive Brokers javascript container.",
   "author": "Jonathan Hollinger",
   "license": "MIT",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "main": "index.js",
   "scripts": {
     "start": "node run.js"
