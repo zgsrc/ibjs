@@ -5,7 +5,7 @@ const { observe, computed, dispose } = require("hyperactiv"),
       ObservableObject = Computable(Observable(Object));
 
 const utility = {
-    timer: require('node-schedule').scheduleJob,
+    at: require('node-schedule').scheduleJob,
     get time() { return Date.create() },
     require,
     process,
@@ -22,8 +22,7 @@ Object.assign(math, require("numeric"))
 Object.assign(math, require("numbers"))
 
 const esprima = require("esprima"),
-      escodegen = require("escodegen"),
-      fs = require("fs");
+      escodegen = require("escodegen");
 
 function computedStatement(...args) {
     return {
@@ -75,7 +74,7 @@ function translateRules(src) {
 }
 
 const Context = require("./context");
-function createContext() {
+function createContext(session) {
     let context = new Context(math, utility, global);
     
     context.global("require('sugar').extend()");
@@ -99,7 +98,7 @@ function createContext() {
         include: context.include
     })
     
-    return context;
+    return context
 }
 
 module.exports = createContext;

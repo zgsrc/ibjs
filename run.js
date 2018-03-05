@@ -59,11 +59,12 @@ program
     .option("--repl", "Terminal interface")
     .option("--http [port]", "Launch http subscription interface using port", parseInt)
     .option("--html <path>", "Configure static HTML path", parseInt)
-    .option("--output [file]", "Record events with optional file name")
     .option("--symbols <file>", "Configure well known symbols")
     .option("--subscriptions <file>", "Configure initial subscriptions")
     .option("--global <path>", "Configure global path", "./global")
     .option("--module <path>", "Configure module path", "./module")
+    .option("--log <path>", "Configure module path", "./log")
+    .option("--cache <path>", "Configure module path", "./cache")
     .option("--hooks <file>", "Configure hooks")
     .action(options => ibjs.environment(filter(preprocess(options))));
 
@@ -76,6 +77,8 @@ program
             fs.writeFileSync(process.cwd() + "/startup.js", fs.readFileSync(__dirname + "/example/startup.js").toString())
             fs.mkdirSync(process.cwd() + "/global")
             fs.mkdirSync(process.cwd() + "/module")
+            fs.mkdirSync(process.cwd() + "/log")
+            fs.mkdirSync(process.cwd() + "/cache")
             console.log("Success! Configure startup.js to customize environment");
             console.log();
             process.exit(0);

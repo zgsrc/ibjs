@@ -12,3 +12,7 @@ set: {
 }
 
 set: x = y + z
+
+
+
+var series = $CL.contract.history()

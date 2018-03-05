@@ -20,8 +20,6 @@ require("ibjs").environment({
 	http: 8080,
     /* Static HTML path to serve */
     html: "./html",
-    /* Save raw API events to file */
-	output: true,
     
     /* Well known symbols */
 	symbols: { },
@@ -52,6 +50,10 @@ require("ibjs").environment({
     global: "./global",
     /* Modularized code */
     module: "./module",
+    /* Save raw events to files */
+	log: "./log",
+    /* Cache folder */
+    cache: "./cache",
     /* Lifecycle hooks */
 	hooks: {
         async init(config) {

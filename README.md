@@ -6,12 +6,6 @@ Container to host Interactive Brokers trading system logic written in Javascript
 
     npm i ibjs
     node ./node_modules/ibjs/run init
-    
-## Getting Started
-
-Edit `config.js` and populate the `global` and `module` folders to customize behavior.
-
-    node startup
 
 ## License
 

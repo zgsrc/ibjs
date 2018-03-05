@@ -160,6 +160,8 @@ const createContext = require("./runtime"),
       ObservableObject = Computable(Observable(Object)),
       wss = require('hyperactiv/websocket/server').server;
 
+
+
 async function environment(config) {
     config.hooks = config.hooks || { };
     if (config.hooks.init) await config.hooks.init(config);
@@ -168,33 +170,36 @@ async function environment(config) {
         Object.assign(wellKnownSymbols, config.symbols)
     }
     
-    if (config.output) {
-        let file = config.output;
-        if (Object.isBoolean(file)) {
-            config.output = Date.create().format("{dow}-{H}:{mm}:{ss}")
-            file = config.output + ".api.log";
-        }
-
+    if (config.cache) {
+        require("./lib/model/contract").cache = require('memoize-fs')({ cachePath: config.cache });
+    }
+    
+    if (config.log) {
+        config.log += "/" + Date.create().format("{dow}-{H}:{mm}:{ss}");
+        
+        let file = config.log + ".api.log";
         config.trace = (name, data) => {
             let msg = (new Date()).getTime() + "|" + name + "|" + JSON.stringify(data) + "\n";
             fs.appendFile(file, msg, err => err ? config.hooks.traceError(err) || console.error(err) : null);
         };
+        
+        config.log += ".change.log"
     }
-    
+
     let connection;
     if (config.verbose) console.log("Connecting...");
     session(config).then(async session => {
         if (config.verbose) console.log("Session established");
         session.on("error", config.hooks.error || console.error);
         
-        let context = createContext();
+        let context = createContext(session);
         context.scopes.unshift(require("./lib/model/market").markets);
         if (config.hooks.setup) await config.hooks.setup(session, context);
         
         if (config.verbose) console.log("Opening subscriptions...");
         let subscriptions = await session.subscribe(config.subscriptions || { });
-        if (config.output) {
-            fs.appendFile(config.output + ".change.log", JSON.stringify({ type: "sync", state: subscriptions }), err => err ? config.hooks.traceError(err) || console.error(err) : null)
+        if (config.log) {
+            fs.appendFile(config.log, JSON.stringify({ type: "sync", state: subscriptions }), err => err ? config.hooks.traceError(err) || console.error(err) : null)
         }
         
         if (config.http) {
@@ -211,9 +216,9 @@ async function environment(config) {
             context.scopes.unshift(subscriptions);
         }
         
-        if (config.output) {
+        if (config.log) {
             subscriptions.__handler = (keys, value, old, proxy) => {
-                fs.appendFile(config.output + ".change.log", JSON.stringify({ type: "update", keys: keys, value: value }), err => err ? config.hooks.traceError(err) || console.error(err) : null)
+                fs.appendFile(config.log, JSON.stringify({ type: "update", keys: keys, value: value }), err => err ? config.hooks.traceError(err) || console.error(err) : null)
             };
         }
         
