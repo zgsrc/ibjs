@@ -75,7 +75,7 @@ function translateRules(src) {
 
 const Context = require("./context");
 function createContext(session) {
-    let context = new Context(math, utility, global);
+    let context = new Context(require("../lib/constants"), math, utility, global);
     
     context.global("require('sugar').extend()");
     context.resolvers.push(name => session.quote(name));
