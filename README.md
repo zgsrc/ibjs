@@ -7,6 +7,10 @@ Container to host Interactive Brokers trading system logic written in Javascript
     npm i ibjs
     node ./node_modules/ibjs/run init
 
+## Resources
+
+* [Headless IB Gateway Installation on Ubuntu Server](https://github.com/roblav96/headless-ib-gateway-installation-ubuntu-server)
+
 ## License
 
 Copyright 2018 Jonathan Hollinger
