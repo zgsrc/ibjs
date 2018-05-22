@@ -136,7 +136,7 @@ function createApp(context, app) {
         let src = req.body.src.trim();
         if (src.length) {
             try {
-                let result = await context.evalInContext(req.body.src);
+                let result = await context.runInContext(req.body.src);
                 res.send(util.inspect(result));
             }
             catch (ex) {
